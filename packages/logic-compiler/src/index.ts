@@ -66,8 +66,25 @@ export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {
   };
 }
 
+/**
+ * Names that describe plumbing rather than a step in the system's logic. A reader
+ * scanning the map learns nothing from a node called `log` or `cap`; these crowd
+ * out the flows that do explain how the system runs.
+ */
+const UTILITY_NAME_PATTERN =
+  /^(assert|audit|cap|clamp|clone|debug|dedupe|ensure|equals|error|format|from|get|has|hash|id|is|log|map|merge|noop|normali[sz]e|now|parse|pick|print|require|serialize|set|sleep|sort|to|trace|trim|truncate|unique|validate|warn|wrap)([A-Z_]|$)/;
+
+/** A one-word name carries no object, so it cannot describe a step on its own. */
+function isBareVerb(name: string): boolean {
+  return /^[a-z]+$/.test(name) && name.length <= 6;
+}
+
 function isLogicCandidate(node: RawCodeNode): boolean {
-  if (["route", "service", "agent", "tool", "database", "external_api"].includes(node.kind)) return true;
+  // A route is an entrypoint no matter what it is called.
+  if (node.kind === "route" || node.kind === "database" || node.kind === "external_api") return true;
+  if (["service", "agent", "tool"].includes(node.kind)) {
+    return !UTILITY_NAME_PATTERN.test(node.name) && !isBareVerb(node.name);
+  }
   if (node.kind === "function") return /^(handle|on)(submit|click|upload|save|create|generate)|submit|upload/i.test(node.name);
   return false;
 }

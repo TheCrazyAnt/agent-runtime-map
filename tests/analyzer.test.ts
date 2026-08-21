@@ -70,4 +70,105 @@ describe("TypeScript analyzer", () => {
     const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
     expect(raw.edges.some((edge) => edge.kind === "handles" && names.get(edge.source) === "POST /api/orders" && names.get(edge.target) === "createOrderHandler")).toBe(true);
   });
+
+  it("does not promote private class members to services", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-private-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(
+      path.join(root, "src", "knowledge.ts"),
+      [
+        "export class KnowledgeService {",
+        "  private cap(actor: string): void { void actor; }",
+        "  private async audit(action: string): Promise<void> { void action; }",
+        "  public async importDocument(text: string): Promise<string> { this.cap('a'); await this.audit('i'); return text; }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const raw = await analyzeTypeScriptProject(root);
+    const byName = new Map(raw.nodes.map((node) => [node.name, node]));
+    // Private helpers stay in the graph as facts, but they are plain functions.
+    expect(byName.get("cap")?.kind).toBe("function");
+    expect(byName.get("audit")?.kind).toBe("function");
+    // The public entry point of the service is still a service.
+    expect(byName.get("importDocument")?.kind).toBe("service");
+
+    const graph = compileLogicGraph(raw, { maxNodes: 20 });
+    const labels = graph.nodes.map((node) => node.label);
+    expect(labels).not.toContain("Cap");
+    expect(labels).not.toContain("Audit");
+  });
+
+  it("does not let a directory convention promote helper scripts", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-scripts-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "agents", "scripts"), { recursive: true });
+    await mkdir(path.join(root, "agents", "src"), { recursive: true });
+    await writeFile(path.join(root, "agents", "scripts", "smoke.ts"), "export function markStage(stage: string) { return stage; }\n");
+    await writeFile(path.join(root, "agents", "src", "run.ts"), "export function reviewWorkflow(input: string) { return input; }\n");
+
+    const raw = await analyzeTypeScriptProject(root);
+    const byName = new Map(raw.nodes.map((node) => [node.name, node]));
+    // A smoke script under agents/ is not an agent.
+    expect(byName.get("markStage")?.kind).toBe("function");
+    // Real code under the same directory still is.
+    expect(byName.get("reviewWorkflow")?.kind).toBe("agent");
+  });
+
+  it("skips test files and type declarations", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-tests-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src", "__tests__"), { recursive: true });
+    await writeFile(path.join(root, "src", "createOrder.ts"), "export function createOrder(id: string) { return id; }\n");
+    await writeFile(path.join(root, "src", "createOrder.test.ts"), "export function createOrderFixture() { return 'x'; }\n");
+    await writeFile(path.join(root, "src", "createOrder.test.mjs"), "export function createOrderMjsFixture() { return 'z'; }\n");
+    await writeFile(path.join(root, "src", "types.d.ts"), "export declare function createOrderType(): void;\n");
+    await writeFile(path.join(root, "src", "__tests__", "helper.ts"), "export function createOrderHelper() { return 'y'; }\n");
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = raw.nodes.map((node) => node.name);
+    expect(names).toContain("createOrder");
+    expect(names).not.toContain("createOrderFixture");
+    expect(names).not.toContain("createOrderMjsFixture");
+    expect(names).not.toContain("createOrderType");
+    expect(names).not.toContain("createOrderHelper");
+  });
+
+  it("does not classify a bare category name as that category", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-bare-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(
+      path.join(root, "src", "handlers.ts"),
+      "export function service() { return 'container'; }\nexport function billingService() { return 'real'; }\n",
+    );
+
+    const raw = await analyzeTypeScriptProject(root);
+    const byName = new Map(raw.nodes.map((node) => [node.name, node]));
+    // `service` names its category, not what it does.
+    expect(byName.get("service")?.kind).toBe("function");
+    expect(byName.get("billingService")?.kind).toBe("service");
+
+    expect(compileLogicGraph(raw, { maxNodes: 20 }).nodes.map((node) => node.label)).not.toContain("Service");
+  });
+
+  it("reports different confidence for different signals", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-confidence-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src", "services"), { recursive: true });
+    await writeFile(path.join(root, "src", "billingService.ts"), "export function billingService(id: string) { return id; }\n");
+    await writeFile(path.join(root, "src", "services", "refund.ts"), "export function refundOrder(id: string) { return id; }\n");
+    await writeFile(path.join(root, "src", "misc.ts"), "export function createSomething(id: string) { return id; }\n");
+
+    const raw = await analyzeTypeScriptProject(root);
+    const confidence = (name: string) => raw.nodes.find((node) => node.name === name)?.evidence[0]?.confidence ?? 0;
+
+    // Naming convention > directory convention > a verb appearing in the name.
+    expect(confidence("billingService")).toBeGreaterThan(confidence("refundOrder"));
+    expect(confidence("refundOrder")).toBeGreaterThan(confidence("createSomething"));
+    // Regression: every classification used to report exactly 0.86.
+    expect(new Set([confidence("billingService"), confidence("refundOrder"), confidence("createSomething")]).size).toBe(3);
+  });
 });

@@ -29,12 +29,24 @@ const EXCLUDED_DIRECTORIES = new Set([
   ".next",
   ".logic-map",
   ".turbo",
+  "__mocks__",
+  "__tests__",
   "coverage",
   "dist",
   "build",
   "node_modules",
   "out",
 ]);
+
+/** Tests and type declarations describe the system, they are not the system running. */
+const EXCLUDED_FILE_PATTERN = /(\.(test|spec)\.[cm]?[jt]sx?|\.d\.ts)$/i;
+
+/**
+ * Scripts are real code but they are not the running system: smoke tests, one-off
+ * migrations, and release helpers live here. They stay in the Raw Code Graph as
+ * evidence, but path conventions such as `agents/` must not promote them.
+ */
+const SUPPORTING_PATH_PATTERN = /(^|\/)(scripts?|tools?\/dev|examples?|fixtures?|benchmarks?)(\/|$)/i;
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]);
 const DB_OPERATIONS = new Set([
   "create",
@@ -178,7 +190,7 @@ async function discoverSourceFiles(root: string): Promise<string[]> {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) {
         if (!EXCLUDED_DIRECTORIES.has(entry.name) && !entry.name.startsWith(".")) await visit(absolute);
-      } else if (entry.isFile() && SOURCE_EXTENSIONS.has(path.extname(entry.name)) && !entry.name.endsWith(".d.ts")) {
+      } else if (entry.isFile() && SOURCE_EXTENSIONS.has(path.extname(entry.name)) && !EXCLUDED_FILE_PATTERN.test(entry.name)) {
         found.push(absolute);
       }
     }
@@ -209,7 +221,7 @@ function collectDeclarations(
     const name = declarationName(declaration);
     if (!name) continue;
     const line = declaration.getStartLineNumber();
-    const kind = classifyDeclaration(relativeFile, name, declaration);
+    const { kind, confidence, detail } = classifyDeclaration(relativeFile, name, declaration);
     const id = stableId(kind, `${relativeFile}:${name}:${line}`);
     const node: RawCodeNode = {
       id,
@@ -222,8 +234,8 @@ function collectDeclarations(
           relativeFile,
           line,
           kind === "function" ? "ast" : kind === "route" ? "framework_convention" : "name_heuristic",
-          classificationDetail(kind),
-          kind === "function" ? 1 : 0.86,
+          detail,
+          confidence,
           name,
           declaration.getEndLineNumber(),
         ),
@@ -429,16 +441,87 @@ function declarationKey(node: Node): string {
   return `${node.getSourceFile().getFilePath()}:${node.getStart()}`;
 }
 
-function classifyDeclaration(relativeFile: string, name: string, declaration: Node): RawNodeKind {
+/**
+ * A classification plus how much the signal that produced it is worth.
+ *
+ * Confidence is calibrated by **which signal fired**, not by the resulting kind.
+ * A directory convention (`agents/`) is stronger evidence than a name suffix,
+ * which is stronger than a verb appearing somewhere inside a name. Reporting one
+ * flat number for every classification makes the score carry no information.
+ */
+interface Classification {
+  readonly kind: RawNodeKind;
+  readonly confidence: number;
+  readonly detail: string;
+}
+
+/**
+ * A naming convention needs a qualifier in front of the suffix. A function called
+ * exactly `service` or `agent` names its category, not what it does, so treating it
+ * as a high-confidence classification puts a node labelled "Service" on the map.
+ */
+function hasQualifiedSuffix(name: string, pattern: RegExp): boolean {
+  const match = pattern.exec(name);
+  return match !== null && match.index > 0;
+}
+
+/** The class a method belongs to, or an empty string for object-literal methods. */
+function enclosingClassName(declaration: MethodDeclaration): string {
+  const parent = declaration.getParent();
+  return Node.isClassDeclaration(parent) || Node.isClassExpression(parent) ? parent.getName() ?? "" : "";
+}
+
+/** A private helper is an implementation detail of its class, not a unit of system logic. */
+function isInternalMember(declaration: Node): boolean {
+  if (!Node.isMethodDeclaration(declaration)) return false;
+  if (declaration.getName().startsWith("#") || declaration.getName().startsWith("_")) return true;
+  return declaration.hasModifier(SyntaxKind.PrivateKeyword) || declaration.hasModifier(SyntaxKind.ProtectedKeyword);
+}
+
+function classifyDeclaration(relativeFile: string, name: string, declaration: Node): Classification {
   const normalizedPath = relativeFile.toLowerCase();
   const normalizedName = name.toLowerCase();
-  if (/\/app\/api\/.+\/route\.[jt]sx?$/.test(`/${normalizedPath}`) && HTTP_METHODS.has(name.toUpperCase())) return "route";
-  if (/(^|\/)(page|layout)\.[jt]sx?$/.test(normalizedPath) && /(page|layout)$/.test(normalizedName)) return "function";
-  if (/(^|\/)(agents?|crews?|workflows?)(\/|$)/.test(normalizedPath) || /(agent|crew|workflow|orchestrator)$/.test(normalizedName)) return "agent";
-  if (/(^|\/)(tools?|actions?)(\/|$)/.test(normalizedPath) || /(tool|action)$/.test(normalizedName)) return "tool";
-  if (/(^|\/)(services?|use-cases?|commands?)(\/|$)/.test(normalizedPath) || /(service|usecase|handler|execute|process|generate|create|build)/.test(normalizedName)) return "service";
-  if (Node.isMethodDeclaration(declaration) && /service|controller|repository/i.test(declaration.getParent()?.getText().slice(0, 100) ?? "")) return "service";
-  return "function";
+  // Path conventions describe a whole directory, so they must not promote helper
+  // scripts that merely happen to live under it.
+  const pathConventionsApply = !SUPPORTING_PATH_PATTERN.test(normalizedPath);
+
+  if (/\/app\/api\/.+\/route\.[jt]sx?$/.test(`/${normalizedPath}`) && HTTP_METHODS.has(name.toUpperCase())) {
+    return { kind: "route", confidence: 0.95, detail: "Next.js App Router route handler convention" };
+  }
+  if (/(^|\/)(page|layout)\.[jt]sx?$/.test(normalizedPath) && /(page|layout)$/.test(normalizedName)) {
+    return { kind: "function", confidence: 1, detail: "Declared in source" };
+  }
+  // A private helper of a Service class is not itself a service.
+  if (isInternalMember(declaration)) {
+    return { kind: "function", confidence: 1, detail: "Private class member, treated as an implementation detail" };
+  }
+  if (hasQualifiedSuffix(normalizedName, /(agent|crew|workflow|orchestrator)$/)) {
+    return { kind: "agent", confidence: 0.8, detail: "Agent or workflow naming convention" };
+  }
+  if (pathConventionsApply && /(^|\/)(agents?|crews?|workflows?)(\/|$)/.test(normalizedPath)) {
+    return { kind: "agent", confidence: 0.65, detail: "Declared under an agent or workflow directory" };
+  }
+  if (hasQualifiedSuffix(normalizedName, /(tool|action)$/)) {
+    return { kind: "tool", confidence: 0.8, detail: "Tool or action naming convention" };
+  }
+  if (pathConventionsApply && /(^|\/)(tools?|actions?)(\/|$)/.test(normalizedPath)) {
+    return { kind: "tool", confidence: 0.65, detail: "Declared under a tool or action directory" };
+  }
+  if (hasQualifiedSuffix(normalizedName, /(service|usecase)$/)) {
+    return { kind: "service", confidence: 0.8, detail: "Service naming convention" };
+  }
+  if (pathConventionsApply && /(^|\/)(services?|use-cases?|commands?)(\/|$)/.test(normalizedPath)) {
+    return { kind: "service", confidence: 0.7, detail: "Declared under a service or use-case directory" };
+  }
+  if (/(handler|execute|process|generate|create|build)/.test(normalizedName)) {
+    // The loosest signal in the set: a verb anywhere in the name. Many ordinary
+    // helpers match it, so it is reported as such rather than as a confident fact.
+    return { kind: "service", confidence: 0.5, detail: "Business verb in the declaration name" };
+  }
+  if (Node.isMethodDeclaration(declaration) && /(service|controller|repository)$/i.test(enclosingClassName(declaration))) {
+    return { kind: "service", confidence: 0.6, detail: "Public member of a service, controller, or repository class" };
+  }
+  return { kind: "function", confidence: 1, detail: "Declared in source" };
 }
 
 function internalFetchRoute(call: CallExpression, expressionText: string, nodes: RawCodeNode[]): RawCodeNode | undefined {
@@ -577,14 +660,6 @@ function safeHost(url: string): string {
 
 function humanize(value: string): string {
   return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").trim();
-}
-
-function classificationDetail(kind: RawNodeKind): string {
-  if (kind === "route") return "Next.js route handler convention";
-  if (kind === "agent") return "Agent or workflow naming/path convention";
-  if (kind === "tool") return "Tool or action naming/path convention";
-  if (kind === "service") return "Business service naming/path convention";
-  return "Function declaration";
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
