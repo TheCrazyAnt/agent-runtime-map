@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "Turn your codebase into a logic map.",
+  "homepage": "https://github.com/tangyishun9846/logic-map#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tangyishun9846/logic-map.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tangyishun9846/logic-map/issues"
+  },
   "type": "module",
   "workspaces": [
     "apps/*",

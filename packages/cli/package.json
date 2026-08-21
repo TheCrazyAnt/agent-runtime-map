@@ -2,6 +2,15 @@
   "name": "logic-map",
   "version": "0.1.0",
   "description": "Turn a TypeScript or JavaScript codebase into an evidence-backed interactive logic map.",
+  "homepage": "https://github.com/tangyishun9846/logic-map#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tangyishun9846/logic-map.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/tangyishun9846/logic-map/issues"
+  },
   "type": "module",
   "bin": {
     "logic-map": "./dist/cli.js"
