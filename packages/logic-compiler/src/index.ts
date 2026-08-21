@@ -23,8 +23,9 @@ const FLOW_EDGE_KINDS = new Set(["calls", "data_flow", "handles", "reads", "writ
 export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {}): LogicGraph {
   const maxNodes = Math.max(4, options.maxNodes ?? 20);
   const diagnostics = [...raw.diagnostics];
-  const candidates = raw.nodes.filter(isLogicCandidate);
-  const ranked = rankCandidates(candidates, raw.edges);
+  const flowDegree = calculateFlowDegree(raw.edges);
+  const candidates = raw.nodes.filter((node) => isLogicCandidate(node, flowDegree.get(node.id) ?? 0));
+  const ranked = rankCandidates(candidates, flowDegree);
   const kept = ranked.slice(0, maxNodes);
   const keptIds = new Set(kept.map((node) => node.id));
 
@@ -66,19 +67,44 @@ export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {
   };
 }
 
-function isLogicCandidate(node: RawCodeNode): boolean {
-  if (["route", "service", "agent", "tool", "database", "external_api"].includes(node.kind)) return true;
+/**
+ * Names that describe plumbing rather than a step in the system's logic. A reader
+ * scanning the map learns nothing from a node called `log` or `cap`; these crowd
+ * out the flows that do explain how the system runs.
+ */
+const UTILITY_NAME_PATTERN =
+  /^(assert|audit|cap|clamp|clone|debug|dedupe|ensure|equals|error|format|from|get|has|hash|id|is|log|map|merge|noop|normali[sz]e|now|parse|pick|print|require|serialize|set|sleep|sort|to|trace|trim|truncate|unique|validate|warn|wrap)([A-Z_]|$)/;
+
+function isUtilityName(name: string): boolean {
+  const camelCaseName = name ? `${name[0].toLowerCase()}${name.slice(1)}` : name;
+  return UTILITY_NAME_PATTERN.test(camelCaseName);
+}
+
+function isLogicCandidate(node: RawCodeNode, flowDegree: number): boolean {
+  // A route is an entrypoint no matter what it is called.
+  if (node.kind === "route" || node.kind === "database" || node.kind === "external_api") return true;
+  if (["service", "agent", "tool"].includes(node.kind)) {
+    // Keep connected steps: calls and data flow are stronger evidence than a
+    // generic-looking name. Suppress isolated nodes when their only signal was
+    // the weakest business-verb heuristic, plus isolated utility plumbing.
+    if (flowDegree === 0 && maxEvidenceConfidence(node) <= 0.5) return false;
+    return flowDegree > 0 || !isUtilityName(node.name);
+  }
   if (node.kind === "function") return /^(handle|on)(submit|click|upload|save|create|generate)|submit|upload/i.test(node.name);
   return false;
 }
 
-function rankCandidates(nodes: RawCodeNode[], edges: RawCodeEdge[]): RawCodeNode[] {
+function calculateFlowDegree(edges: RawCodeEdge[]): Map<string, number> {
   const degree = new Map<string, number>();
   for (const edge of edges) {
     if (!FLOW_EDGE_KINDS.has(edge.kind)) continue;
     degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
     degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
   }
+  return degree;
+}
+
+function rankCandidates(nodes: RawCodeNode[], degree: Map<string, number>): RawCodeNode[] {
   const kindWeight: Record<RawCodeNode["kind"], number> = {
     route: 100,
     agent: 95,
@@ -92,8 +118,8 @@ function rankCandidates(nodes: RawCodeNode[], edges: RawCodeEdge[]): RawCodeNode
     file: 0,
   };
   return [...nodes].sort((a, b) => {
-    const aScore = kindWeight[a.kind] + (degree.get(a.id) ?? 0) * 4 + maxEvidenceConfidence(a) * 10;
-    const bScore = kindWeight[b.kind] + (degree.get(b.id) ?? 0) * 4 + maxEvidenceConfidence(b) * 10;
+    const aScore = kindWeight[a.kind] + (degree.get(a.id) ?? 0) * 4 + maxEvidenceConfidence(a) * 20;
+    const bScore = kindWeight[b.kind] + (degree.get(b.id) ?? 0) * 4 + maxEvidenceConfidence(b) * 20;
     return bScore - aScore || a.name.localeCompare(b.name);
   });
 }
