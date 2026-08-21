@@ -5,6 +5,7 @@ export interface CliText {
   scanned(files: number): string;
   found(nodes: number, edges: number): string;
   compiled(nodes: number, edges: number): string;
+  featureSummary(features: number, errors: number, warnings: number): string;
   logicGraph(file: string): string;
   rawGraph(file: string): string;
   viewer(url: string): string;
@@ -24,6 +25,7 @@ const TEXT: Record<CliLocale, CliText> = {
     scanned: (files) => `Scanned ${files} files.`,
     found: (nodes, edges) => `Found ${nodes} code nodes and ${edges} relationships.`,
     compiled: (nodes, edges) => `Compiled ${nodes} logic nodes and ${edges} flows.`,
+    featureSummary: (features, errors, warnings) => `Detected ${features} feature circuits (${errors} errors, ${warnings} warnings).`,
     logicGraph: (file) => `Logic graph: ${file}`,
     rawGraph: (file) => `Raw graph: ${file}`,
     viewer: (url) => `Viewer: ${url}`,
@@ -41,6 +43,7 @@ const TEXT: Record<CliLocale, CliText> = {
     scanned: (files) => `已扫描 ${files} 个代码文件。`,
     found: (nodes, edges) => `发现 ${nodes} 个代码节点和 ${edges} 条关系。`,
     compiled: (nodes, edges) => `已编译为 ${nodes} 个逻辑节点和 ${edges} 条逻辑流。`,
+    featureSummary: (features, errors, warnings) => `识别到 ${features} 个功能电路（${errors} 个错误，${warnings} 个警告）。`,
     logicGraph: (file) => `逻辑图：${file}`,
     rawGraph: (file) => `原始代码图：${file}`,
     viewer: (url) => `查看地址：${url}`,
@@ -93,7 +96,7 @@ export function helpText(locale: CliLocale, version: string): string {
   if (locale === "zh-CN") {
     return `Agent Runtime Map ${version}
 
-将代码项目转换成一张有源码证据的交互式运行逻辑图。
+将代码项目转换成一张有源码证据、可逐步检查的 Agent 功能电路图。
 
 用法：
   agent-runtime-map [项目] [选项]          分析项目并打开交互式 Viewer
@@ -107,7 +110,7 @@ export function helpText(locale: CliLocale, version: string): string {
       --raw-out <文件>        Raw Code Graph 输出位置（默认：.logic-map/raw-graph.json）
       --no-raw                不生成 Raw Code Graph
       --max-files <数量>      最大分析文件数（默认：2000）
-      --max-nodes <数量>      最大逻辑节点数（默认：20）
+      --max-nodes <数量>      最大逻辑节点数（默认：40）
       --graph-type <类型>     runtime_logic 或 product_logic
       --description <说明>    可选的产品背景说明
       --locale <语言>         auto、zh-CN 或 en（默认：自动识别）
@@ -121,7 +124,7 @@ export function helpText(locale: CliLocale, version: string): string {
   }
   return `Agent Runtime Map ${version}
 
-Turn your codebase into an evidence-backed logic map.
+Turn your codebase into an evidence-backed, step-through Agent circuit map.
 
 Usage:
   agent-runtime-map [project] [options]          Analyze and open the interactive viewer
@@ -135,7 +138,7 @@ Options:
       --raw-out <file>        Raw Code Graph output (default: .logic-map/raw-graph.json)
       --no-raw                Do not write the Raw Code Graph
       --max-files <number>    Maximum source files to analyze (default: 2000)
-      --max-nodes <number>    Maximum compiled logic nodes (default: 20)
+      --max-nodes <number>    Maximum compiled logic nodes (default: 40)
       --graph-type <type>     runtime_logic or product_logic
       --description <text>    Optional product context for the graph
       --locale <locale>       auto, zh-CN, or en (default: auto)

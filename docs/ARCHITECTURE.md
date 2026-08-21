@@ -16,20 +16,26 @@ Codebase
   ├─ importance ranking
   ├─ hidden-node path projection
   ├─ redundant-flow reduction
-  └─ semantic labels and confidence
+  ├─ semantic labels and confidence
+  ├─ feature-root and branch extraction
+  └─ deterministic Chain Doctor diagnostics
           ↓
-      LogicGraph
+      LogicGraph + FeatureScenario[]
           ↓
-     ELK → React Flow
+     ELK → React Flow → static chain simulation
 ```
 
 ## Boundaries
 
 The analyzer owns source-language and framework facts. It may emit many nodes and edges. It must never optimize its output for a particular visual layout.
 
-The Logic Compiler owns abstraction. It removes infrastructure noise, keeps business-relevant nodes, projects paths across hidden functions, and explains every heuristic conclusion.
+The Logic Compiler owns abstraction. It removes infrastructure noise, keeps business-relevant nodes, projects paths across hidden functions, discovers each user action or API entry as a feature circuit, enumerates bounded branch variants, and explains every heuristic conclusion.
 
-The Viewer owns presentation only. It fetches `graph.json`, computes positions with ELK, and renders the shared schema. This makes future Python, runtime trace, and model-assisted adapters compatible with the same UI.
+The Viewer owns presentation and deterministic playback state only. It fetches `graph.json`, computes one global layout with ELK, and highlights the selected `FeatureScenario` step by step. It does not execute the inspected project or claim that a live request is running. This keeps future Python, actual runtime trace, and model-assisted adapters compatible with the same UI.
+
+## Chain Doctor
+
+The static compiler currently reports broken graph references, entries with no resolvable downstream work, cycles without a result, low-confidence steps, and bounded-path limits. Each diagnostic is attached to a node or edge and retains source evidence. During simulation, an error halts playback when its affected step is reached; warnings remain inspectable without pretending they are confirmed failures.
 
 ## Stable IDs
 

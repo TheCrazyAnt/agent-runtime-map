@@ -20,7 +20,21 @@ Raw graphs may be large. They are intended for compilers, debugging, and advance
 - a `runtime_logic` or `product_logic` graph type;
 - user actions, entrypoints, processes, AI processes, decisions, data, external systems, and results;
 - flow, branch, and data-flow edges;
+- feature circuits, branch variants, and ordered simulation steps;
+- chain health and diagnostics attached to affected nodes or edges;
 - source locations, confidence, inference explanation, and links back to raw IDs.
+
+### FeatureScenario
+
+Every detected capability is represented by a `FeatureScenario` containing:
+
+- entry, result, node, and edge IDs that map back to the global Logic Graph;
+- one or more `FeaturePathVariant` objects for the combined circuit and inferred branches;
+- ordered `FeatureSimulationStep` groups used by the Viewer without executing source code;
+- `healthy`, `warning`, or `error` chain health;
+- evidence-backed diagnostics with a stable code, severity, source locations, confidence, and suggested repair.
+
+Current diagnostic codes cover broken references, cycles, low-confidence inference, missing downstream execution, missing terminal results, and bounded path limits. Consumers must display uncertainty distinctly from deterministic errors.
 
 ## Confidence
 

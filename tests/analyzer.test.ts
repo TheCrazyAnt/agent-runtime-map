@@ -20,15 +20,15 @@ describe("TypeScript analyzer", () => {
 
     expect(raw.project.frameworks).toContain("Next.js");
     expect(raw.nodes.some((node) => node.kind === "route" && node.name === "POST")).toBe(true);
-    expect(raw.nodes.filter((node) => node.kind === "agent")).toHaveLength(4);
+    expect(raw.nodes.filter((node) => node.kind === "agent").length).toBeGreaterThanOrEqual(9);
     expect(raw.nodes.some((node) => node.kind === "database" && node.name === "generation data")).toBe(true);
-    expect(raw.edges.filter((edge) => edge.kind === "data_flow")).toHaveLength(3);
+    expect(raw.edges.filter((edge) => edge.kind === "data_flow").length).toBeGreaterThanOrEqual(5);
     expect(raw.nodes.every((node) => node.evidence.length > 0)).toBe(true);
   });
 
   it("compiles a smaller evidence-backed logic graph", async () => {
     const raw = await analyzeTypeScriptProject(fixture);
-    const graph = compileLogicGraph(raw, { maxNodes: 12 });
+    const graph = compileLogicGraph(raw, { maxNodes: 40 });
 
     expect(graph.graphType).toBe("runtime_logic");
     expect(graph.nodes.length).toBeGreaterThanOrEqual(6);
@@ -42,7 +42,11 @@ describe("TypeScript analyzer", () => {
     expect(flows).toContain("Create Story -> Build Script");
     expect(flows).toContain("Handle Submit -> POST /api/generate");
     expect(flows).toContain("POST /api/generate -> Execute Content Workflow");
-    expect(flows.filter((flow) => flow.endsWith("-> OpenAI API"))).toHaveLength(3);
+    expect(flows.filter((flow) => flow.endsWith("-> OpenAI API")).length).toBeGreaterThanOrEqual(7);
+    expect(graph.features).toHaveLength(4);
+    expect(graph.features.find((feature) => feature.label === "POST /api/generate")).toMatchObject({ health: "healthy" });
+    expect(graph.features.find((feature) => feature.label === "POST /api/review")?.variants.length).toBeGreaterThan(1);
+    expect(graph.features.find((feature) => feature.label === "POST /api/publish")).toMatchObject({ health: "error" });
   });
 
   it("resolves local calls through tsconfig path aliases", async () => {

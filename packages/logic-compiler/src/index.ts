@@ -11,6 +11,9 @@ import {
   type RawCodeGraph,
   type RawCodeNode,
 } from "@agent-runtime-map/schema";
+import { compileFeatureScenarios } from "./features.js";
+
+export { compileFeatureScenarios } from "./features.js";
 
 export interface CompileOptions {
   graphType?: GraphType;
@@ -21,7 +24,7 @@ export interface CompileOptions {
 const FLOW_EDGE_KINDS = new Set(["calls", "data_flow", "handles", "reads", "writes", "requests"]);
 
 export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {}): LogicGraph {
-  const maxNodes = Math.max(4, options.maxNodes ?? 20);
+  const maxNodes = Math.max(4, options.maxNodes ?? 40);
   const diagnostics = [...raw.diagnostics];
   const flowDegree = calculateFlowDegree(raw.edges);
   const candidates = raw.nodes.filter((node) => isLogicCandidate(node, flowDegree.get(node.id) ?? 0));
@@ -41,6 +44,7 @@ export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {
   const logicNodeIds = new Map(logicNodes.map((node) => [node.rawNodeIds[0], node.id]));
   const logicEdges = removeRedundantFlowEdges(projectFlowEdges(raw, keptIds, logicNodeIds), logicNodes);
   markResultNodes(logicNodes, logicEdges);
+  const features = compileFeatureScenarios(logicNodes, logicEdges);
 
   const graphType = options.graphType ?? "runtime_logic";
   if (graphType === "product_logic") {
@@ -63,6 +67,7 @@ export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {
     project: raw.project,
     nodes: logicNodes,
     edges: logicEdges,
+    features,
     diagnostics,
   };
 }

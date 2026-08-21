@@ -1,8 +1,10 @@
 # Agent Runtime Map
 
-Turn your codebase into an evidence-backed runtime logic map.
+[简体中文](README.zh-CN.md) · English
 
-Agent Runtime Map reads a TypeScript or JavaScript repository, extracts routes, calls, agents, tools, database operations, and external services, then compresses those code facts into a smaller interactive graph that explains how the system runs.
+Turn your Agent codebase into an evidence-backed circuit map you can inspect step by step.
+
+Agent Runtime Map reads a TypeScript or JavaScript repository, extracts routes, calls, agents, tools, database operations, and external services, then compiles them into one global execution graph. A feature list on the left lets you play, pause, step through, replay, and switch between the inferred routes for each Agent capability.
 
 > Status: **0.1 alpha**. The supported scope is intentionally narrow and documented below. Agent Runtime Map does not claim to understand every codebase.
 
@@ -24,6 +26,15 @@ ELK layout + React Flow viewer
 
 Every visible node includes source files, line numbers, an inference explanation, and a confidence score. Code remains the source of truth; uncertain conclusions are marked instead of silently presented as facts.
 
+## Feature circuit inspector
+
+- **One global Agent graph:** shared workflows, agents, tools, databases, and external APIs remain visible in a single circuit diagram.
+- **One route per feature:** select a capability such as Generate, Review, or Import to isolate the nodes and edges that implement it.
+- **Static simulation:** play, pause, advance one step, replay, choose a branch, and change playback speed. This simulates the code-backed execution model; it does not pretend that a live request is running.
+- **Chain Doctor:** verified steps turn green, uncertain inference turns yellow, and deterministic problems turn red and stop the inspection at the failing step.
+- **Evidence-first diagnostics:** errors retain source files, lines, confidence, cause, and a suggested repair.
+- **Chinese and English:** the CLI and Viewer follow the operating-system/browser locale automatically and include explicit overrides.
+
 ## Try it
 
 From this repository:
@@ -35,6 +46,8 @@ node packages/cli/dist/cli.js examples/simple-agent --no-open
 ```
 
 Open the URL printed by the command. Press `Ctrl+C` to stop the local server.
+
+The bundled example contains four feature circuits: content generation, draft review with multiple branches, knowledge import, and one intentionally incomplete publish route that demonstrates a red Chain Doctor failure.
 
 After the first npm release, another project will be able to run:
 
@@ -63,7 +76,7 @@ Common options:
 
 ```text
 --max-files <number>     Source-file analysis limit (default: 2000)
---max-nodes <number>     Compiled logic-node limit (default: 20)
+--max-nodes <number>     Compiled logic-node limit (default: 40)
 --graph-type <type>      runtime_logic or product_logic
 --description <text>     Optional product context
 --locale <locale>        auto, zh-CN, or en (default: auto)
@@ -95,6 +108,9 @@ switch. Source symbols and file evidence always retain their original spelling.
 - Agent, workflow, tool, action, and service conventions
 - Common Prisma-like database operations
 - Literal Fetch/Axios external URLs and selected SDK calls
+- Global Agent circuit with per-feature route selection and branch variants
+- Static chain simulation with play, pause, step, replay, and speed controls
+- Chain Doctor diagnostics with healthy, warning, and error states
 - Local interactive viewer with ELK layout, search, minimap, confidence, and source evidence
 
 Known limits:
@@ -102,7 +118,7 @@ Known limits:
 - Dynamic dispatch and runtime-only dependency injection may be omitted.
 - Product logic mode is experimental and currently uses code structure plus optional user context. README/docs/PRD semantic ingestion is not implemented yet.
 - The semantic labels are deterministic heuristics in 0.1. An optional LLM compiler pass is planned, but no source code currently leaves the machine.
-- Python and runtime tracing are not part of 0.1.
+- Python and actual runtime tracing are not part of 0.1. The current playback is an explicit simulation of the statically inferred chain.
 
 ## Privacy and network behavior
 
