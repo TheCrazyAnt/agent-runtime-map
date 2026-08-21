@@ -1,0 +1,17 @@
+name: Feature request
+description: Propose a new analyzer, compiler behavior, or Viewer capability
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What understanding task is currently difficult?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed behavior and evidence
+      description: Explain what code facts support the proposed inference.
+    validations:
+      required: true

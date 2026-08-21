@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.logic-map/
+coverage/
+*.tsbuildinfo
+*.tgz
+artifacts/
+.DS_Store

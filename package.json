@@ -1,0 +1,35 @@
+{
+  "name": "logic-map-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn your codebase into a logic map.",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "adapters/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @logic-map/schema && npm run build -w @logic-map/typescript && npm run build -w @logic-map/logic-compiler && npm run build -w @logic-map/core && npm run build -w @logic-map/viewer && npm run build -w logic-map",
+    "clean": "npm run clean --workspaces --if-present",
+    "dev": "npm run build -w @logic-map/viewer && tsx packages/cli/src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "logic-map": "tsx packages/cli/src/cli.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "release:check": "npm run check && npm audit --audit-level=high && node scripts/check-package.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "tsx": "^4.19.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "esbuild": "^0.28.2"
+  }
+}
