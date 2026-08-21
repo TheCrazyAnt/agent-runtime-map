@@ -25,9 +25,10 @@ All notable changes are documented here.
   kept helpers such as `cap` and `audit` off the map.
 - Directory conventions no longer promote code under `scripts/`, `examples/`, or
   `fixtures/`, so smoke scripts under an `agents/` tree stop appearing as agents.
-- Test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__mocks__/`) and `.d.ts`
-  declarations are excluded from analysis.
+- Test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__mocks__/`) and TypeScript
+  declaration files are excluded from analysis; `.mts` and `.cts` source is supported.
 - A declaration named exactly `service`, `agent`, `tool`, or `action` names its
   category rather than its behaviour and is no longer classified as one.
-- The Logic Compiler skips utility-named candidates (`log`, `parse`, `isRecord`, …)
-  that crowded out the flows that explain how the system runs.
+- The Logic Compiler uses confidence and flow connectivity to suppress weak,
+  isolated candidates and disconnected utilities without deleting connected or
+  concise business steps.

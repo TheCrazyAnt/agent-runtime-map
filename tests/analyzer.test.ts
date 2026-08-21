@@ -82,6 +82,7 @@ describe("TypeScript analyzer", () => {
         "  private cap(actor: string): void { void actor; }",
         "  private async audit(action: string): Promise<void> { void action; }",
         "  public async importDocument(text: string): Promise<string> { this.cap('a'); await this.audit('i'); return text; }",
+        "  public async createOrder(text: string): Promise<string> { return text; }",
         "}",
         "",
       ].join("\n"),
@@ -94,6 +95,10 @@ describe("TypeScript analyzer", () => {
     expect(byName.get("audit")?.kind).toBe("function");
     // The public entry point of the service is still a service.
     expect(byName.get("importDocument")?.kind).toBe("service");
+    expect(byName.get("createOrder")?.evidence[0]).toMatchObject({
+      confidence: 0.6,
+      detail: "Public member of a service, controller, or repository class",
+    });
 
     const graph = compileLogicGraph(raw, { maxNodes: 20 });
     const labels = graph.nodes.map((node) => node.label);
@@ -125,6 +130,8 @@ describe("TypeScript analyzer", () => {
     await writeFile(path.join(root, "src", "createOrder.test.ts"), "export function createOrderFixture() { return 'x'; }\n");
     await writeFile(path.join(root, "src", "createOrder.test.mjs"), "export function createOrderMjsFixture() { return 'z'; }\n");
     await writeFile(path.join(root, "src", "types.d.ts"), "export declare function createOrderType(): void;\n");
+    await writeFile(path.join(root, "src", "types.d.mts"), "export declare function createOrderModuleType(): void;\n");
+    await writeFile(path.join(root, "src", "modern.mts"), "export function buildModernFlow() { return 'modern'; }\n");
     await writeFile(path.join(root, "src", "__tests__", "helper.ts"), "export function createOrderHelper() { return 'y'; }\n");
 
     const raw = await analyzeTypeScriptProject(root);
@@ -133,7 +140,9 @@ describe("TypeScript analyzer", () => {
     expect(names).not.toContain("createOrderFixture");
     expect(names).not.toContain("createOrderMjsFixture");
     expect(names).not.toContain("createOrderType");
+    expect(names).not.toContain("createOrderModuleType");
     expect(names).not.toContain("createOrderHelper");
+    expect(names).toContain("buildModernFlow");
   });
 
   it("does not classify a bare category name as that category", async () => {
@@ -164,11 +173,42 @@ describe("TypeScript analyzer", () => {
 
     const raw = await analyzeTypeScriptProject(root);
     const confidence = (name: string) => raw.nodes.find((node) => node.name === name)?.evidence[0]?.confidence ?? 0;
+    const method = (name: string) => raw.nodes.find((node) => node.name === name)?.evidence[0]?.method;
 
     // Naming convention > directory convention > a verb appearing in the name.
     expect(confidence("billingService")).toBeGreaterThan(confidence("refundOrder"));
     expect(confidence("refundOrder")).toBeGreaterThan(confidence("createSomething"));
+    expect(method("billingService")).toBe("name_heuristic");
+    expect(method("refundOrder")).toBe("path_heuristic");
+    expect(method("createSomething")).toBe("name_heuristic");
     // Regression: every classification used to report exactly 0.86.
     expect(new Set([confidence("billingService"), confidence("refundOrder"), confidence("createSomething")]).size).toBe(3);
+  });
+
+  it("uses confidence and connectivity without dropping meaningful one-word steps", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-signal-ranking-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src", "workflows"), { recursive: true });
+    await mkdir(path.join(root, "app", "api", "start"), { recursive: true });
+    await writeFile(path.join(root, "src", "workflows", "review.ts"), "export function review() { return 'approved'; }\n");
+    await writeFile(
+      path.join(root, "src", "ids.ts"),
+      "export function createId(value: string) { return value; }\nexport function createNoise() { return 'unused'; }\n",
+    );
+    await writeFile(
+      path.join(root, "app", "api", "start", "route.ts"),
+      "import { createId } from '../../../src/ids.js';\nexport function POST() { return createId('job'); }\n",
+    );
+
+    const raw = await analyzeTypeScriptProject(root);
+    const graph = compileLogicGraph(raw, { maxNodes: 20 });
+    const labels = graph.nodes.map((node) => node.label);
+
+    // A path convention can make a concise business name useful by itself.
+    expect(labels).toContain("Review");
+    // Weak name evidence is retained when real call flow supports it.
+    expect(labels).toContain("Create Id");
+    // The same weak signal without any flow stays in the Raw Graph only.
+    expect(labels).not.toContain("Create Noise");
   });
 });

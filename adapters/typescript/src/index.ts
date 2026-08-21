@@ -23,7 +23,7 @@ import {
   type SourceLanguage,
 } from "@agent-runtime-map/schema";
 
-const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 const EXCLUDED_DIRECTORIES = new Set([
   ".git",
   ".next",
@@ -39,7 +39,7 @@ const EXCLUDED_DIRECTORIES = new Set([
 ]);
 
 /** Tests and type declarations describe the system, they are not the system running. */
-const EXCLUDED_FILE_PATTERN = /(\.(test|spec)\.[cm]?[jt]sx?|\.d\.ts)$/i;
+const EXCLUDED_FILE_PATTERN = /(\.(test|spec)\.[cm]?[jt]sx?|\.d\.[cm]?ts)$/i;
 
 /**
  * Scripts are real code but they are not the running system: smoke tests, one-off
@@ -221,7 +221,7 @@ function collectDeclarations(
     const name = declarationName(declaration);
     if (!name) continue;
     const line = declaration.getStartLineNumber();
-    const { kind, confidence, detail } = classifyDeclaration(relativeFile, name, declaration);
+    const { kind, confidence, detail, method } = classifyDeclaration(relativeFile, name, declaration);
     const id = stableId(kind, `${relativeFile}:${name}:${line}`);
     const node: RawCodeNode = {
       id,
@@ -233,7 +233,7 @@ function collectDeclarations(
         evidence(
           relativeFile,
           line,
-          kind === "function" ? "ast" : kind === "route" ? "framework_convention" : "name_heuristic",
+          method,
           detail,
           confidence,
           name,
@@ -453,6 +453,7 @@ interface Classification {
   readonly kind: RawNodeKind;
   readonly confidence: number;
   readonly detail: string;
+  readonly method: Evidence["method"];
 }
 
 /**
@@ -486,42 +487,42 @@ function classifyDeclaration(relativeFile: string, name: string, declaration: No
   const pathConventionsApply = !SUPPORTING_PATH_PATTERN.test(normalizedPath);
 
   if (/\/app\/api\/.+\/route\.[jt]sx?$/.test(`/${normalizedPath}`) && HTTP_METHODS.has(name.toUpperCase())) {
-    return { kind: "route", confidence: 0.95, detail: "Next.js App Router route handler convention" };
+    return { kind: "route", confidence: 0.95, detail: "Next.js App Router route handler convention", method: "framework_convention" };
   }
   if (/(^|\/)(page|layout)\.[jt]sx?$/.test(normalizedPath) && /(page|layout)$/.test(normalizedName)) {
-    return { kind: "function", confidence: 1, detail: "Declared in source" };
+    return { kind: "function", confidence: 1, detail: "Declared in source", method: "ast" };
   }
   // A private helper of a Service class is not itself a service.
   if (isInternalMember(declaration)) {
-    return { kind: "function", confidence: 1, detail: "Private class member, treated as an implementation detail" };
+    return { kind: "function", confidence: 1, detail: "Private class member, treated as an implementation detail", method: "ast" };
   }
   if (hasQualifiedSuffix(normalizedName, /(agent|crew|workflow|orchestrator)$/)) {
-    return { kind: "agent", confidence: 0.8, detail: "Agent or workflow naming convention" };
+    return { kind: "agent", confidence: 0.8, detail: "Agent or workflow naming convention", method: "name_heuristic" };
   }
   if (pathConventionsApply && /(^|\/)(agents?|crews?|workflows?)(\/|$)/.test(normalizedPath)) {
-    return { kind: "agent", confidence: 0.65, detail: "Declared under an agent or workflow directory" };
+    return { kind: "agent", confidence: 0.65, detail: "Declared under an agent or workflow directory", method: "path_heuristic" };
   }
   if (hasQualifiedSuffix(normalizedName, /(tool|action)$/)) {
-    return { kind: "tool", confidence: 0.8, detail: "Tool or action naming convention" };
+    return { kind: "tool", confidence: 0.8, detail: "Tool or action naming convention", method: "name_heuristic" };
   }
   if (pathConventionsApply && /(^|\/)(tools?|actions?)(\/|$)/.test(normalizedPath)) {
-    return { kind: "tool", confidence: 0.65, detail: "Declared under a tool or action directory" };
+    return { kind: "tool", confidence: 0.65, detail: "Declared under a tool or action directory", method: "path_heuristic" };
   }
   if (hasQualifiedSuffix(normalizedName, /(service|usecase)$/)) {
-    return { kind: "service", confidence: 0.8, detail: "Service naming convention" };
+    return { kind: "service", confidence: 0.8, detail: "Service naming convention", method: "name_heuristic" };
   }
   if (pathConventionsApply && /(^|\/)(services?|use-cases?|commands?)(\/|$)/.test(normalizedPath)) {
-    return { kind: "service", confidence: 0.7, detail: "Declared under a service or use-case directory" };
+    return { kind: "service", confidence: 0.7, detail: "Declared under a service or use-case directory", method: "path_heuristic" };
+  }
+  if (Node.isMethodDeclaration(declaration) && /(service|controller|repository)$/i.test(enclosingClassName(declaration))) {
+    return { kind: "service", confidence: 0.6, detail: "Public member of a service, controller, or repository class", method: "name_heuristic" };
   }
   if (/(handler|execute|process|generate|create|build)/.test(normalizedName)) {
     // The loosest signal in the set: a verb anywhere in the name. Many ordinary
     // helpers match it, so it is reported as such rather than as a confident fact.
-    return { kind: "service", confidence: 0.5, detail: "Business verb in the declaration name" };
+    return { kind: "service", confidence: 0.5, detail: "Business verb in the declaration name", method: "name_heuristic" };
   }
-  if (Node.isMethodDeclaration(declaration) && /(service|controller|repository)$/i.test(enclosingClassName(declaration))) {
-    return { kind: "service", confidence: 0.6, detail: "Public member of a service, controller, or repository class" };
-  }
-  return { kind: "function", confidence: 1, detail: "Declared in source" };
+  return { kind: "function", confidence: 1, detail: "Declared in source", method: "ast" };
 }
 
 function internalFetchRoute(call: CallExpression, expressionText: string, nodes: RawCodeNode[]): RawCodeNode | undefined {
