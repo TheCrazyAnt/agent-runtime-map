@@ -10,7 +10,7 @@ import {
   Play,
   Route,
 } from "lucide-react";
-import type { LogicNodeType } from "@logic-map/schema";
+import type { LogicNodeType } from "@agent-runtime-map/schema";
 
 export interface LogicNodeData extends Record<string, unknown> {
   label: string;

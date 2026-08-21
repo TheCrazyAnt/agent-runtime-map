@@ -1,5 +1,5 @@
 {
-  "name": "@logic-map/example-simple-agent",
+  "name": "@agent-runtime-map/example-simple-agent",
   "version": "0.0.0",
   "private": true,
   "dependencies": {

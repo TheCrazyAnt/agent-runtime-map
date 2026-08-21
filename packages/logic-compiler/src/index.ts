@@ -10,7 +10,7 @@ import {
   type RawCodeEdge,
   type RawCodeGraph,
   type RawCodeNode,
-} from "@logic-map/schema";
+} from "@agent-runtime-map/schema";
 
 export interface CompileOptions {
   graphType?: GraphType;

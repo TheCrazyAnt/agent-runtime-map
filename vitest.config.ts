@@ -7,10 +7,10 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
-      "@logic-map/schema": path.join(root, "packages/schema/src/index.ts"),
-      "@logic-map/typescript": path.join(root, "adapters/typescript/src/index.ts"),
-      "@logic-map/logic-compiler": path.join(root, "packages/logic-compiler/src/index.ts"),
-      "@logic-map/core": path.join(root, "packages/core/src/index.ts"),
+      "@agent-runtime-map/schema": path.join(root, "packages/schema/src/index.ts"),
+      "@agent-runtime-map/typescript": path.join(root, "adapters/typescript/src/index.ts"),
+      "@agent-runtime-map/logic-compiler": path.join(root, "packages/logic-compiler/src/index.ts"),
+      "@agent-runtime-map/core": path.join(root, "packages/core/src/index.ts"),
     },
   },
   test: {

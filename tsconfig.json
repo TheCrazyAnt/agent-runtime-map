@@ -12,10 +12,10 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@logic-map/schema": ["packages/schema/src/index.ts"],
-      "@logic-map/typescript": ["adapters/typescript/src/index.ts"],
-      "@logic-map/logic-compiler": ["packages/logic-compiler/src/index.ts"],
-      "@logic-map/core": ["packages/core/src/index.ts"]
+      "@agent-runtime-map/schema": ["packages/schema/src/index.ts"],
+      "@agent-runtime-map/typescript": ["adapters/typescript/src/index.ts"],
+      "@agent-runtime-map/logic-compiler": ["packages/logic-compiler/src/index.ts"],
+      "@agent-runtime-map/core": ["packages/core/src/index.ts"]
     }
   },
   "include": [

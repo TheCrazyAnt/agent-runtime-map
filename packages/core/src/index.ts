@@ -1,8 +1,8 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { analyzeTypeScriptProject } from "@logic-map/typescript";
-import { compileLogicGraph, type CompileOptions } from "@logic-map/logic-compiler";
-import type { LogicGraph, RawCodeGraph } from "@logic-map/schema";
+import { analyzeTypeScriptProject } from "@agent-runtime-map/typescript";
+import { compileLogicGraph, type CompileOptions } from "@agent-runtime-map/logic-compiler";
+import type { LogicGraph, RawCodeGraph } from "@agent-runtime-map/schema";
 
 export interface GenerateLogicMapOptions extends CompileOptions {
   outputFile?: string;
@@ -48,5 +48,5 @@ function resolveOutput(root: string, file: string): string {
   return path.isAbsolute(file) ? file : path.resolve(root, file);
 }
 
-export type { CompileOptions } from "@logic-map/logic-compiler";
-export type { LogicGraph, RawCodeGraph } from "@logic-map/schema";
+export type { CompileOptions } from "@agent-runtime-map/logic-compiler";
+export type { LogicGraph, RawCodeGraph } from "@agent-runtime-map/schema";

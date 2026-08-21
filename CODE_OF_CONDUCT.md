@@ -1,6 +1,6 @@
 # Code of Conduct
 
-We want Logic Map to be a welcoming, technically rigorous open-source project.
+We want Agent Runtime Map to be a welcoming, technically rigorous open-source project.
 
 Contributors and maintainers are expected to:
 

@@ -11,7 +11,7 @@ body:
       required: true
   - type: input
     attributes:
-      label: Logic Map version
+      label: Agent Runtime Map version
     validations:
       required: true
   - type: input

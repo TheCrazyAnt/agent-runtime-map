@@ -12,7 +12,7 @@ import {
   type Node,
 } from "@xyflow/react";
 import { Braces, ChevronRight, GitFork, PanelRightClose, Search, X } from "lucide-react";
-import type { LogicGraph, LogicNode as LogicGraphNode } from "@logic-map/schema";
+import type { LogicGraph, LogicNode as LogicGraphNode } from "@agent-runtime-map/schema";
 import { layoutGraph } from "./layout";
 import { LogicNodeCard, type LogicNodeData } from "./LogicNodeCard";
 
@@ -76,7 +76,7 @@ function LogicMapViewer() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand"><span className="brand__mark"><GitFork size={18} /></span><span>Logic Map</span></div>
+        <div className="brand"><span className="brand__mark"><GitFork size={18} /></span><span>Agent Runtime Map</span></div>
         <div className="breadcrumb"><span>{graph.project.name}</span><ChevronRight size={14} /><strong>{graph.graphType === "runtime_logic" ? "Runtime logic" : "Product logic"}</strong></div>
         <div className="topbar__meta">Generated {new Date(graph.generatedAt).toLocaleString()}</div>
       </header>

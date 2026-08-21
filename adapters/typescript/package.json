@@ -1,5 +1,5 @@
 {
-  "name": "@logic-map/typescript",
+  "name": "@agent-runtime-map/typescript",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@logic-map/schema": "*",
+    "@agent-runtime-map/schema": "*",
     "ts-morph": "^28.0.0"
   }
 }

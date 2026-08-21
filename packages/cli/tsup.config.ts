@@ -10,7 +10,7 @@ export default defineConfig({
   sourcemap: false,
   minify: true,
   clean: true,
-  noExternal: [/^@logic-map\//],
+  noExternal: [/^@agent-runtime-map\//],
   external: ["ts-morph"],
   banner: { js: "#!/usr/bin/env node" },
 });

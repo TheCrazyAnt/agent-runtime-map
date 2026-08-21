@@ -21,7 +21,7 @@ import {
   type RawCodeNode,
   type RawNodeKind,
   type SourceLanguage,
-} from "@logic-map/schema";
+} from "@agent-runtime-map/schema";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const EXCLUDED_DIRECTORIES = new Set([
