@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,10 +21,14 @@ describe("viewer server", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-server-"));
     temporaryDirectories.push(root);
     await cp(fixture, root, { recursive: true });
+    const viewerDirectory = path.join(root, "viewer");
+    await mkdir(viewerDirectory);
+    await writeFile(path.join(viewerDirectory, "index.html"), '<!doctype html><div id="root"></div>');
     const result = await generateLogicMap(root);
     const server = await startViewerServer({
       graphFile: result.outputFile,
       rawGraphFile: result.rawOutputFile,
+      viewerDirectory,
       port: 0,
     });
     servers.push(server);

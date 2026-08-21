@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 export interface ViewerServerOptions {
   graphFile: string;
   rawGraphFile?: string;
+  viewerDirectory?: string;
   host?: string;
   port?: number;
 }
@@ -30,7 +31,10 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 export async function startViewerServer(options: ViewerServerOptions): Promise<ViewerServer> {
-  const viewerDirectory = await resolveViewerDirectory();
+  const viewerDirectory = options.viewerDirectory
+    ? path.resolve(options.viewerDirectory)
+    : await resolveViewerDirectory();
+  await access(path.join(viewerDirectory, "index.html"));
   const host = options.host ?? "127.0.0.1";
   const preferredPort = options.port ?? 4173;
   const server = createServer((request, response) => {
