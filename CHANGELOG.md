@@ -17,6 +17,14 @@ All notable changes are documented here.
 - Monorepo build, tests, package validation, and CI.
 - Automatic Chinese/English CLI and Viewer localization with a manual language
   switch and deterministic translation of generated semantic labels.
+- A global Agent circuit with a left-side feature list and selectable execution
+  branches for each detected user action or API entry.
+- Static chain simulation with play, pause, single-step, replay, and speed controls.
+- Chain Doctor diagnostics: verified steps highlight green, uncertain inference
+  highlights yellow, and deterministic chain failures highlight red and halt at
+  the affected step with source evidence and a suggested repair.
+- A four-feature sample Agent project covering generation, review branches,
+  knowledge import, and an intentionally incomplete publish circuit.
 
 ### Fixed
 

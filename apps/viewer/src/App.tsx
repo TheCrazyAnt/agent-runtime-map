@@ -11,22 +11,49 @@ import {
   type Edge,
   type Node,
 } from "@xyflow/react";
-import { Braces, ChevronRight, GitFork, PanelRightClose, Search, X } from "lucide-react";
-import type { LogicGraph, LogicNode as LogicGraphNode } from "@agent-runtime-map/schema";
+import {
+  Activity,
+  AlertTriangle,
+  Braces,
+  CheckCircle2,
+  ChevronRight,
+  CircleDotDashed,
+  GitFork,
+  ListTree,
+  PanelRightClose,
+  Pause,
+  Play,
+  RotateCcw,
+  Search,
+  SkipForward,
+  X,
+} from "lucide-react";
+import type {
+  ChainHealth,
+  FeaturePathVariant,
+  FeatureScenario,
+  LogicGraph,
+  LogicNode as LogicGraphNode,
+} from "@agent-runtime-map/schema";
 import { layoutGraph } from "./layout";
 import { LogicNodeCard, type LogicNodeData } from "./LogicNodeCard";
 import {
+  chainHealthLabel,
   detectViewerLocale,
   inferenceMethodLabel,
+  localizeDiagnostic,
+  localizeFeatureLabel,
   localizeGraphDescription,
   localizeGraphTitle,
   localizeNode,
+  localizeVariantLabel,
   messages,
   nodeTypeLabel,
   rememberViewerLocale,
   sourceCountText,
   type UiLocale,
 } from "./i18n";
+import { buildSimulationFrame, nextSimulationStep, type SimulationFrame } from "./simulation";
 
 const nodeTypes = { logic: LogicNodeCard };
 
@@ -41,13 +68,26 @@ export function App() {
 function LogicMapViewer() {
   const [graph, setGraph] = useState<LogicGraph>();
   const [nodes, setNodes] = useState<Node<LogicNodeData>[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
+  const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>();
+  const [selectedVariantId, setSelectedVariantId] = useState<string>();
+  const [stepIndex, setStepIndex] = useState(-1);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string>();
   const [locale, setLocale] = useState<UiLocale>(detectViewerLocale);
   const { fitView } = useReactFlow();
   const text = messages(locale);
+
+  const features = graph?.features ?? [];
+  const selectedFeature = features.find((feature) => feature.id === selectedFeatureId);
+  const selectedVariant = selectedFeature?.variants.find((variant) => variant.id === selectedVariantId)
+    ?? selectedFeature?.variants[0];
+  const frame = useMemo(
+    () => buildSimulationFrame(selectedFeature, selectedVariant, stepIndex),
+    [selectedFeature, selectedVariant, stepIndex],
+  );
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -57,19 +97,62 @@ function LogicMapViewer() {
   useEffect(() => {
     fetch("./graph.json", { cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error(`${text.loadError} (${response.status})`);
+        if (!response.ok) throw new Error(`graph.json (${response.status})`);
         return (await response.json()) as LogicGraph;
       })
-      .then(async (loadedGraph) => {
-        const flowNodes = loadedGraph.nodes.map((node) => toFlowNode(node, locale));
-        const flowEdges = loadedGraph.edges.map(toFlowEdge);
-        setGraph(loadedGraph);
-        setEdges(flowEdges);
-        setNodes((await layoutGraph(flowNodes, flowEdges)) as Node<LogicNodeData>[]);
-        window.setTimeout(() => fitView({ padding: 0.14, duration: 500 }), 20);
-      })
+      .then(setGraph)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
-  }, [fitView, locale, text.loadError]);
+  }, []);
+
+  useEffect(() => {
+    if (!graph) return;
+    const flowNodes = graph.nodes.map((node) => toFlowNode(node, locale));
+    const flowEdges = graph.edges.map((edge) => toFlowEdge(edge, "global"));
+    void layoutGraph(flowNodes, flowEdges).then((layouted) => {
+      setNodes(layouted as Node<LogicNodeData>[]);
+      window.setTimeout(() => fitView({ padding: 0.14, duration: 500 }), 20);
+    });
+  }, [fitView, graph, locale]);
+
+  useEffect(() => {
+    if (!graph || selectedFeatureId !== undefined) return;
+    const available = graph.features ?? [];
+    setSelectedFeatureId(available.find((feature) => feature.health === "healthy")?.id ?? available[0]?.id ?? null);
+  }, [graph, selectedFeatureId]);
+
+  useEffect(() => {
+    setSelectedVariantId(selectedFeature?.variants[0]?.id);
+    setStepIndex(-1);
+    setPlaying(false);
+  }, [selectedFeature?.id]);
+
+  useEffect(() => {
+    if (!nodes.length) return;
+    const focusNodes = selectedVariant
+      ? nodes.filter((node) => selectedVariant.nodeIds.includes(node.id))
+      : nodes;
+    if (!focusNodes.length) return;
+    const timer = window.setTimeout(
+      () => fitView({ nodes: focusNodes, padding: selectedVariant ? 0.32 : 0.14, duration: 620, maxZoom: 1.08 }),
+      30,
+    );
+    return () => window.clearTimeout(timer);
+  }, [fitView, nodes, selectedVariant]);
+
+  useEffect(() => {
+    if (!playing || !selectedFeature || !selectedVariant) return;
+    const timer = window.setTimeout(() => {
+      const next = stepIndex + 1;
+      if (next >= selectedVariant.steps.length) {
+        setPlaying(false);
+        return;
+      }
+      setStepIndex(next);
+      const nextFrame = buildSimulationFrame(selectedFeature, selectedVariant, next);
+      if (nextFrame.halted || next === selectedVariant.steps.length - 1) setPlaying(false);
+    }, 850 / speed);
+    return () => window.clearTimeout(timer);
+  }, [playing, selectedFeature, selectedVariant, speed, stepIndex]);
 
   const matchingIds = useMemo(() => {
     if (!query.trim() || !graph) return new Set(graph?.nodes.map((node) => node.id) ?? []);
@@ -78,27 +161,59 @@ function LogicMapViewer() {
       graph.nodes
         .filter((node) => {
           const localized = localizeNode(node, locale);
-          return `${localized.label} ${localized.description} ${node.label} ${node.sources.map((source) => source.file).join(" ")}`.toLowerCase().includes(normalized);
+          return `${localized.label} ${localized.description} ${node.label} ${node.sources.map((source) => source.file).join(" ")}`
+            .toLowerCase()
+            .includes(normalized);
         })
         .map((node) => node.id),
     );
   }, [graph, locale, query]);
 
-  const visibleNodes = useMemo(
-    () => nodes.map((node) => ({ ...node, className: matchingIds.has(node.id) ? "" : "is-dimmed" })),
-    [nodes, matchingIds],
-  );
+  const visibleNodes = useMemo(() => nodes.map((node) => ({
+    ...node,
+    className: nodeClassName(node.id, matchingIds, selectedFeature, selectedVariant, frame),
+  })), [frame, matchingIds, nodes, selectedFeature, selectedVariant]);
+
+  const visibleEdges = useMemo(() => graph?.edges.map((edge) => {
+    let state: EdgeVisualState = "global";
+    if (selectedVariant) {
+      state = selectedVariant.edgeIds.includes(edge.id) ? "path" : "outside";
+      if (frame.reachedEdgeIds.has(edge.id)) state = "reached";
+      if (frame.currentEdgeIds.has(edge.id)) state = "current";
+      if (frame.errorEdgeIds.has(edge.id) || (frame.errorNodeIds.has(edge.target) && frame.reachedEdgeIds.has(edge.id))) state = "error";
+    }
+    return toFlowEdge(edge, state);
+  }) ?? [], [frame, graph, selectedVariant]);
+
   const selected = graph?.nodes.find((node) => node.id === selectedId);
-
   const selectNode = useCallback((_event: React.MouseEvent, node: Node) => setSelectedId(node.id), []);
-
+  const selectFeature = (featureId: string | null) => setSelectedFeatureId(featureId);
+  const selectVariant = (variantId: string) => {
+    setSelectedVariantId(variantId);
+    setStepIndex(-1);
+    setPlaying(false);
+  };
+  const play = () => {
+    if (!selectedVariant?.steps.length) return;
+    if (frame.outcome === "complete" || frame.outcome === "error") setStepIndex(-1);
+    setPlaying(true);
+  };
+  const next = () => {
+    setPlaying(false);
+    if (!selectedVariant) return;
+    setStepIndex(nextSimulationStep(selectedVariant, stepIndex));
+  };
+  const reset = () => {
+    setPlaying(false);
+    setStepIndex(-1);
+  };
   const switchLocale = () => {
-    const next = locale === "zh-CN" ? "en" : "zh-CN";
-    rememberViewerLocale(next);
-    setLocale(next);
+    const nextLocale = locale === "zh-CN" ? "en" : "zh-CN";
+    rememberViewerLocale(nextLocale);
+    setLocale(nextLocale);
   };
 
-  if (error) return <ErrorState message={error} locale={locale} />;
+  if (error) return <ErrorState message={`${text.loadError}: ${error}`} locale={locale} />;
   if (!graph) return <LoadingState locale={locale} />;
 
   return (
@@ -119,27 +234,72 @@ function LogicMapViewer() {
           <p>{localizeGraphDescription(graph, locale)}</p>
         </div>
         <div className="stats">
+          <Stat value={features.length} label={text.features} />
           <Stat value={graph.nodes.length} label={text.logicNodes} />
-          <Stat value={graph.edges.length} label={text.flows} />
           <Stat value={graph.project.filesScanned} label={text.files} />
         </div>
+
+        <section className="feature-circuits" aria-label={text.featureCircuits}>
+          <div className="section-heading"><span className="eyebrow">{text.featureCircuits}</span><ListTree size={14} /></div>
+          <p className="section-hint">{text.featureHint}</p>
+          <button
+            className={`feature-card feature-card--global ${selectedFeatureId === null ? "is-active" : ""}`}
+            onClick={() => selectFeature(null)}
+          >
+            <span className="feature-card__icon"><Activity size={14} /></span>
+            <span><strong>{text.wholeSystem}</strong><small>{text.globalView}</small></span>
+          </button>
+          <div className="feature-list">
+            {features.map((feature) => (
+              <button
+                className={`feature-card feature-card--${feature.health} ${feature.id === selectedFeatureId ? "is-active" : ""}`}
+                data-feature-id={feature.id}
+                data-health={feature.health}
+                key={feature.id}
+                onClick={() => selectFeature(feature.id)}
+              >
+                <span className="feature-card__icon"><HealthIcon health={feature.health} /></span>
+                <span>
+                  <strong>{localizeFeatureLabel(feature, graph, locale)}</strong>
+                  <small>{chainHealthLabel(feature.health, locale)} · {Math.round(feature.confidence * 100)}%</small>
+                </span>
+                <ChevronRight size={13} />
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {selectedFeature && selectedVariant ? (
+          <FeatureInspector
+            feature={selectedFeature}
+            variant={selectedVariant}
+            graph={graph}
+            locale={locale}
+            playing={playing}
+            speed={speed}
+            frame={frame}
+            onVariant={selectVariant}
+            onPlay={play}
+            onPause={() => setPlaying(false)}
+            onNext={next}
+            onReset={reset}
+            onSpeed={setSpeed}
+            onSelectNode={setSelectedId}
+          />
+        ) : <div className="feature-empty"><CircleDotDashed size={16} /><span>{text.selectFeature}</span></div>}
+
         <label className="search-box">
           <Search size={15} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={text.search} />
           {query && <button onClick={() => setQuery("")} aria-label={text.clearSearch}><X size={14} /></button>}
         </label>
-        <div className="legend">
-          <span className="eyebrow">{text.nodeTypes}</span>
-          {(["user_action", "entrypoint", "ai_process", "process", "data", "external_system", "result"] as const)
-            .map((type) => <div className="legend__item" key={type}><i className={`legend__dot legend__dot--${type}`} />{nodeTypeLabel(type, locale)}</div>)}
-        </div>
         <div className="sidebar__footer"><Braces size={14} /> {text.staticAnalysis}</div>
       </aside>
 
       <section className="canvas" aria-label={text.logicGraph}>
         <ReactFlow
           nodes={visibleNodes}
-          edges={edges}
+          edges={visibleEdges}
           nodeTypes={nodeTypes}
           onNodeClick={selectNode}
           onPaneClick={() => setSelectedId(undefined)}
@@ -162,6 +322,107 @@ function LogicMapViewer() {
   );
 }
 
+function FeatureInspector({
+  feature,
+  variant,
+  graph,
+  locale,
+  playing,
+  speed,
+  frame,
+  onVariant,
+  onPlay,
+  onPause,
+  onNext,
+  onReset,
+  onSpeed,
+  onSelectNode,
+}: {
+  feature: FeatureScenario;
+  variant: FeaturePathVariant;
+  graph: LogicGraph;
+  locale: UiLocale;
+  playing: boolean;
+  speed: number;
+  frame: SimulationFrame;
+  onVariant: (id: string) => void;
+  onPlay: () => void;
+  onPause: () => void;
+  onNext: () => void;
+  onReset: () => void;
+  onSpeed: (speed: number) => void;
+  onSelectNode: (id: string) => void;
+}) {
+  const text = messages(locale);
+  const currentNames = [...frame.currentNodeIds].flatMap((id) => {
+    const node = graph.nodes.find((candidate) => candidate.id === id);
+    return node ? [localizeNode(node, locale).label] : [];
+  });
+  const status = frame.outcome === "idle" ? text.ready
+    : frame.outcome === "error" ? text.stopped
+      : frame.outcome === "complete" ? text.completed
+        : text.running;
+
+  return (
+    <section className="chain-inspector" data-outcome={frame.outcome}>
+      <div className="section-heading"><span className="eyebrow">{text.choosePath}</span><span>{feature.variants.length}</span></div>
+      <select value={variant.id} onChange={(event) => onVariant(event.target.value)} aria-label={text.choosePath}>
+        {feature.variants.map((item) => <option value={item.id} key={item.id}>{localizeVariantLabel(item, graph, locale)}</option>)}
+      </select>
+      <div className={`player-status player-status--${frame.outcome}`}>
+        <span className="player-status__pulse" />
+        <span><strong>{status}</strong><small>{currentNames.join(" · ") || `${text.step} 0 / ${variant.steps.length}`}</small></span>
+        <b>{Math.max(0, frame.stepIndex + 1)}/{variant.steps.length}</b>
+      </div>
+      <div className="player-controls" aria-label={text.chainCheck}>
+        <button onClick={playing ? onPause : onPlay} title={playing ? text.pause : text.play} aria-label={playing ? text.pause : text.play}>
+          {playing ? <Pause size={14} /> : <Play size={14} />}
+        </button>
+        <button onClick={onNext} title={text.nextStep} aria-label={text.nextStep}><SkipForward size={14} /></button>
+        <button onClick={onReset} title={text.replay} aria-label={text.replay}><RotateCcw size={14} /></button>
+        <div className="speed-control"><span>{text.speed}</span>{[0.5, 1, 2].map((value) => <button className={speed === value ? "is-active" : ""} onClick={() => onSpeed(value)} key={value}>{value}×</button>)}</div>
+      </div>
+      <div className="diagnostics">
+        <div className="section-heading"><span className="eyebrow">{text.diagnostics}</span><span>{feature.diagnostics.length}</span></div>
+        {!feature.diagnostics.length && <div className="diagnostics__clear"><CheckCircle2 size={13} />{text.noDiagnostics}</div>}
+        {feature.diagnostics.map((diagnostic) => {
+          const localized = localizeDiagnostic(diagnostic, graph, locale);
+          return (
+            <button
+              className={`diagnostic diagnostic--${diagnostic.severity}`}
+              data-diagnostic-code={diagnostic.code}
+              key={diagnostic.id}
+              onClick={() => diagnostic.nodeId && graph.nodes.some((node) => node.id === diagnostic.nodeId) && onSelectNode(diagnostic.nodeId)}
+            >
+              <AlertTriangle size={13} />
+              <span><strong>{localized.message}</strong><small>{text.recommendation}：{localized.suggestion}</small></span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function nodeClassName(
+  nodeId: string,
+  matchingIds: Set<string>,
+  feature: FeatureScenario | undefined,
+  variant: FeaturePathVariant | undefined,
+  frame: SimulationFrame,
+): string {
+  const classes: string[] = [];
+  if (!matchingIds.has(nodeId)) classes.push("is-dimmed");
+  if (!feature || !variant) return classes.join(" ");
+  if (!variant.nodeIds.includes(nodeId)) classes.push("is-outside-path");
+  else if (frame.errorNodeIds.has(nodeId)) classes.push("is-chain-error");
+  else if (frame.currentNodeIds.has(nodeId)) classes.push("is-current");
+  else if (frame.warningNodeIds.has(nodeId)) classes.push("is-chain-warning");
+  else if (frame.completedNodeIds.has(nodeId)) classes.push("is-chain-complete");
+  else classes.push("is-path-pending");
+  return classes.join(" ");
+}
+
 function toFlowNode(node: LogicGraphNode, locale: UiLocale): Node<LogicNodeData> {
   const localized = localizeNode(node, locale);
   return {
@@ -179,18 +440,34 @@ function toFlowNode(node: LogicGraphNode, locale: UiLocale): Node<LogicNodeData>
   };
 }
 
-function toFlowEdge(edge: LogicGraph["edges"][number]): Edge {
+type EdgeVisualState = "global" | "outside" | "path" | "reached" | "current" | "error";
+
+function toFlowEdge(edge: LogicGraph["edges"][number], state: EdgeVisualState): Edge {
   const dataFlow = edge.type === "data_flow";
+  const colors: Record<EdgeVisualState, string> = {
+    global: dataFlow ? "#a78bfa" : "#637086",
+    outside: "#303642",
+    path: "#6f6594",
+    reached: "#34d399",
+    current: "#b8a8ff",
+    error: "#fb4d62",
+  };
+  const color = colors[state];
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
     type: "smoothstep",
-    animated: dataFlow,
+    animated: state === "current" || (state === "global" && dataFlow),
     label: edge.label,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: dataFlow ? "#a78bfa" : "#637086" },
-    style: { stroke: dataFlow ? "#a78bfa" : "#637086", strokeWidth: dataFlow ? 1.8 : 1.35 },
+    className: `chain-edge chain-edge--${state}`,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color },
+    style: { stroke: color, strokeWidth: ["current", "error"].includes(state) ? 2.8 : state === "reached" ? 2.1 : 1.35, opacity: state === "outside" ? 0.16 : 1 },
   };
+}
+
+function HealthIcon({ health }: { health: ChainHealth }) {
+  return health === "healthy" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />;
 }
 
 function EvidencePanel({ node, locale, onClose }: { node: LogicGraphNode; locale: UiLocale; onClose: () => void }) {

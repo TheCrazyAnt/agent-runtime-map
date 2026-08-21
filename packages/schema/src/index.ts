@@ -125,6 +125,59 @@ export interface LogicEdge {
   rawEdgeIds: string[];
 }
 
+export type ChainHealth = "healthy" | "warning" | "error";
+
+export type ChainDiagnosticSeverity = "info" | "warning" | "error";
+
+export interface ChainDiagnostic {
+  id: string;
+  code:
+    | "CHAIN_BROKEN_REFERENCE"
+    | "CHAIN_CYCLE"
+    | "CHAIN_LOW_CONFIDENCE"
+    | "CHAIN_NO_DOWNSTREAM"
+    | "CHAIN_NO_RESULT"
+    | "CHAIN_PATH_LIMIT";
+  severity: ChainDiagnosticSeverity;
+  message: string;
+  suggestion: string;
+  nodeId?: string;
+  edgeId?: string;
+  sources: SourceLocation[];
+  confidence: number;
+}
+
+export interface FeatureSimulationStep {
+  order: number;
+  nodeIds: string[];
+  incomingEdgeIds: string[];
+}
+
+export interface FeaturePathVariant {
+  id: string;
+  label: string;
+  description: string;
+  nodeIds: string[];
+  edgeIds: string[];
+  steps: FeatureSimulationStep[];
+  resultNodeId?: string;
+  confidence: number;
+}
+
+export interface FeatureScenario {
+  id: string;
+  label: string;
+  description: string;
+  entryNodeIds: string[];
+  resultNodeIds: string[];
+  nodeIds: string[];
+  edgeIds: string[];
+  variants: FeaturePathVariant[];
+  diagnostics: ChainDiagnostic[];
+  health: ChainHealth;
+  confidence: number;
+}
+
 export interface LogicGraph {
   schemaVersion: typeof SCHEMA_VERSION;
   generatedAt: string;
@@ -134,6 +187,7 @@ export interface LogicGraph {
   project: ProjectSummary;
   nodes: LogicNode[];
   edges: LogicEdge[];
+  features: FeatureScenario[];
   diagnostics: Diagnostic[];
 }
 

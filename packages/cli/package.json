@@ -1,7 +1,7 @@
 {
   "name": "agent-runtime-map",
   "version": "0.1.0",
-  "description": "Turn a TypeScript or JavaScript codebase into an evidence-backed interactive Agent Runtime Map.",
+  "description": "Inspect every Agent feature as an evidence-backed, step-through execution circuit.",
   "homepage": "https://github.com/tangyishun9846/agent-runtime-map#readme",
   "repository": {
     "type": "git",
@@ -44,7 +44,9 @@
     "architecture",
     "agents",
     "agent-runtime-map",
-    "logic-map"
+    "logic-map",
+    "agent-debugging",
+    "workflow"
   ],
   "publishConfig": {
     "access": "public"

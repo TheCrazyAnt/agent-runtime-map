@@ -88,6 +88,11 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
         text.scanned(result.rawGraph.project.filesScanned),
         text.found(result.rawGraph.nodes.length, result.rawGraph.edges.length),
         text.compiled(result.graph.nodes.length, result.graph.edges.length),
+        text.featureSummary(
+          result.graph.features.length,
+          result.graph.features.filter((feature) => feature.health === "error").length,
+          result.graph.features.filter((feature) => feature.health === "warning").length,
+        ),
         text.logicGraph(result.outputFile),
         result.rawOutputFile ? text.rawGraph(result.rawOutputFile) : undefined,
       ]

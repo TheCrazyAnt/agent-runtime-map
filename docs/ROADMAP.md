@@ -7,6 +7,9 @@
 - heuristic Logic Compiler
 - local interactive Viewer
 - evidence and confidence
+- global Agent circuit with per-feature routes and branch variants
+- play, pause, single-step, replay, and playback speed for static route simulation
+- Chain Doctor with green, yellow, and red evidence-backed states
 - public CLI package
 
 ## 0.2 — Semantic compiler
@@ -32,4 +35,4 @@
 - actual execution-path overlays
 - run replay, timing, token, and error metadata
 
-Observability, APM, and live Agent playback are deliberately outside the current MVP.
+Observability, APM, and actual live Agent playback are deliberately outside the current MVP. The 0.1 player walks the statically compiled route and is labeled as a simulation.
