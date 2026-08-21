@@ -13,9 +13,14 @@
   },
   "type": "module",
   "bin": {
-    "logic-map": "./dist/cli.js"
+    "logic-map": "dist/cli.js"
   },
-  "files": ["dist", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
   "scripts": {
     "build": "tsup && node scripts/copy-viewer.mjs",
     "prepack": "npm run build -w @logic-map/viewer && npm run build",
@@ -27,8 +32,19 @@
   "devDependencies": {
     "@logic-map/core": "*"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "license": "MIT",
-  "keywords": ["codebase", "visualization", "static-analysis", "architecture", "agents", "logic-map"],
-  "publishConfig": { "access": "public" }
+  "keywords": [
+    "codebase",
+    "visualization",
+    "static-analysis",
+    "architecture",
+    "agents",
+    "logic-map"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

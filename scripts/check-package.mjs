@@ -15,7 +15,7 @@ for (const required of ["dist/cli.js", "dist/viewer/index.html", "dist/licenses/
 if (report.size > 2_000_000) throw new Error(`Publish tarball is unexpectedly large: ${report.size} bytes`);
 
 const manifest = JSON.parse(await readFile(new URL("../packages/cli/package.json", import.meta.url), "utf8"));
-if (manifest.name !== "logic-map" || manifest.bin?.["logic-map"] !== "./dist/cli.js") {
+if (manifest.name !== "logic-map" || manifest.bin?.["logic-map"] !== "dist/cli.js") {
   throw new Error("Public package name or binary mapping is invalid.");
 }
 if (Object.keys(manifest.dependencies ?? {}).some((name) => name.startsWith("@logic-map/"))) {
