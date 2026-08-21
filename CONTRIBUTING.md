@@ -21,7 +21,7 @@ node packages/cli/dist/cli.js examples/simple-agent --no-open
 
 ## Design rules
 
-Logic Map separates code facts from human interpretation:
+Agent Runtime Map separates code facts from human interpretation:
 
 1. The analyzer records deterministic facts in `RawCodeGraph`.
 2. The Logic Compiler selects, connects, and labels human-scale logic nodes.
@@ -51,4 +51,4 @@ Prefer a small adapter or detector with explicit conventions over adding framewo
 
 ## Reporting bugs
 
-Include the Logic Map version, Node.js version, framework, minimal reproduction, expected flow, actual flow, and relevant diagnostics. Remove secrets and proprietary source before attaching generated graph files.
+Include the Agent Runtime Map version, Node.js version, framework, minimal reproduction, expected flow, actual flow, and relevant diagnostics. Remove secrets and proprietary source before attaching generated graph files.

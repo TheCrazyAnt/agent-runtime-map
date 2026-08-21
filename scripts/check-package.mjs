@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 
-const packed = spawnSync("npm", ["pack", "--workspace", "logic-map", "--dry-run", "--json", "--ignore-scripts"], {
+const packed = spawnSync("npm", ["pack", "--workspace", "agent-runtime-map", "--dry-run", "--json", "--ignore-scripts"], {
   encoding: "utf8",
   stdio: ["ignore", "pipe", "inherit"],
 });
@@ -15,10 +15,14 @@ for (const required of ["dist/cli.js", "dist/viewer/index.html", "dist/licenses/
 if (report.size > 2_000_000) throw new Error(`Publish tarball is unexpectedly large: ${report.size} bytes`);
 
 const manifest = JSON.parse(await readFile(new URL("../packages/cli/package.json", import.meta.url), "utf8"));
-if (manifest.name !== "logic-map" || manifest.bin?.["logic-map"] !== "./dist/cli.js") {
+if (
+  manifest.name !== "agent-runtime-map" ||
+  manifest.bin?.["agent-runtime-map"] !== "dist/cli.js" ||
+  manifest.bin?.["logic-map"] !== "dist/cli.js"
+) {
   throw new Error("Public package name or binary mapping is invalid.");
 }
-if (Object.keys(manifest.dependencies ?? {}).some((name) => name.startsWith("@logic-map/"))) {
+if (Object.keys(manifest.dependencies ?? {}).some((name) => name.startsWith("@agent-runtime-map/"))) {
   throw new Error("Public package must not depend on unpublished workspace packages.");
 }
 

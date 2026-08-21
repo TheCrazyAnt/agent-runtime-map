@@ -1,6 +1,6 @@
 # Architecture
 
-Logic Map is a compiler pipeline, not a diagram parser.
+Agent Runtime Map is a compiler pipeline, not a diagram parser.
 
 ```text
 Codebase
@@ -37,4 +37,4 @@ Raw IDs are derived from node kind and stable source identity using SHA-1 prefix
 
 ## Trust model
 
-Logic Map parses repository text but does not execute the inspected project. Evidence paths are relative to the project root. The absolute root exists only in project metadata and should be treated as sensitive if graph files are shared.
+Agent Runtime Map parses repository text but does not execute the inspected project. Evidence paths are relative to the project root. The absolute root exists only in project metadata and should be treated as sensitive if graph files are shared.

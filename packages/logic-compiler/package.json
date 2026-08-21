@@ -1,5 +1,5 @@
 {
-  "name": "@logic-map/logic-compiler",
+  "name": "@agent-runtime-map/logic-compiler",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,6 +11,6 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@logic-map/schema": "*"
+    "@agent-runtime-map/schema": "*"
   }
 }

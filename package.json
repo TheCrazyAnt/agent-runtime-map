@@ -1,15 +1,15 @@
 {
-  "name": "logic-map-workspace",
+  "name": "agent-runtime-map-workspace",
   "version": "0.1.0",
   "private": true,
-  "description": "Turn your codebase into a logic map.",
-  "homepage": "https://github.com/tangyishun9846/logic-map#readme",
+  "description": "Turn your codebase into an evidence-backed Agent Runtime Map.",
+  "homepage": "https://github.com/tangyishun9846/agent-runtime-map#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tangyishun9846/logic-map.git"
+    "url": "git+https://github.com/tangyishun9846/agent-runtime-map.git"
   },
   "bugs": {
-    "url": "https://github.com/tangyishun9846/logic-map/issues"
+    "url": "https://github.com/tangyishun9846/agent-runtime-map/issues"
   },
   "type": "module",
   "workspaces": [
@@ -18,11 +18,12 @@
     "adapters/*"
   ],
   "scripts": {
-    "build": "npm run build -w @logic-map/schema && npm run build -w @logic-map/typescript && npm run build -w @logic-map/logic-compiler && npm run build -w @logic-map/core && npm run build -w @logic-map/viewer && npm run build -w logic-map",
+    "build": "npm run build -w @agent-runtime-map/schema && npm run build -w @agent-runtime-map/typescript && npm run build -w @agent-runtime-map/logic-compiler && npm run build -w @agent-runtime-map/core && npm run build -w @agent-runtime-map/viewer && npm run build -w agent-runtime-map",
     "clean": "npm run clean --workspaces --if-present",
-    "dev": "npm run build -w @logic-map/viewer && tsx packages/cli/src/cli.ts",
+    "dev": "npm run build -w @agent-runtime-map/viewer && tsx packages/cli/src/cli.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "agent-runtime-map": "tsx packages/cli/src/cli.ts",
     "logic-map": "tsx packages/cli/src/cli.ts",
     "check": "npm run typecheck && npm test && npm run build",
     "release:check": "npm run check && npm audit --audit-level=high && node scripts/check-package.mjs"

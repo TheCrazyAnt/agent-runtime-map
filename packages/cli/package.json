@@ -1,34 +1,52 @@
 {
-  "name": "logic-map",
+  "name": "agent-runtime-map",
   "version": "0.1.0",
-  "description": "Turn a TypeScript or JavaScript codebase into an evidence-backed interactive logic map.",
-  "homepage": "https://github.com/tangyishun9846/logic-map#readme",
+  "description": "Turn a TypeScript or JavaScript codebase into an evidence-backed interactive Agent Runtime Map.",
+  "homepage": "https://github.com/tangyishun9846/agent-runtime-map#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tangyishun9846/logic-map.git",
+    "url": "git+https://github.com/tangyishun9846/agent-runtime-map.git",
     "directory": "packages/cli"
   },
   "bugs": {
-    "url": "https://github.com/tangyishun9846/logic-map/issues"
+    "url": "https://github.com/tangyishun9846/agent-runtime-map/issues"
   },
   "type": "module",
   "bin": {
-    "logic-map": "./dist/cli.js"
+    "agent-runtime-map": "dist/cli.js",
+    "logic-map": "dist/cli.js"
   },
-  "files": ["dist", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
   "scripts": {
     "build": "tsup && node scripts/copy-viewer.mjs",
-    "prepack": "npm run build -w @logic-map/viewer && npm run build",
+    "prepack": "npm run build -w @agent-runtime-map/viewer && npm run build",
     "clean": "rm -rf dist"
   },
   "dependencies": {
     "ts-morph": "^28.0.0"
   },
   "devDependencies": {
-    "@logic-map/core": "*"
+    "@agent-runtime-map/core": "*"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "license": "MIT",
-  "keywords": ["codebase", "visualization", "static-analysis", "architecture", "agents", "logic-map"],
-  "publishConfig": { "access": "public" }
+  "keywords": [
+    "codebase",
+    "visualization",
+    "static-analysis",
+    "architecture",
+    "agents",
+    "agent-runtime-map",
+    "logic-map"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

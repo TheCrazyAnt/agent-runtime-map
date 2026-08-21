@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-The bundled Logic Map Viewer contains React, React DOM, React Flow, ELK.js, Lucide, Zustand, Classcat, D3 modules, Scheduler, and use-sync-external-store.
+The bundled Agent Runtime Map Viewer contains React, React DOM, React Flow, ELK.js, Lucide, Zustand, Classcat, D3 modules, Scheduler, and use-sync-external-store.
 
 Exact upstream license texts are included under `dist/licenses/`.
 

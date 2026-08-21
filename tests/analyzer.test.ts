@@ -3,8 +3,8 @@ import { fileURLToPath } from "node:url";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { analyzeTypeScriptProject } from "@logic-map/typescript";
-import { compileLogicGraph } from "@logic-map/logic-compiler";
+import { analyzeTypeScriptProject } from "@agent-runtime-map/typescript";
+import { compileLogicGraph } from "@agent-runtime-map/logic-compiler";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = path.join(repositoryRoot, "examples", "simple-agent");

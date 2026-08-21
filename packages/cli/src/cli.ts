@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { generateLogicMap } from "@logic-map/core";
+import { generateLogicMap } from "@agent-runtime-map/core";
 import { openBrowser, startViewerServer } from "./server.js";
 
 const VERSION = "0.1.0";
@@ -28,7 +28,7 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
       },
     });
   } catch (error) {
-    process.stderr.write(`logic-map: ${error instanceof Error ? error.message : String(error)}\n\n${helpText()}`);
+    process.stderr.write(`agent-runtime-map: ${error instanceof Error ? error.message : String(error)}\n\n${helpText()}`);
     return 1;
   }
 
@@ -46,12 +46,12 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
   const projectPath = command === "serve" && first !== "serve" ? first ?? "." : parsed.positionals[1] ?? ".";
   const unexpected = command === "serve" && first !== "serve" ? parsed.positionals.slice(1) : parsed.positionals.slice(2);
   if (unexpected.length) {
-    process.stderr.write(`logic-map: unexpected positional argument ${unexpected[0]}\n`);
+    process.stderr.write(`agent-runtime-map: unexpected positional argument ${unexpected[0]}\n`);
     return 1;
   }
   const graphType = parsed.values["graph-type"] ?? "runtime_logic";
   if (graphType !== "runtime_logic" && graphType !== "product_logic") {
-    process.stderr.write("logic-map: --graph-type must be runtime_logic or product_logic\n");
+    process.stderr.write("agent-runtime-map: --graph-type must be runtime_logic or product_logic\n");
     return 1;
   }
 
@@ -102,7 +102,7 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
         ? error.stack ?? error.message
         : error.message
       : String(error);
-    process.stderr.write(`logic-map: ${message}\n`);
+    process.stderr.write(`agent-runtime-map: ${message}\n`);
     return 1;
   }
 }
@@ -135,14 +135,16 @@ function positiveInteger(value: string | undefined, option: string): number | un
 }
 
 function helpText(): string {
-  return `logic-map ${VERSION}
+  return `Agent Runtime Map ${VERSION}
 
 Turn your codebase into an evidence-backed logic map.
 
 Usage:
-  logic-map [project] [options]          Analyze and open the interactive viewer
-  logic-map serve [project] [options]    Analyze and open the interactive viewer
-  logic-map analyze [project] [options]  Generate JSON without starting a server
+  agent-runtime-map [project] [options]          Analyze and open the interactive viewer
+  agent-runtime-map serve [project] [options]    Analyze and open the interactive viewer
+  agent-runtime-map analyze [project] [options]  Generate JSON without starting a server
+
+Alias: logic-map
 
 Options:
   -o, --out <file>            Logic Graph output (default: .logic-map/graph.json)

@@ -1,10 +1,10 @@
-# Logic Map
+# Agent Runtime Map
 
-Turn your codebase into an evidence-backed logic map.
+Turn your codebase into an evidence-backed runtime logic map.
 
-Logic Map reads a TypeScript or JavaScript repository, extracts routes, calls, agents, tools, database operations, and external services, then compresses those code facts into a smaller interactive graph that explains how the system runs.
+Agent Runtime Map reads a TypeScript or JavaScript repository, extracts routes, calls, agents, tools, database operations, and external services, then compresses those code facts into a smaller interactive graph that explains how the system runs.
 
-> Status: **0.1 alpha**. The supported scope is intentionally narrow and documented below. Logic Map does not claim to understand every codebase.
+> Status: **0.1 alpha**. The supported scope is intentionally narrow and documented below. Agent Runtime Map does not claim to understand every codebase.
 
 ## What it produces
 
@@ -39,23 +39,25 @@ Open the URL printed by the command. Press `Ctrl+C` to stop the local server.
 After the first npm release, another project will be able to run:
 
 ```bash
-npx logic-map@latest .
+npx agent-runtime-map@latest .
 ```
 
 Or install it as a development dependency:
 
 ```bash
-npm install --save-dev logic-map
-npx logic-map .
+npm install --save-dev agent-runtime-map
+npx agent-runtime-map .
 ```
 
 ## CLI
 
 ```text
-logic-map [project] [options]          Analyze and open the interactive viewer
-logic-map serve [project] [options]    Analyze and open the interactive viewer
-logic-map analyze [project] [options]  Generate JSON and exit
+agent-runtime-map [project] [options]          Analyze and open the interactive viewer
+agent-runtime-map serve [project] [options]    Analyze and open the interactive viewer
+agent-runtime-map analyze [project] [options]  Generate JSON and exit
 ```
+
+The shorter `logic-map` command remains available as a compatibility alias.
 
 Common options:
 
@@ -96,7 +98,7 @@ Known limits:
 
 ## Privacy and network behavior
 
-Analysis runs locally. Logic Map does not upload source code, invoke an LLM, or add telemetry. The viewer binds to `127.0.0.1` by default. If you deliberately use `--host 0.0.0.0`, graph data and source paths become reachable from your network.
+Analysis runs locally. Agent Runtime Map does not upload source code, invoke an LLM, or add telemetry. The viewer binds to `127.0.0.1` by default. If you deliberately use `--host 0.0.0.0`, graph data and source paths become reachable from your network.
 
 ## Repository layout
 
@@ -106,7 +108,7 @@ packages/schema             Raw Code Graph and Logic Graph protocol
 adapters/typescript         TypeScript/JavaScript static analyzer
 packages/logic-compiler     Human-scale graph compiler
 packages/core               Analysis and output orchestration
-packages/cli                Public, bundled logic-map npm package
+packages/cli                Public, bundled agent-runtime-map npm package
 examples/simple-agent       End-to-end example project
 tests                       Analyzer and viewer-server tests
 ```
@@ -127,4 +129,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing analyzers or semantic ru
 
 ## License
 
-MIT © Logic Map contributors.
+MIT © Agent Runtime Map contributors.
