@@ -66,6 +66,7 @@ Common options:
 --max-nodes <number>     Compiled logic-node limit (default: 20)
 --graph-type <type>      runtime_logic or product_logic
 --description <text>     Optional product context
+--locale <locale>        auto, zh-CN, or en (default: auto)
 --port <number>          Local viewer port (default: 4173)
 --host <host>            Local viewer host (default: 127.0.0.1)
 --no-open                Do not open a browser automatically
@@ -76,6 +77,13 @@ Generated artifacts are stored under `.logic-map/`:
 
 - `graph.json` is the viewer-facing Logic Graph.
 - `raw-graph.json` contains detailed code facts and relationships.
+
+## Language
+
+Agent Runtime Map follows the user's environment automatically: Chinese systems
+and browsers use Chinese, while other locales use English. Use `--locale zh-CN`
+or `--locale en` to override detection. The Viewer also includes a language
+switch. Source symbols and file evidence always retain their original spelling.
 
 ## Current support
 

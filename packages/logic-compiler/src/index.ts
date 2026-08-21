@@ -140,7 +140,12 @@ function toLogicNode(raw: RawCodeNode): LogicNode {
       explanation: raw.evidence.map((item) => item.detail).join("; "),
     },
     rawNodeIds: [raw.id],
-    metadata: { rawKind: raw.kind, ...raw.metadata },
+    metadata: {
+      rawKind: raw.kind,
+      rawName: raw.name,
+      generatedDescription: !raw.description,
+      ...raw.metadata,
+    },
   };
 }
 
@@ -157,7 +162,7 @@ function logicLabel(node: RawCodeNode): string {
   if (node.kind === "route") {
     const method = typeof node.metadata?.method === "string" ? node.metadata.method : undefined;
     const routePath = typeof node.metadata?.path === "string" ? node.metadata.path : undefined;
-    if (method && routePath) return `${titleCase(method.toLowerCase())} ${routePath}`;
+    if (method && routePath) return `${method.toUpperCase()} ${routePath}`;
   }
   if (node.kind === "external_api") return node.name;
   return titleCase(humanize(node.name).replace(/\b(agent|service|handler|controller)\b/gi, "").trim() || humanize(node.name));

@@ -1,10 +1,22 @@
 import { parseArgs } from "node:util";
 import { generateLogicMap } from "@agent-runtime-map/core";
 import { openBrowser, startViewerServer } from "./server.js";
+import {
+  cliText,
+  helpText,
+  isLocaleOption,
+  localeArgument,
+  localizedViewerUrl,
+  resolveCliLocale,
+  type CliText,
+} from "./i18n.js";
 
 const VERSION = "0.1.0";
 
 export async function run(argv = process.argv.slice(2)): Promise<number> {
+  const requestedLocale = localeArgument(argv);
+  const locale = resolveCliLocale(requestedLocale);
+  const text = cliText(locale);
   let parsed;
   try {
     parsed = parseArgs({
@@ -21,6 +33,7 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
         "max-nodes": { type: "string" },
         "graph-type": { type: "string" },
         description: { type: "string" },
+        locale: { type: "string" },
         port: { type: "string", short: "p" },
         host: { type: "string" },
         "no-open": { type: "boolean" },
@@ -28,12 +41,12 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
       },
     });
   } catch (error) {
-    process.stderr.write(`agent-runtime-map: ${error instanceof Error ? error.message : String(error)}\n\n${helpText()}`);
+    process.stderr.write(`agent-runtime-map: ${error instanceof Error ? error.message : String(error)}\n\n${helpText(locale, VERSION)}`);
     return 1;
   }
 
   if (parsed.values.help) {
-    process.stdout.write(helpText());
+    process.stdout.write(helpText(locale, VERSION));
     return 0;
   }
   if (parsed.values.version) {
@@ -46,33 +59,37 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
   const projectPath = command === "serve" && first !== "serve" ? first ?? "." : parsed.positionals[1] ?? ".";
   const unexpected = command === "serve" && first !== "serve" ? parsed.positionals.slice(1) : parsed.positionals.slice(2);
   if (unexpected.length) {
-    process.stderr.write(`agent-runtime-map: unexpected positional argument ${unexpected[0]}\n`);
+    process.stderr.write(`agent-runtime-map: ${text.unexpected(unexpected[0])}\n`);
+    return 1;
+  }
+  if (!isLocaleOption(parsed.values.locale)) {
+    process.stderr.write(`agent-runtime-map: ${text.localeInvalid}\n`);
     return 1;
   }
   const graphType = parsed.values["graph-type"] ?? "runtime_logic";
   if (graphType !== "runtime_logic" && graphType !== "product_logic") {
-    process.stderr.write("agent-runtime-map: --graph-type must be runtime_logic or product_logic\n");
+    process.stderr.write(`agent-runtime-map: ${text.graphTypeInvalid}\n`);
     return 1;
   }
 
   try {
-    process.stdout.write(`Analyzing ${projectPath}...\n`);
+    process.stdout.write(`${text.analyzing(projectPath)}\n`);
     const result = await generateLogicMap(projectPath, {
       outputFile: parsed.values.out,
       rawOutputFile: parsed.values["no-raw"] ? false : parsed.values["raw-out"],
-      maxFiles: positiveInteger(parsed.values["max-files"], "--max-files"),
-      maxNodes: positiveInteger(parsed.values["max-nodes"], "--max-nodes"),
+      maxFiles: positiveInteger(parsed.values["max-files"], "--max-files", text),
+      maxNodes: positiveInteger(parsed.values["max-nodes"], "--max-nodes", text),
       graphType,
       productDescription: parsed.values.description,
     });
 
     process.stdout.write(
       [
-        `Scanned ${result.rawGraph.project.filesScanned} files.`,
-        `Found ${result.rawGraph.nodes.length} code nodes and ${result.rawGraph.edges.length} relationships.`,
-        `Compiled ${result.graph.nodes.length} logic nodes and ${result.graph.edges.length} flows.`,
-        `Logic graph: ${result.outputFile}`,
-        result.rawOutputFile ? `Raw graph: ${result.rawOutputFile}` : undefined,
+        text.scanned(result.rawGraph.project.filesScanned),
+        text.found(result.rawGraph.nodes.length, result.rawGraph.edges.length),
+        text.compiled(result.graph.nodes.length, result.graph.edges.length),
+        text.logicGraph(result.outputFile),
+        result.rawOutputFile ? text.rawGraph(result.rawOutputFile) : undefined,
       ]
         .filter(Boolean)
         .join("\n") + "\n",
@@ -80,19 +97,20 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
     if (command === "analyze") return 0;
 
     const host = parsed.values.host ?? "127.0.0.1";
-    const port = portNumber(parsed.values.port);
+    const port = portNumber(parsed.values.port, text);
     const server = await startViewerServer({
       graphFile: result.outputFile,
       rawGraphFile: result.rawOutputFile,
       host,
       port,
     });
-    process.stdout.write(`Viewer: ${server.url}\nPress Ctrl+C to stop.\n`);
+    const viewerUrl = localizedViewerUrl(server.url, parsed.values.locale);
+    process.stdout.write(`${text.viewer(viewerUrl)}\n${text.stop}\n`);
     if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
-      process.stdout.write(`Warning: the viewer is exposed on ${host}; its graph may contain source paths and code structure.\n`);
+      process.stdout.write(`${text.exposed(host)}\n`);
     }
-    if (!parsed.values["no-open"] && !openBrowser(server.url)) {
-      process.stdout.write(`Could not open a browser automatically. Open ${server.url} manually.\n`);
+    if (!parsed.values["no-open"] && !openBrowser(viewerUrl)) {
+      process.stdout.write(`${text.openFailed(viewerUrl)}\n`);
     }
     await waitForShutdown(server.close);
     return 0;
@@ -107,10 +125,10 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
   }
 }
 
-function portNumber(value: string | undefined): number | undefined {
+function portNumber(value: string | undefined, text: CliText): number | undefined {
   if (value === undefined) return undefined;
   const port = Number(value);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("--port must be an integer between 1 and 65535");
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(text.portInvalid);
   return port;
 }
 
@@ -127,40 +145,11 @@ async function waitForShutdown(close: () => Promise<void>): Promise<void> {
   });
 }
 
-function positiveInteger(value: string | undefined, option: string): number | undefined {
+function positiveInteger(value: string | undefined, option: string, text: CliText): number | undefined {
   if (value === undefined) return undefined;
   const number = Number(value);
-  if (!Number.isInteger(number) || number <= 0) throw new Error(`${option} must be a positive integer`);
+  if (!Number.isInteger(number) || number <= 0) throw new Error(text.positiveInteger(option));
   return number;
-}
-
-function helpText(): string {
-  return `Agent Runtime Map ${VERSION}
-
-Turn your codebase into an evidence-backed logic map.
-
-Usage:
-  agent-runtime-map [project] [options]          Analyze and open the interactive viewer
-  agent-runtime-map serve [project] [options]    Analyze and open the interactive viewer
-  agent-runtime-map analyze [project] [options]  Generate JSON without starting a server
-
-Alias: logic-map
-
-Options:
-  -o, --out <file>            Logic Graph output (default: .logic-map/graph.json)
-      --raw-out <file>        Raw Code Graph output (default: .logic-map/raw-graph.json)
-      --no-raw                Do not write the Raw Code Graph
-      --max-files <number>    Maximum source files to analyze (default: 2000)
-      --max-nodes <number>    Maximum compiled logic nodes (default: 20)
-      --graph-type <type>     runtime_logic or product_logic
-      --description <text>    Optional product context for the graph
-  -p, --port <number>         Viewer port (default: 4173; increments if busy)
-      --host <host>           Viewer host (default: 127.0.0.1)
-      --no-open               Do not open the browser automatically
-      --debug                 Print stack traces for failures
-  -h, --help                  Show help
-  -v, --version               Show version
-`;
 }
 
 process.exitCode = await run();

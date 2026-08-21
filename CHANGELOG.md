@@ -15,6 +15,8 @@ All notable changes are documented here.
 - `serve` and `analyze` CLI modes.
 - Local HTTP server with restrictive file serving and security headers.
 - Monorepo build, tests, package validation, and CI.
+- Automatic Chinese/English CLI and Viewer localization with a manual language
+  switch and deterministic translation of generated semantic labels.
 
 ### Fixed
 

@@ -40,8 +40,8 @@ describe("TypeScript analyzer", () => {
     const flows = graph.edges.map((edge) => `${labels.get(edge.source)} -> ${labels.get(edge.target)}`);
     expect(flows).toContain("Generate Ideas -> Create Story");
     expect(flows).toContain("Create Story -> Build Script");
-    expect(flows).toContain("Handle Submit -> Post /api/generate");
-    expect(flows).toContain("Post /api/generate -> Execute Content Workflow");
+    expect(flows).toContain("Handle Submit -> POST /api/generate");
+    expect(flows).toContain("POST /api/generate -> Execute Content Workflow");
     expect(flows.filter((flow) => flow.endsWith("-> OpenAI API"))).toHaveLength(3);
   });
 

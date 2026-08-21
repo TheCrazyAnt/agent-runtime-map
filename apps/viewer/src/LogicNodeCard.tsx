@@ -16,8 +16,9 @@ export interface LogicNodeData extends Record<string, unknown> {
   label: string;
   description: string;
   nodeType: LogicNodeType;
+  typeLabel: string;
   confidence: number;
-  sourceCount: number;
+  sourceText: string;
 }
 
 const ICONS: Record<LogicNodeType, ComponentType<{ size?: number; strokeWidth?: number }>> = {
@@ -31,17 +32,6 @@ const ICONS: Record<LogicNodeType, ComponentType<{ size?: number; strokeWidth?: 
   result: CheckCircle2,
 };
 
-const TYPE_LABELS: Record<LogicNodeType, string> = {
-  user_action: "USER ACTION",
-  entrypoint: "ENTRYPOINT",
-  process: "PROCESS",
-  ai_process: "AI PROCESS",
-  decision: "DECISION",
-  data: "DATA",
-  external_system: "EXTERNAL",
-  result: "RESULT",
-};
-
 export function LogicNodeCard({ data, selected }: NodeProps) {
   const value = data as LogicNodeData;
   const Icon = ICONS[value.nodeType];
@@ -50,12 +40,12 @@ export function LogicNodeCard({ data, selected }: NodeProps) {
       <Handle type="target" position={Position.Left} className="logic-handle" />
       <div className="logic-node__topline">
         <span className="logic-node__icon"><Icon size={15} strokeWidth={2.2} /></span>
-        <span className="logic-node__type">{TYPE_LABELS[value.nodeType]}</span>
+        <span className="logic-node__type">{value.typeLabel}</span>
         <span className="logic-node__confidence">{Math.round(value.confidence * 100)}%</span>
       </div>
       <h3>{value.label}</h3>
       <p>{value.description}</p>
-      <div className="logic-node__sources">{value.sourceCount} source{value.sourceCount === 1 ? "" : "s"}</div>
+      <div className="logic-node__sources">{value.sourceText}</div>
       <Handle type="source" position={Position.Right} className="logic-handle" />
     </article>
   );
