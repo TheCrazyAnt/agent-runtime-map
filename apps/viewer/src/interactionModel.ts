@@ -1,4 +1,5 @@
 import type { Edge, Node, XYPosition } from "@xyflow/react";
+import { BLUEPRINT_CODE_NODE_HEIGHT, BLUEPRINT_CODE_NODE_WIDTH } from "@agent-runtime-map/react";
 import type { BlueprintCodeNodeData, BlueprintLogicNodeData } from "@agent-runtime-map/react";
 import type { FeaturePathVariant, LogicNode, RawCodeGraph, RawCodeNode } from "@agent-runtime-map/schema";
 
@@ -18,23 +19,47 @@ export interface VariantTransition {
 
 export type LayoutPositions = Record<string, XYPosition>;
 
+export interface CodeDetailOptions {
+  limit?: number;
+  /**
+   * Raw children the reader drilled into. Only one further level is ever built from
+   * them: an unbounded drill-down would let a single node redraw the whole call
+   * graph underneath the map, which is the readability the compression exists to
+   * protect. Reaching further is a breadcrumb's job, not a bigger expansion's.
+   */
+  expandedRawIds?: ReadonlySet<string>;
+  secondLevelLimit?: number;
+}
+
+export const MAX_DETAIL_DEPTH = 2;
+
 export function buildCodeDetailExpansion(
   logicNode: LogicNode,
   parentNode: Node<BlueprintLogicNodeData>,
   rawGraph: RawCodeGraph,
-  limit = 9,
+  options: CodeDetailOptions = {},
 ): CodeDetailExpansion {
+  const limit = options.limit ?? 9;
+  const secondLevelLimit = options.secondLevelLimit ?? 5;
   const rawById = new Map(rawGraph.nodes.map((node) => [node.id, node]));
   const seedIds = logicNode.rawNodeIds.filter((id) => rawById.has(id));
-  const neighborIds = rawGraph.edges.flatMap((edge) => {
-    if (seedIds.includes(edge.source)) return [edge.target];
-    if (seedIds.includes(edge.target)) return [edge.source];
-    return [];
-  });
-  const rankedIds = unique([...seedIds, ...neighborIds])
+  const neighborIds = neighboursOf(seedIds, rawGraph);
+  const firstLevelIds = unique([...seedIds, ...neighborIds])
     .sort((left, right) => detailRank(rawById.get(left)) - detailRank(rawById.get(right)))
     .slice(0, limit);
+  const firstLevel = new Set(firstLevelIds);
+
+  // Second level only from children the reader opened, and only from children that
+  // are actually on screen, so an expansion can never grow from something hidden.
+  const focusIds = [...(options.expandedRawIds ?? [])].filter((id) => firstLevel.has(id));
+  const secondLevelIds = unique(neighboursOf(focusIds, rawGraph))
+    .filter((id) => !firstLevel.has(id) && rawById.has(id))
+    .sort((left, right) => detailRank(rawById.get(left)) - detailRank(rawById.get(right)))
+    .slice(0, secondLevelLimit);
+
+  const rankedIds = [...firstLevelIds, ...secondLevelIds];
   const visibleIds = new Set(rankedIds);
+  const depthOf = (rawId: string): 1 | 2 => (firstLevel.has(rawId) ? 1 : 2);
   const columns = Math.min(3, Math.max(1, rankedIds.length));
   const centerOffset = ((columns - 1) * 196) / 2;
   const relations = new Map<string, string>();
@@ -48,6 +73,7 @@ export function buildCodeDetailExpansion(
     if (!rawNode) return [];
     const column = index % columns;
     const row = Math.floor(index / columns);
+    const depth = depthOf(rawId);
     return [{
       id: detailNodeId(logicNode.id, rawId),
       type: "codeDetail",
@@ -60,10 +86,20 @@ export function buildCodeDetailExpansion(
         kind: rawNode.kind,
         source: sourceLabel(rawNode),
         relation: relations.get(rawId),
+        depth,
+        // The last level says so, rather than offering an interaction that does nothing.
+        expandable: depth < MAX_DETAIL_DEPTH,
+        expanded: options.expandedRawIds?.has(rawId) ?? false,
       },
+      // Detail nodes are not part of the Viewer's node state, so React Flow's
+      // measurement change for them is filtered out by `onNodesChange` and never
+      // applied — which left every expanded child stuck at `visibility: hidden`.
+      // The visual package fixes this size, so state it instead of measuring it.
+      width: BLUEPRINT_CODE_NODE_WIDTH,
+      height: BLUEPRINT_CODE_NODE_HEIGHT,
       draggable: false,
       connectable: false,
-      className: "detail-node-enter",
+      className: `detail-node-enter detail-node--depth-${depth}`,
       zIndex: 3,
     } satisfies Node<BlueprintCodeNodeData>];
   });
@@ -140,8 +176,24 @@ function compareSets(previous: string[], current: string[], suffix: "NodeIds" | 
   };
 }
 
+function neighboursOf(ids: string[], rawGraph: RawCodeGraph): string[] {
+  const seeds = new Set(ids);
+  return rawGraph.edges.flatMap((edge) => {
+    if (seeds.has(edge.source)) return [edge.target];
+    if (seeds.has(edge.target)) return [edge.source];
+    return [];
+  });
+}
+
 function detailNodeId(logicId: string, rawId: string): string {
   return `detail:${logicId}:${rawId}`;
+}
+
+/** Splits `detail:<logic id>:<raw id>` back apart; raw ids may contain colons. */
+export function parseDetailNodeId(id: string): { logicId: string; rawId: string } | undefined {
+  const parts = id.split(":");
+  if (parts[0] !== "detail" || parts.length < 3) return undefined;
+  return { logicId: parts[1]!, rawId: parts.slice(2).join(":") };
 }
 
 function rawIdFromDetailNode(id: string): string {
