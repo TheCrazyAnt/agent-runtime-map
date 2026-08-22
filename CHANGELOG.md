@@ -2,6 +2,24 @@
 
 All notable changes are documented here.
 
+## Unreleased
+
+### Added
+
+- The TypeScript analyzer resolves callables that are declared as values rather
+  than as named functions: members of an exported handler object, default-exported
+  arrows, and the callable a factory returned. Calls written inside those bodies
+  used to have no enclosing declaration and were dropped from the graph entirely.
+- A function handed to another function is recorded as a call, with the control
+  kind describing when it receives control: `loop` for an iteration method,
+  `fallback` for a catch handler, `parallel` for `Promise.all`, and
+  `human_approval` for a gate. The reference is reported at lower confidence than
+  a direct invocation, because execution is deferred.
+- Symbol resolution follows destructured bindings (`const { search } = tools`) and
+  object properties that hold a reference rather than a body, bounded to three hops.
+- A named step array (`const pipeline = [classify, draft, send]`) links to the
+  steps it lists.
+
 ## 0.2.0 - 2026-08-22
 
 ### Added

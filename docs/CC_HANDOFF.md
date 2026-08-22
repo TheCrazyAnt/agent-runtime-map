@@ -255,9 +255,13 @@ the visual behavior that unit tests cannot see.
 
 Work in this order unless product direction changes:
 
-1. **More precise TS analysis.** Improve symbol resolution across aliases,
-   callbacks, factories, and common Agent frameworks. Accuracy is more valuable
-   than adding decorative Viewer features.
+1. **More precise TS analysis.** Accuracy is more valuable than adding
+   decorative Viewer features. Aliases, barrel re-exports, namespace imports,
+   destructured bindings, callbacks, step arrays, object-literal handler members,
+   default-exported arrows, and factory results now resolve; see
+   `tests/analyzer.test.ts`. Still open: class instances stored on other objects,
+   callables reached only through a generic registry, and per-framework call
+   conventions.
 2. **First-class framework adapters.** Deepen Next.js/Express/Hono conventions,
    then add LangGraph/OpenAI Agents SDK/CrewAI-compatible adapters only with
    clear factual evidence models.
