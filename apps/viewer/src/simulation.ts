@@ -12,6 +12,7 @@ export interface SimulationFrame {
   errorNodeIds: Set<string>;
   errorEdgeIds: Set<string>;
   warningNodeIds: Set<string>;
+  warningEdgeIds: Set<string>;
   halted: boolean;
   outcome: SimulationOutcome;
 }
@@ -35,6 +36,7 @@ export function buildSimulationFrame(
   const errorNodeIds = diagnosticIds(errorDiagnostics, "nodeId", reachedNodeIds);
   const errorEdgeIds = diagnosticIds(errorDiagnostics, "edgeId", reachedEdgeIds);
   const warningNodeIds = diagnosticIds(warningDiagnostics, "nodeId", reachedNodeIds);
+  const warningEdgeIds = diagnosticIds(warningDiagnostics, "edgeId", reachedEdgeIds);
   const halted = errorNodeIds.size > 0 || errorEdgeIds.size > 0;
   const atEnd = stepIndex === variant.steps.length - 1;
 
@@ -48,6 +50,7 @@ export function buildSimulationFrame(
     errorNodeIds,
     errorEdgeIds,
     warningNodeIds,
+    warningEdgeIds,
     halted,
     outcome: stepIndex < 0 ? "idle" : halted ? "error" : atEnd ? "complete" : "running",
   };
@@ -81,6 +84,7 @@ function emptyFrame(): SimulationFrame {
     errorNodeIds: new Set(),
     errorEdgeIds: new Set(),
     warningNodeIds: new Set(),
+    warningEdgeIds: new Set(),
     halted: false,
     outcome: "idle",
   };

@@ -18,7 +18,7 @@
     "adapters/*"
   ],
   "scripts": {
-    "build": "npm run build -w @agent-runtime-map/schema && npm run build -w @agent-runtime-map/typescript && npm run build -w @agent-runtime-map/logic-compiler && npm run build -w @agent-runtime-map/core && npm run build -w @agent-runtime-map/viewer && npm run build -w agent-runtime-map",
+    "build": "npm run build -w @agent-runtime-map/schema && npm run build -w @agent-runtime-map/react && npm run build -w @agent-runtime-map/typescript && npm run build -w @agent-runtime-map/logic-compiler && npm run build -w @agent-runtime-map/core && npm run build -w @agent-runtime-map/viewer && npm run build -w agent-runtime-map",
     "clean": "npm run clean --workspaces --if-present",
     "dev": "npm run build -w @agent-runtime-map/viewer && tsx packages/cli/src/cli.ts",
     "test": "vitest run",

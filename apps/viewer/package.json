@@ -9,6 +9,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@agent-runtime-map/react": "*",
     "@xyflow/react": "^12.10.0",
     "elkjs": "^0.11.0",
     "lucide-react": "^0.468.0",

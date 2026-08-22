@@ -22,7 +22,9 @@ Codebase
           ↓
       LogicGraph + FeatureScenario[]
           ↓
-     ELK → React Flow → static chain simulation
+     ELK → blueprint component layer → React Flow
+                       ↓
+              static chain simulation
 ```
 
 ## Boundaries
@@ -31,7 +33,7 @@ The analyzer owns source-language and framework facts. It may emit many nodes an
 
 The Logic Compiler owns abstraction. It removes infrastructure noise, keeps business-relevant nodes, projects paths across hidden functions, discovers each user action or API entry as a feature circuit, enumerates bounded branch variants, and explains every heuristic conclusion.
 
-The Viewer owns presentation and deterministic playback state only. It fetches `graph.json`, computes one global layout with ELK, and highlights the selected `FeatureScenario` step by step. It does not execute the inspected project or claim that a live request is running. This keeps future Python, actual runtime trace, and model-assisted adapters compatible with the same UI.
+The Viewer owns presentation and deterministic playback state only. It fetches `graph.json`, computes one global layout with ELK, and highlights the selected `FeatureScenario` step by step. Blueprint nodes, group frames, edge appearances, and measurement helpers are isolated in `packages/react`, so an embedded viewer can consume the same visual contract without importing analyzer code. The Viewer does not execute the inspected project or claim that a live request is running. This keeps future Python, actual runtime trace, and model-assisted adapters compatible with the same UI.
 
 ## Chain Doctor
 

@@ -1,7 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
-
-const NODE_WIDTH = 250;
-const NODE_HEIGHT = 104;
+import { BLUEPRINT_NODE_HEIGHT, BLUEPRINT_NODE_WIDTH } from "@agent-runtime-map/react";
 
 export async function layoutGraph(nodes: Node[], edges: Edge[]): Promise<Node[]> {
   const { default: ELK } = await import("elkjs/lib/elk.bundled.js");
@@ -11,13 +9,13 @@ export async function layoutGraph(nodes: Node[], edges: Edge[]): Promise<Node[]>
     layoutOptions: {
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
-      "elk.spacing.nodeNode": "54",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "92",
+      "elk.spacing.nodeNode": "70",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "118",
       "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-      "elk.padding": "[top=36,left=36,bottom=36,right=36]",
+      "elk.padding": "[top=90,left=90,bottom=90,right=90]",
     },
-    children: nodes.map((node) => ({ id: node.id, width: NODE_WIDTH, height: NODE_HEIGHT })),
+    children: nodes.map((node) => ({ id: node.id, width: BLUEPRINT_NODE_WIDTH, height: BLUEPRINT_NODE_HEIGHT })),
     edges: edges.map((edge) => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })),
   });
 

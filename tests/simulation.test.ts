@@ -61,4 +61,26 @@ describe("chain simulation", () => {
     expect(buildSimulationFrame(brokenFeature, variant, 1)).toMatchObject({ halted: true, outcome: "error" });
     expect([...buildSimulationFrame(brokenFeature, variant, 1).errorNodeIds]).toEqual(["agent"]);
   });
+
+  it("marks a reached warning edge without halting playback", () => {
+    const warningFeature: FeatureScenario = {
+      ...feature,
+      health: "warning",
+      diagnostics: [{
+        id: "uncertain-result",
+        code: "CHAIN_LOW_CONFIDENCE",
+        severity: "warning",
+        message: "uncertain",
+        suggestion: "inspect it",
+        edgeId: "agent-result",
+        sources: [{ file: "src/agent.ts", startLine: 9 }],
+        confidence: 0.6,
+      }],
+    };
+
+    const frame = buildSimulationFrame(warningFeature, variant, 2);
+    expect([...frame.warningEdgeIds]).toEqual(["agent-result"]);
+    expect(frame.halted).toBe(false);
+    expect(frame.outcome).toBe("complete");
+  });
 });

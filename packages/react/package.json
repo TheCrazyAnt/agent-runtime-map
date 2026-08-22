@@ -1,0 +1,50 @@
+{
+  "name": "@agent-runtime-map/react",
+  "version": "0.1.0",
+  "description": "Reusable blueprint-style React Flow components for Agent Runtime Map.",
+  "homepage": "https://github.com/tangyishun9846/agent-runtime-map/tree/main/packages/react#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tangyishun9846/agent-runtime-map.git",
+    "directory": "packages/react"
+  },
+  "bugs": {
+    "url": "https://github.com/tangyishun9846/agent-runtime-map/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --external react --external @xyflow/react --external lucide-react && node scripts/copy-styles.mjs",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@xyflow/react": "^12.10.0",
+    "lucide-react": ">=0.468.0",
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ]
+}

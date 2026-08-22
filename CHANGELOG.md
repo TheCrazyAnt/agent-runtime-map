@@ -25,6 +25,14 @@ All notable changes are documented here.
   the affected step with source evidence and a suggested repair.
 - A four-feature sample Agent project covering generation, review branches,
   knowledge import, and an intentionally incomplete publish circuit.
+- A light engineering-blueprint Viewer with grid paper, icon-first semantic
+  nodes, nested system boundaries, orthogonal labeled flows, and distinct main
+  versus auxiliary data circuits.
+- Reusable open-source React Flow primitives in `@agent-runtime-map/react`,
+  including logic nodes, group frames, playback edge tokens, and boundary
+  measurement helpers.
+- Feature-focused viewport framing and blue/green/amber/red circuit states for
+  idle, active, verified, uncertain, and failed inspection steps.
 
 ### Fixed
 
