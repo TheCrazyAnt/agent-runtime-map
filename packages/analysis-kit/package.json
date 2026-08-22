@@ -1,0 +1,26 @@
+{
+  "name": "@agent-runtime-map/analysis-kit",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Language-neutral classification and evidence helpers shared by Agent Runtime Map adapters.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@agent-runtime-map/schema": "*"
+  }
+}

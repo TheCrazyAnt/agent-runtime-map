@@ -74,6 +74,18 @@ All notable changes are documented here.
   and a failure is never erased by a later event. `<LogicMap trace={...} />` styles
   observed elements distinctly from the statically inferred route.
 
+- A Python adapter producing the same Raw Code Graph as every other adapter.
+  Parsing is delegated to Python's own `ast` module — a hand-rolled parser for an
+  indentation-sensitive grammar would produce guesses dressed as facts — and
+  `ast.parse` builds a tree without importing or executing the code it reads. A
+  project that mixes languages produces one map, not one per language. If no
+  interpreter is available, that is reported rather than passed off as a project
+  with no Python logic.
+- `@agent-runtime-map/analysis-kit` holds the classification and evidence rules
+  both adapters use, so an `agents/` directory means the same thing in either
+  language. The TypeScript adapter now reads its rules from there instead of
+  keeping a second copy.
+
 ### Fixed
 
 - Expanded raw-code children were created but never became visible. They are not

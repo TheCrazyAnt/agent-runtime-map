@@ -99,6 +99,9 @@ packages/react/
 packages/schema/src/index.ts  RawCodeGraph + LogicGraph protocol
 packages/project-reader/      Safe README/docs/PRD/prompt gathering
 adapters/typescript/          TS/JS AST analysis and framework conventions
+adapters/python/              Python AST analysis via a bundled extractor script
+  scripts/extract.py          Parses with Python's `ast`; emits facts, not judgements
+packages/analysis-kit/        Classification and evidence rules shared by adapters
 packages/logic-compiler/      Raw graph compression, features, Chain Doctor
 packages/semantic/            Optional evidence-constrained label enrichment
 packages/core/                Orchestrates reader → analyzer → compiler
@@ -314,8 +317,14 @@ Work in this order unless product direction changes:
    it this way — the moment spans can introduce topology, the graph stops being
    traceable to source. Still open: ingesting a trace from the CLI, and an
    OpenTelemetry span adapter that maps onto these same ids.
-7. **Python support.** Add a separate adapter producing the same Raw Code Graph
-   schema. Do not leak Python-specific structures into the Viewer protocol.
+7. **Python support.** Done: `adapters/python` shells out to a bundled extractor
+   that parses with Python's own `ast` and returns structural facts only; the
+   TypeScript side does all classification, using the rules in
+   `packages/analysis-kit` that the TypeScript adapter also reads. Decorators,
+   dunders, and `self` stop at the adapter boundary — a test asserts they never
+   reach the protocol. Still open: cross-module call resolution (calls resolve by
+   name within the analyzed set, not through import graphs), class-method
+   attribution, LangGraph/CrewAI Python conventions, and Django URL configs.
 
 ## 10. Explicit non-goals for the current line
 

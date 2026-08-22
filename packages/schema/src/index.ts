@@ -1,6 +1,6 @@
 export const SCHEMA_VERSION = "0.1.0" as const;
 
-export type SourceLanguage = "typescript" | "javascript";
+export type SourceLanguage = "typescript" | "javascript" | "python";
 
 export type RawNodeKind =
   | "entrypoint"
