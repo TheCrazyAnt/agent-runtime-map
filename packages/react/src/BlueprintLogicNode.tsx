@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   Bot,
+  BrainCircuit,
   CheckCircle2,
   Database,
   GitBranch,
@@ -9,13 +10,20 @@ import {
   MousePointerClick,
   Play,
   Route,
+  UserCheck,
+  Workflow,
+  Wrench,
 } from "lucide-react";
 
 export type BlueprintLogicNodeType =
   | "user_action"
   | "entrypoint"
   | "process"
+  | "workflow"
   | "ai_process"
+  | "tool"
+  | "model"
+  | "human_gate"
   | "decision"
   | "data"
   | "external_system"
@@ -37,7 +45,11 @@ const ICONS: Record<BlueprintLogicNodeType, ComponentType<{ size?: number; strok
   user_action: MousePointerClick,
   entrypoint: Route,
   process: Play,
+  workflow: Workflow,
   ai_process: Bot,
+  tool: Wrench,
+  model: BrainCircuit,
+  human_gate: UserCheck,
   decision: GitBranch,
   data: Database,
   external_system: Globe2,

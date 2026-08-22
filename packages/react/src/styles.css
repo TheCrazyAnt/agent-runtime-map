@@ -41,7 +41,11 @@
 .blueprint-node--user_action { --node-accent: #3f4a5c; }
 .blueprint-node--entrypoint { --node-accent: #148acb; }
 .blueprint-node--process { --node-accent: #e0802e; }
+.blueprint-node--workflow { --node-accent: #5d5bd4; }
 .blueprint-node--ai_process { --node-accent: #7651c8; }
+.blueprint-node--tool { --node-accent: #167c8c; }
+.blueprint-node--model { --node-accent: #b04f9e; }
+.blueprint-node--human_gate { --node-accent: #cf6f2f; }
 .blueprint-node--decision { --node-accent: #d79818; }
 .blueprint-node--data { --node-accent: #188764; }
 .blueprint-node--external_system { --node-accent: #20272f; }

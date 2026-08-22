@@ -20,7 +20,7 @@ describe("TypeScript analyzer", () => {
 
     expect(raw.project.frameworks).toContain("Next.js");
     expect(raw.nodes.some((node) => node.kind === "route" && node.name === "POST")).toBe(true);
-    expect(raw.nodes.filter((node) => node.kind === "agent").length).toBeGreaterThanOrEqual(9);
+    expect(raw.nodes.filter((node) => node.kind === "agent" || node.kind === "workflow").length).toBeGreaterThanOrEqual(9);
     expect(raw.nodes.some((node) => node.kind === "database" && node.name === "generation data")).toBe(true);
     expect(raw.edges.filter((edge) => edge.kind === "data_flow").length).toBeGreaterThanOrEqual(5);
     expect(raw.nodes.every((node) => node.evidence.length > 0)).toBe(true);
@@ -41,7 +41,7 @@ describe("TypeScript analyzer", () => {
     expect(flows).toContain("Generate Ideas -> Create Story");
     expect(flows).toContain("Create Story -> Build Script");
     expect(flows).toContain("Handle Submit -> POST /api/generate");
-    expect(flows).toContain("POST /api/generate -> Execute Content Workflow");
+    expect(flows).toContain("POST /api/generate -> Execute Content");
     expect(flows.filter((flow) => flow.endsWith("-> OpenAI API")).length).toBeGreaterThanOrEqual(7);
     expect(graph.features).toHaveLength(4);
     expect(graph.features.find((feature) => feature.label === "POST /api/generate")).toMatchObject({ health: "healthy" });
@@ -123,7 +123,7 @@ describe("TypeScript analyzer", () => {
     // A smoke script under agents/ is not an agent.
     expect(byName.get("markStage")?.kind).toBe("function");
     // Real code under the same directory still is.
-    expect(byName.get("reviewWorkflow")?.kind).toBe("agent");
+    expect(byName.get("reviewWorkflow")?.kind).toBe("workflow");
   });
 
   it("skips test files and type declarations", async () => {
@@ -187,6 +187,104 @@ describe("TypeScript analyzer", () => {
     expect(method("createSomething")).toBe("name_heuristic");
     // Regression: every classification used to report exactly 0.86.
     expect(new Set([confidence("billingService"), confidence("refundOrder"), confidence("createSomething")]).size).toBe(3);
+  });
+
+  it("understands declarative Agent, Tool, Model, and Prompt configuration", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-agent-sdk-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "sdk-agent", dependencies: { "@openai/agents": "latest" } }));
+    await writeFile(path.join(root, "src", "research.ts"), [
+      "import { Agent, run, tool } from '@openai/agents';",
+      "const researchPrompt = 'Research {{topic}} and return cited facts.';",
+      "const webSearchTool = tool(async (query: string) => query, { name: 'web_search', description: 'Search the web' });",
+      "const researcherAgent = new Agent({ name: 'Researcher', instructions: researchPrompt, model: 'gpt-5', tools: [webSearchTool] });",
+      "export async function researchWorkflow(topic: string) { return run(researcherAgent, topic); }",
+      "",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const byName = new Map(raw.nodes.map((node) => [node.name, node]));
+    const byId = new Map(raw.nodes.map((node) => [node.id, node]));
+    const edgeNames = raw.edges.map((edge) => `${byId.get(edge.source)?.name} -> ${byId.get(edge.target)?.name}`);
+
+    expect(raw.project.frameworks).toContain("OpenAI Agents SDK");
+    expect(byName.get("Researcher")?.kind).toBe("agent");
+    expect(byName.get("web_search")?.kind).toBe("tool");
+    expect(byName.get("gpt-5")?.kind).toBe("model");
+    expect(byName.get("researchPrompt")?.kind).toBe("prompt");
+    expect(edgeNames).toEqual(expect.arrayContaining([
+      "Researcher -> web_search",
+      "Researcher -> researchPrompt",
+      "Researcher -> gpt-5",
+      "researchWorkflow -> Researcher",
+    ]));
+  });
+
+  it("records conditional, parallel, retry, and fallback call semantics", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-control-flow-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src", "workflow.ts"), [
+      "async function ideaAgent() { return 'idea'; }",
+      "async function storyAgent() { return 'story'; }",
+      "async function reviewAgent() { return true; }",
+      "async function retryAgent() { return true; }",
+      "async function fallbackAgent() { return false; }",
+      "export async function contentWorkflow(approved: boolean) {",
+      "  await Promise.all([ideaAgent(), storyAgent()]);",
+      "  if (approved) await reviewAgent();",
+      "  for (let attempt = 0; attempt < 3; attempt += 1) await retryAgent();",
+      "  try { await reviewAgent(); } catch { await fallbackAgent(); }",
+      "}",
+      "",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    const control = (target: string) => raw.edges.find((edge) => names.get(edge.target) === target && edge.kind === "calls")?.control;
+
+    expect(control("ideaAgent")).toBe("parallel");
+    expect(control("storyAgent")).toBe("parallel");
+    expect(raw.edges.some((edge) => names.get(edge.target) === "reviewAgent" && edge.control === "conditional")).toBe(true);
+    expect(control("retryAgent")).toBe("retry");
+    expect(control("fallbackAgent")).toBe("fallback");
+  });
+
+  it("reconstructs LangGraph-style declarative workflow topology", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-langgraph-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "langgraph-agent", dependencies: { "@langchain/langgraph": "latest" } }));
+    await writeFile(path.join(root, "src", "graph.ts"), [
+      "import { StateGraph } from '@langchain/langgraph';",
+      "const planAgent = async () => 'plan';",
+      "const approveAgent = async () => 'approved';",
+      "const reviseAgent = async () => 'revised';",
+      "const contentGraph = new StateGraph({});",
+      "contentGraph.addNode('plan', planAgent);",
+      "contentGraph.addNode('approve', approveAgent);",
+      "contentGraph.addNode('revise', reviseAgent);",
+      "contentGraph.addEdge('__start__', 'plan');",
+      "contentGraph.addConditionalEdges('plan', () => 'approve', { approve: 'approve', revise: 'revise' });",
+      "contentGraph.addEdge('approve', '__end__');",
+      "contentGraph.addEdge('revise', '__end__');",
+      "",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    const topology = raw.edges.map((edge) => ({
+      flow: `${names.get(edge.source)} -> ${names.get(edge.target)}`,
+      control: edge.control,
+    }));
+
+    expect(raw.project.frameworks).toContain("LangGraph");
+    expect(raw.nodes.find((node) => node.name === "contentGraph")?.kind).toBe("workflow");
+    expect(topology).toContainEqual({ flow: "contentGraph -> planAgent", control: "sequential" });
+    expect(topology).toContainEqual({ flow: "planAgent -> approveAgent", control: "conditional" });
+    expect(topology).toContainEqual({ flow: "planAgent -> reviseAgent", control: "conditional" });
+    expect(raw.nodes.find((node) => node.name === "approveAgent")?.metadata?.terminal).toBe(true);
   });
 
   it("uses confidence and connectivity without dropping meaningful one-word steps", async () => {

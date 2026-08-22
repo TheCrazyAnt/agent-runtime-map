@@ -8,6 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@agent-runtime-map/schema": path.join(root, "packages/schema/src/index.ts"),
+      "@agent-runtime-map/project-reader": path.join(root, "packages/project-reader/src/index.ts"),
+      "@agent-runtime-map/semantic": path.join(root, "packages/semantic/src/index.ts"),
       "@agent-runtime-map/react": path.join(root, "packages/react/src/index.ts"),
       "@agent-runtime-map/typescript": path.join(root, "adapters/typescript/src/index.ts"),
       "@agent-runtime-map/logic-compiler": path.join(root, "packages/logic-compiler/src/index.ts"),

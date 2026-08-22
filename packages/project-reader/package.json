@@ -1,0 +1,16 @@
+{
+  "name": "@agent-runtime-map/project-reader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Safe project context reader for Agent Runtime Map.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agent-runtime-map/schema": "*"
+  }
+}

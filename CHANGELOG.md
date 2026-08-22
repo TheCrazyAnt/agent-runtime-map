@@ -6,6 +6,24 @@ All notable changes are documented here.
 
 ### Added
 
+- A bounded Project Reader for package metadata, README, docs, PRD, prompts, and
+  non-executable `agent-runtime-map.config.json` product context.
+- Semantic raw-graph roles for workflows, tools, models, prompts, and human
+  approval gates in addition to Agents, services, data, APIs, and user actions.
+- Control-flow evidence for conditional branches, parallel execution, loops,
+  retries, fallbacks, and human approval.
+- OpenAI Agents SDK-style Agent/tool/model/instructions detection and
+  LangGraph-style declarative node/edge detection.
+- Product-capability matching that connects documented feature names to
+  reachable code-backed circuits without creating unsupported graph topology.
+- A `ProjectUnderstanding` summary containing detected capabilities, key Agent
+  roles, workflows, tools, models, documents used, and calibrated confidence.
+- Optional evidence-constrained semantic enrichment through the OpenAI Responses
+  API. It is off by default, uses a bounded snapshot and structured output, and
+  cannot add graph topology or evidence.
+- Chain Doctor warnings for unbounded retries, external calls without visible
+  fallbacks, and Agent paths without a visible output.
+- CLI controls for project-context limits and explicit semantic opt-in.
 - TypeScript and JavaScript AST scanning with source evidence.
 - Next.js and Express/Hono route detection.
 - Function-call, internal API, database, external SDK, and variable-result data-flow extraction.

@@ -7,6 +7,8 @@ import {
   type LogicGraph,
   type LogicNode,
   type LogicNodeType,
+  type ProjectCapabilityHint,
+  type ProjectUnderstanding,
   type RawCodeEdge,
   type RawCodeGraph,
   type RawCodeNode,
@@ -40,18 +42,18 @@ export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {
     });
   }
 
-  const logicNodes = kept.map(toLogicNode);
+  const logicNodes = kept.map((node) => toLogicNode(node, raw.context?.capabilityHints ?? []));
   const logicNodeIds = new Map(logicNodes.map((node) => [node.rawNodeIds[0], node.id]));
   const logicEdges = removeRedundantFlowEdges(projectFlowEdges(raw, keptIds, logicNodeIds), logicNodes);
   markResultNodes(logicNodes, logicEdges);
-  const features = compileFeatureScenarios(logicNodes, logicEdges);
+  const features = compileFeatureScenarios(logicNodes, logicEdges, raw.context?.capabilityHints ?? []);
 
   const graphType = options.graphType ?? "runtime_logic";
   if (graphType === "product_logic") {
     diagnostics.push({
-      level: "warning",
-      code: "PRODUCT_LOGIC_HEURISTIC_ONLY",
-      message: "Product logic is currently inferred from code structure and optional user context only; document and LLM semantic analysis are not enabled yet.",
+      level: "info",
+      code: "PRODUCT_LOGIC_CONTEXTUAL_INFERENCE",
+      message: "Product logic combines code structure with README, docs, PRD, prompt, and configuration evidence when available; uncertain matches retain confidence scores.",
     });
   }
   return {
@@ -61,10 +63,13 @@ export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {
     title: `${raw.project.name} ${graphType === "runtime_logic" ? "runtime logic" : "product logic"}`,
     description:
       options.productDescription ??
+      raw.context?.description ??
+      raw.context?.documents.find((document) => document.kind === "readme")?.summary ??
       (graphType === "runtime_logic"
         ? "A static, evidence-backed view of how work flows through the codebase."
         : "A code-informed view of how user actions become product value."),
     project: raw.project,
+    understanding: buildProjectUnderstanding(raw, logicNodes, options.productDescription),
     nodes: logicNodes,
     edges: logicEdges,
     features,
@@ -88,7 +93,7 @@ function isUtilityName(name: string): boolean {
 function isLogicCandidate(node: RawCodeNode, flowDegree: number): boolean {
   // A route is an entrypoint no matter what it is called.
   if (node.kind === "route" || node.kind === "database" || node.kind === "external_api") return true;
-  if (["service", "agent", "tool"].includes(node.kind)) {
+  if (["service", "agent", "workflow", "tool", "human_gate"].includes(node.kind)) {
     // Keep connected steps: calls and data flow are stronger evidence than a
     // generic-looking name. Suppress isolated nodes when their only signal was
     // the weakest business-verb heuristic, plus isolated utility plumbing.
@@ -96,6 +101,7 @@ function isLogicCandidate(node: RawCodeNode, flowDegree: number): boolean {
     return flowDegree > 0 || !isUtilityName(node.name);
   }
   if (node.kind === "function") return /^(handle|on)(submit|click|upload|save|create|generate)|submit|upload/i.test(node.name);
+  if (["model", "prompt"].includes(node.kind)) return flowDegree > 0;
   return false;
 }
 
@@ -113,7 +119,11 @@ function rankCandidates(nodes: RawCodeNode[], degree: Map<string, number>): RawC
   const kindWeight: Record<RawCodeNode["kind"], number> = {
     route: 100,
     agent: 95,
+    workflow: 98,
     tool: 85,
+    model: 81,
+    prompt: 64,
+    human_gate: 92,
     database: 82,
     external_api: 80,
     service: 75,
@@ -129,10 +139,11 @@ function rankCandidates(nodes: RawCodeNode[], degree: Map<string, number>): RawC
   });
 }
 
-function toLogicNode(raw: RawCodeNode): LogicNode {
+function toLogicNode(raw: RawCodeNode, capabilities: ProjectCapabilityHint[]): LogicNode {
   const type = logicType(raw);
   const confidence = maxEvidenceConfidence(raw);
   const heuristic = raw.evidence.some((item) => item.method.includes("heuristic") || item.method === "framework_convention");
+  const capability = bestCapabilityForText(`${raw.name} ${raw.qualifiedName ?? ""} ${raw.description ?? ""}`, capabilities);
   return {
     id: `logic_${raw.id}`,
     type,
@@ -148,6 +159,8 @@ function toLogicNode(raw: RawCodeNode): LogicNode {
     metadata: {
       rawKind: raw.kind,
       rawName: raw.name,
+      documentedCapabilityId: capability?.id,
+      documentedCapabilityLabel: capability?.label,
       generatedDescription: !raw.description,
       ...raw.metadata,
     },
@@ -157,7 +170,12 @@ function toLogicNode(raw: RawCodeNode): LogicNode {
 function logicType(node: RawCodeNode): LogicNodeType {
   if (node.kind === "function" && /submit|click|upload/i.test(node.name)) return "user_action";
   if (node.kind === "route") return "entrypoint";
+  if (node.kind === "workflow") return "workflow";
   if (node.kind === "agent") return "ai_process";
+  if (node.kind === "tool") return "tool";
+  if (node.kind === "model") return "model";
+  if (node.kind === "human_gate") return "human_gate";
+  if (node.kind === "prompt") return "data";
   if (node.kind === "database") return "data";
   if (node.kind === "external_api") return "external_system";
   return "process";
@@ -170,7 +188,7 @@ function logicLabel(node: RawCodeNode): string {
     if (method && routePath) return `${method.toUpperCase()} ${routePath}`;
   }
   if (node.kind === "external_api") return node.name;
-  return titleCase(humanize(node.name).replace(/\b(agent|service|handler|controller)\b/gi, "").trim() || humanize(node.name));
+  return titleCase(humanize(node.name).replace(/\b(agent|service|handler|controller|workflow|orchestrator)\b/gi, "").trim() || humanize(node.name));
 }
 
 function logicDescription(node: RawCodeNode, type: LogicNodeType): string {
@@ -184,7 +202,11 @@ function logicDescription(node: RawCodeNode, type: LogicNodeType): string {
     user_action: `The user initiates ${semanticName}.`,
     entrypoint: `The system receives work through ${node.name}.`,
     process: `The system runs ${semanticName}.`,
+    workflow: `The workflow coordinates ${semanticName}.`,
     ai_process: `An AI workflow performs ${semanticName}.`,
+    tool: `An Agent uses the tool ${semanticName}.`,
+    model: `The Agent uses the model ${node.name}.`,
+    human_gate: `A person reviews or approves ${semanticName}.`,
     decision: `The system evaluates ${semanticName}.`,
     data: `The system reads or changes ${semanticName}.`,
     external_system: `The flow communicates with ${node.name}.`,
@@ -229,15 +251,80 @@ function projectFlowEdges(
 
 function toLogicEdge(source: string, target: string, path: RawCodeEdge[]): LogicEdge {
   const kinds = new Set(path.map((edge) => edge.kind));
-  const type = kinds.has("data_flow") || kinds.has("reads") || kinds.has("writes") ? "data_flow" : "flow";
+  const control = strongestControl(path.map((edge) => edge.control));
+  const type = kinds.has("data_flow") || kinds.has("reads") || kinds.has("writes")
+    ? "data_flow"
+    : control === "conditional" || control === "fallback" || control === "human_approval"
+      ? "branch"
+      : "flow";
   return {
-    id: `logic_edge_${hash(`${source}:${type}:${target}`)}`,
+    id: `logic_edge_${hash(`${source}:${type}:${control ?? "sequential"}:${target}`)}`,
     source,
     target,
     type,
+    label: path.find((edge) => edge.label)?.label ?? controlLabel(control),
+    control,
+    metadata: control ? {
+      retryBounded: control === "retry" ? path.some((edge) => edge.metadata?.retryBounded === true) : undefined,
+      rawControls: [...new Set(path.flatMap((edge) => edge.control ? [edge.control] : []))],
+    } : undefined,
     confidence: assertConfidence(Math.min(...path.flatMap((edge) => edge.evidence.map((item) => item.confidence)))),
     rawEdgeIds: path.map((edge) => edge.id),
   };
+}
+
+function strongestControl(values: Array<RawCodeEdge["control"]>): RawCodeEdge["control"] {
+  const priority: Array<NonNullable<RawCodeEdge["control"]>> = ["human_approval", "fallback", "retry", "loop", "parallel", "conditional", "sequential"];
+  return priority.find((candidate) => values.includes(candidate));
+}
+
+function controlLabel(control: RawCodeEdge["control"]): string | undefined {
+  return control && control !== "sequential" ? control.replace("_", " ") : undefined;
+}
+
+function buildProjectUnderstanding(
+  raw: RawCodeGraph,
+  nodes: LogicNode[],
+  productDescription?: string,
+): ProjectUnderstanding {
+  const context = raw.context;
+  const summary = productDescription ?? context?.description ?? context?.documents.find((document) => document.kind === "readme")?.summary
+    ?? `An evidence-backed understanding of ${raw.project.name}.`;
+  const capabilities = context?.capabilityHints ?? [];
+  const contextualConfidence = capabilities.length
+    ? Math.min(1, capabilities.reduce((total, capability) => total + capability.confidence, 0) / capabilities.length)
+    : context?.documents.length
+      ? 0.7
+      : 0.55;
+  return {
+    summary,
+    capabilities,
+    agentNodeIds: nodes.filter((node) => node.type === "ai_process").map((node) => node.id),
+    workflowNodeIds: nodes.filter((node) => node.type === "workflow").map((node) => node.id),
+    toolNodeIds: nodes.filter((node) => node.type === "tool").map((node) => node.id),
+    modelNodeIds: nodes.filter((node) => node.type === "model").map((node) => node.id),
+    documentsUsed: context?.documents.map((document) => document.path) ?? [],
+    confidence: assertConfidence(contextualConfidence),
+  };
+}
+
+function bestCapabilityForText(text: string, capabilities: ProjectCapabilityHint[]): ProjectCapabilityHint | undefined {
+  const normalized = normalizeSemanticText(text);
+  let best: { capability: ProjectCapabilityHint; score: number } | undefined;
+  for (const capability of capabilities) {
+    const label = normalizeSemanticText(capability.label);
+    const keywordHits = capability.keywords.filter((keyword) => normalized.includes(normalizeSemanticText(keyword))).length;
+    const labelHit = label.length >= 3 && normalized.includes(label) ? 3 : 0;
+    const score = labelHit + keywordHits;
+    if (score > 0 && (!best || score > best.score || (score === best.score && capability.confidence > best.capability.confidence))) {
+      best = { capability, score };
+    }
+  }
+  return best?.capability;
+}
+
+function normalizeSemanticText(value: string): string {
+  return humanize(value).toLowerCase().replace(/\b(agent|api|handler|route|service|workflow)\b/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function removeRedundantFlowEdges(edges: LogicEdge[], nodes: LogicNode[]): LogicEdge[] {
@@ -300,7 +387,7 @@ function uniqueSources<T extends { file: string; startLine: number }>(sources: T
 function dedupeEdges(edges: LogicEdge[]): LogicEdge[] {
   const seen = new Set<string>();
   return edges.filter((edge) => {
-    const key = `${edge.source}:${edge.target}:${edge.type}`;
+    const key = `${edge.source}:${edge.target}:${edge.type}:${edge.control ?? "sequential"}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

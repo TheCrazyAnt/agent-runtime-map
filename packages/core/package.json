@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "@agent-runtime-map/logic-compiler": "*",
+    "@agent-runtime-map/project-reader": "*",
     "@agent-runtime-map/schema": "*",
+    "@agent-runtime-map/semantic": "*",
     "@agent-runtime-map/typescript": "*"
   }
 }
