@@ -313,4 +313,131 @@ describe("TypeScript analyzer", () => {
     // The same weak signal without any flow stays in the Raw Graph only.
     expect(labels).not.toContain("Create Noise");
   });
+
+  it("registers callables declared as values, not just as named functions", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-callable-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src", "tools.ts"), "export function translate(text: string) { return text; }\nexport function summarize(text: string) { return text; }\n");
+    await writeFile(path.join(root, "src", "handlers.ts"), [
+      "import { summarize, translate } from './tools.js';",
+      "export const routeHandlers = {",
+      "  async createDraft(text: string) { return translate(text); },",
+      "  buildDigest: (text: string) => summarize(text),",
+      "};",
+    ].join("\n"));
+    await writeFile(path.join(root, "src", "entry.ts"), "import { summarize } from './tools.js';\nexport default async (text: string) => summarize(text);\n");
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    const flows = raw.edges.filter((edge) => edge.kind === "calls").map((edge) => `${names.get(edge.source)} -> ${names.get(edge.target)}`);
+
+    // An object member is addressable by its owner, so the map cannot show a bare `createDraft`.
+    expect(flows).toContain("routeHandlers.createDraft -> translate");
+    expect(flows).toContain("routeHandlers.buildDigest -> summarize");
+    // A default export borrows the module's name because it has none of its own.
+    expect(flows).toContain("entry -> summarize");
+    // Regression: calls written inside these bodies used to have no enclosing
+    // declaration, so both the caller and the callee vanished from the graph.
+    expect(raw.nodes.some((node) => node.name === "translate")).toBe(true);
+  });
+
+  it("resolves a callable produced by a factory and links what the factory wrapped", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-factory-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", strict: true } }));
+    await writeFile(path.join(root, "src", "main.ts"), [
+      "function sendDraft(text: string) { return text; }",
+      "function withRetry(fn: (value: string) => string) { return (value: string) => fn(value); }",
+      "export const publishDraft = withRetry(sendDraft);",
+      "export function runPublish(text: string) { return publishDraft(text); }",
+      "export const unusedResult = withRetry(sendDraft);",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    const flows = raw.edges.filter((edge) => edge.kind === "calls").map((edge) => `${names.get(edge.source)} -> ${names.get(edge.target)}`);
+
+    expect(flows).toContain("runPublish -> publishDraft");
+    expect(flows).toContain("publishDraft -> sendDraft");
+    // Being callable is inferred from the type, never as certain as a declared function.
+    const publish = raw.nodes.find((node) => node.name === "publishDraft");
+    const declared = raw.nodes.find((node) => node.name === "sendDraft");
+    expect(publish?.evidence[0]?.confidence ?? 1).toBeLessThan(declared?.evidence[0]?.confidence ?? 0);
+    // Asking the type checker is expensive, so a value nothing invokes is never probed.
+    expect(raw.nodes.some((node) => node.name === "unusedResult")).toBe(false);
+  });
+
+  it("records a handed-over callback as a call, with how often it receives control", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-callback-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src", "main.ts"), [
+      "function scoreDraft(text: string) { return text; }",
+      "function reportFailure(error: unknown) { return String(error); }",
+      "function notifyAuthor(text: string) { return text; }",
+      "function approveDraft(text: string) { return text; }",
+      "export function reviewAll(drafts: string[]) { return drafts.map(scoreDraft); }",
+      "export function publish(text: string) { return Promise.resolve(text).then(approveDraft).then(notifyAuthor).catch(reportFailure); }",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    const flow = (source: string, target: string) =>
+      raw.edges.find((edge) => edge.kind === "calls" && names.get(edge.source) === source && names.get(edge.target) === target);
+
+    // An iteration method runs its callback once per element.
+    expect(flow("reviewAll", "scoreDraft")?.control).toBe("loop");
+    expect(flow("publish", "notifyAuthor")?.control).toBe("sequential");
+    // A catch handler only runs when the happy path failed.
+    expect(flow("publish", "reportFailure")?.control).toBe("fallback");
+    // A gate waits for a person whether it is called directly or handed over.
+    expect(flow("publish", "approveDraft")?.control).toBe("human_approval");
+    // The reference is factual, but execution is deferred, so it is not a direct call.
+    expect(flow("reviewAll", "scoreDraft")?.evidence[0]?.confidence).toBeLessThan(0.96);
+  });
+
+  it("follows a destructured binding and a listed step to the real declaration", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-binding-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", strict: true } }));
+    await writeFile(path.join(root, "src", "tools.ts"), "export function summarize(text: string) { return text; }\nexport function expand(text: string) { return text; }\n");
+    await writeFile(path.join(root, "src", "main.ts"), [
+      "import * as tools from './tools.js';",
+      "const { summarize } = tools;",
+      "export function condense(text: string) { return summarize(text); }",
+      "export const draftPipeline = [tools.summarize, tools.expand];",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    const flows = raw.edges.filter((edge) => edge.kind === "calls").map((edge) => `${names.get(edge.source)} -> ${names.get(edge.target)}`);
+
+    expect(flows).toContain("condense -> summarize");
+    // A named step array lists what a runner will invoke.
+    expect(flows).toContain("draftPipeline -> summarize");
+    expect(flows).toContain("draftPipeline -> expand");
+  });
+
+  it("does not let a route handler be claimed twice", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-once-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "once-fixture", dependencies: { express: "latest" } }));
+    await writeFile(path.join(root, "src", "handler.ts"), "export function createOrderHandler() { return 'created'; }\n");
+    await writeFile(path.join(root, "src", "server.ts"), [
+      "import { createOrderHandler } from './handler.js';",
+      "const app = { post(_path: string, _handler: unknown) {} };",
+      "export function registerRoutes() { app.post('/api/orders', createOrderHandler); }",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    // The route node already carries the handler, so registration must not also add a
+    // shortcut edge that lets a feature path skip the route.
+    expect(raw.edges.some((edge) => edge.kind === "handles" && names.get(edge.target) === "createOrderHandler")).toBe(true);
+    expect(raw.edges.some((edge) => edge.kind === "calls" && names.get(edge.source) === "registerRoutes" && names.get(edge.target) === "createOrderHandler")).toBe(false);
+  });
 });

@@ -6,11 +6,18 @@ import {
   Project,
   ScriptTarget,
   SyntaxKind,
+  type ArrowFunction,
+  type BindingElement,
   type CallExpression,
+  type ExportAssignment,
   type Expression,
   type FunctionDeclaration,
+  type FunctionExpression,
+  type Identifier,
   type MethodDeclaration,
   type ObjectLiteralExpression,
+  type PropertyAccessExpression,
+  type PropertyAssignment,
   type SourceFile,
   type VariableDeclaration,
 } from "ts-morph";
@@ -50,6 +57,8 @@ const EXCLUDED_FILE_PATTERN = /(\.(test|spec)\.[cm]?[jt]sx?|\.d\.[cm]?ts)$/i;
  * evidence, but path conventions such as `agents/` must not promote them.
  */
 const SUPPORTING_PATH_PATTERN = /(^|\/)(scripts?|tools?\/dev|examples?|fixtures?|benchmarks?)(\/|$)/i;
+/** Alias, destructuring, and re-export hops to follow before giving up. */
+const MAX_ALIAS_HOPS = 3;
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]);
 const DB_OPERATIONS = new Set([
   "create",
@@ -70,10 +79,46 @@ export interface TypeScriptAnalyzerOptions {
   maxFiles?: number;
 }
 
+/**
+ * A callable is not always a `function` keyword. It can be a member of an exported
+ * handler object, a default-exported arrow, or the value a factory returned. Every
+ * form has to be addressable, otherwise calls inside its body have no enclosing
+ * declaration and are dropped from the graph entirely.
+ */
+type CallableDeclaration =
+  | FunctionDeclaration
+  | MethodDeclaration
+  | VariableDeclaration
+  | PropertyAssignment
+  | ExportAssignment;
+
 interface DeclarationRecord {
   node: RawCodeNode;
-  declaration: FunctionDeclaration | MethodDeclaration | VariableDeclaration;
+  declaration: CallableDeclaration;
 }
+
+/** Node kinds that represent something able to receive control. */
+const CALLABLE_NODE_KINDS = new Set<RawNodeKind>([
+  "agent",
+  "function",
+  "human_gate",
+  "route",
+  "service",
+  "tool",
+  "workflow",
+]);
+
+/** Callee names that invoke their callback argument once per element. */
+const ITERATION_METHODS = new Set([
+  "every",
+  "filter",
+  "flatmap",
+  "foreach",
+  "map",
+  "reduce",
+  "reduceright",
+  "some",
+]);
 
 export async function analyzeTypeScriptProject(
   inputRoot: string,
@@ -136,6 +181,14 @@ export async function analyzeTypeScriptProject(
   for (const sourceFile of sourceFiles) {
     const fileId = fileNodeIds.get(sourceFile.getFilePath());
     if (fileId) collectSemanticConstructs(sourceFile, root, fileId, nodes, edges, declarations);
+  }
+
+  // Indirect callables must be registered before any call pass runs, so that a call
+  // written inside one of them resolves to a declaration instead of being dropped.
+  const invokedNames = collectInvokedNames(sourceFiles);
+  for (const sourceFile of sourceFiles) {
+    const fileId = fileNodeIds.get(sourceFile.getFilePath());
+    if (fileId) collectIndirectCallables(sourceFile, root, fileId, nodes, edges, declarations, invokedNames);
   }
 
   for (const sourceFile of sourceFiles) {
@@ -273,15 +326,18 @@ function collectDeclarations(
   }
 }
 
-function declarationMetadata(
-  declaration: FunctionDeclaration | MethodDeclaration | VariableDeclaration,
-): Record<string, unknown> {
-  const initializer = Node.isVariableDeclaration(declaration) ? declaration.getInitializer() : undefined;
-  const callable = initializer && (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
-    ? initializer
-    : Node.isFunctionDeclaration(declaration) || Node.isMethodDeclaration(declaration)
-      ? declaration
-      : undefined;
+/** The function body behind any form a callable can be declared in. */
+function callableOf(
+  declaration: CallableDeclaration,
+): ArrowFunction | FunctionExpression | FunctionDeclaration | MethodDeclaration | undefined {
+  if (Node.isFunctionDeclaration(declaration) || Node.isMethodDeclaration(declaration)) return declaration;
+  const value = Node.isExportAssignment(declaration) ? declaration.getExpression() : declaration.getInitializer();
+  if (!value) return undefined;
+  return Node.isArrowFunction(value) || Node.isFunctionExpression(value) ? value : undefined;
+}
+
+function declarationMetadata(declaration: CallableDeclaration): Record<string, unknown> {
+  const callable = callableOf(declaration);
   if (!callable) return {};
   const parameters = callable.getParameters().map((parameter) => ({
     name: parameter.getName(),
@@ -499,6 +555,27 @@ function collectSemanticRelations(
     const source = declarations.get(declarationKey(declaration));
     const initializer = declaration.getInitializer();
     if (!source || !initializer || !["agent", "workflow", "tool", "human_gate"].includes(source.node.kind)) continue;
+
+    // A bare step array lists what a runner will invoke. Holding a reference is a
+    // weaker fact than calling, so it is recorded at a lower confidence.
+    if (Node.isArrayLiteralExpression(initializer)) {
+      for (const element of initializer.getElements()) {
+        if (!Node.isIdentifier(element) && !Node.isPropertyAccessExpression(element)) continue;
+        const target = resolveSymbolTarget(element.getSymbol(), declarations);
+        if (!target || target.node.id === source.node.id || !CALLABLE_NODE_KINDS.has(target.node.kind)) continue;
+        const stepEvidence = [evidence(
+          relativeFile,
+          element.getStartLineNumber(),
+          "ast",
+          `${source.node.name} lists ${target.node.name} as a step`,
+          0.8,
+          declaration.getName(),
+        )];
+        edges.push(makeEdge(source.node.id, target.node.id, "calls", stepEvidence, { label: "step", control: "sequential" }));
+      }
+      continue;
+    }
+
     const object = semanticObject(initializer);
     if (!object) continue;
     for (const propertyName of ["tools", "agents", "tasks", "handoffs", "instructions", "prompt", "systemPrompt", "model"]) {
@@ -663,6 +740,7 @@ function collectCalls(
     const callEvidence = [evidence(relativeFile, call.getStartLineNumber(), "ast", `${control === "sequential" ? "Calls" : `${control} call to`} ${expressionText}`, target || internalRoute ? 0.96 : 0.8)];
     if (target) edges.push(makeEdge(caller.node.id, target.node.id, "calls", callEvidence, { control, metadata: controlMetadata }));
     if (target) collectArgumentDataFlows(call, target, declarations, relativeFile, edges);
+    collectCallbackHandoffs(call, caller, target, declarations, relativeFile, control, edges);
 
     if (internalRoute) edges.push(makeEdge(caller.node.id, internalRoute.id, "requests", callEvidence, { control, metadata: controlMetadata }));
 
@@ -740,12 +818,9 @@ function collectFrameworkRoutes(
 ): void {
   const relativeFile = relativePath(root, sourceFile.getFilePath());
   for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    const expression = call.getExpression();
-    if (!Node.isPropertyAccessExpression(expression)) continue;
-    const method = expression.getName().toLowerCase();
-    if (!["get", "post", "put", "patch", "delete", "use"].includes(method)) continue;
-    const owner = expression.getExpression().getText();
-    if (!/^(app|router|server|api)$/.test(owner)) continue;
+    const registration = routeRegistration(call);
+    if (!registration) continue;
+    const { method, owner } = registration;
     const routeArgument = call.getArguments()[0];
     if (!routeArgument || !Node.isStringLiteral(routeArgument)) continue;
     const routePath = routeArgument.getLiteralValue();
@@ -768,10 +843,207 @@ function collectFrameworkRoutes(
   }
 }
 
+/**
+ * `app.post('/orders', handler)` registers a route; the route node already carries
+ * the handler link. Both this pass and the callback pass would otherwise claim the
+ * same handler, so the predicate is shared rather than duplicated.
+ */
+function routeRegistration(call: CallExpression): { method: string; owner: string } | undefined {
+  const expression = call.getExpression();
+  if (!Node.isPropertyAccessExpression(expression)) return undefined;
+  const method = expression.getName().toLowerCase();
+  if (!["get", "post", "put", "patch", "delete", "use"].includes(method)) return undefined;
+  const owner = expression.getExpression().getText();
+  if (!/^(app|router|server|api)$/.test(owner)) return undefined;
+  return { method, owner };
+}
+
+/**
+ * Registers the callables that `collectDeclarations` cannot see, because they are
+ * declared as values rather than as named functions:
+ *
+ * - members of an exported handler object (`export const routes = { create() {} }`)
+ * - a default-exported arrow (`export default async () => {}`)
+ * - the callable a factory returned (`const publish = withRetry(send)`)
+ *
+ * Each one is a real unit of system logic, and until it is registered every call in
+ * its body has no enclosing declaration and is silently discarded.
+ */
+function collectIndirectCallables(
+  sourceFile: SourceFile,
+  root: string,
+  fileId: string,
+  nodes: RawCodeNode[],
+  edges: RawCodeEdge[],
+  declarations: Map<string, DeclarationRecord>,
+  invokedNames: ReadonlySet<string>,
+): void {
+  const relativeFile = relativePath(root, sourceFile.getFilePath());
+  const register = (declaration: CallableDeclaration, name: string, detail: string, ceiling = 1): void => {
+    if (declarations.has(declarationKey(declaration))) return;
+    const line = declaration.getStartLineNumber();
+    const classification = classifyDeclaration(relativeFile, name, declaration);
+    const id = stableId(classification.kind, `${relativeFile}:${name}:${line}`);
+    const itemEvidence = [
+      evidence(
+        relativeFile,
+        line,
+        classification.method,
+        `${detail}; ${classification.detail.toLowerCase()}`,
+        Math.min(classification.confidence, ceiling),
+        name,
+        declaration.getEndLineNumber(),
+      ),
+    ];
+    const node: RawCodeNode = {
+      id,
+      kind: classification.kind,
+      name,
+      qualifiedName: `${relativeFile}#${name}`,
+      language: languageForFile(relativeFile),
+      metadata: declarationMetadata(declaration),
+      evidence: itemEvidence,
+    };
+    nodes.push(node);
+    edges.push(makeEdge(fileId, id, "contains", itemEvidence));
+    declarations.set(declarationKey(declaration), { node, declaration });
+  };
+
+  for (const declaration of sourceFile.getVariableDeclarations()) {
+    const initializer = declaration.getInitializer();
+    if (!initializer) continue;
+    const owner = declaration.getName();
+
+    if (Node.isObjectLiteralExpression(initializer)) {
+      for (const property of initializer.getProperties()) {
+        if (Node.isMethodDeclaration(property)) {
+          register(property, `${owner}.${property.getName()}`, "Callable member of an object literal");
+        } else if (Node.isPropertyAssignment(property) && callableOf(property)) {
+          register(property, `${owner}.${property.getName()}`, "Callable member of an object literal");
+        }
+      }
+      continue;
+    }
+
+    // A factory result is callable by inference, not by syntax, so it never reaches
+    // the certainty of a declared function even when the type checker agrees. Asking
+    // the checker is expensive, so a name nothing ever invokes is rejected first —
+    // otherwise every `useMemo` result in a UI file pays for a full type resolution.
+    if (declarations.has(declarationKey(declaration)) || !invokedNames.has(owner)) continue;
+    const produced = Node.isAwaitExpression(initializer) ? initializer.getExpression() : initializer;
+    if (!Node.isCallExpression(produced)) continue;
+    if (declaration.getType().getCallSignatures().length === 0) continue;
+    register(declaration, owner, `Callable produced by ${produced.getExpression().getText()}`, 0.9);
+  }
+
+  for (const assignment of sourceFile.getExportAssignments()) {
+    if (assignment.isExportEquals() || !callableOf(assignment)) continue;
+    register(assignment, moduleCallableName(relativeFile), "Default-exported callable");
+  }
+}
+
+/**
+ * Every name that is either invoked or handed to another call anywhere in the
+ * project. A value in neither position cannot receive control, so this is a cheap
+ * precondition before asking the type checker whether it is callable at all.
+ */
+function collectInvokedNames(sourceFiles: SourceFile[]): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const sourceFile of sourceFiles) {
+    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const expression = call.getExpression();
+      if (Node.isIdentifier(expression)) names.add(expression.getText());
+      else if (Node.isPropertyAccessExpression(expression)) names.add(expression.getName());
+      for (const argument of referenceArguments(call)) {
+        names.add(Node.isIdentifier(argument) ? argument.getText() : argument.getName());
+      }
+    }
+  }
+  return names;
+}
+
+/** A default export has no name of its own, so the module supplies one. */
+function moduleCallableName(relativeFile: string): string {
+  const base = path.basename(relativeFile).replace(/\.[cm]?[jt]sx?$/i, "");
+  if (!/^(index|route)$/i.test(base)) return base;
+  const parent = path.basename(path.dirname(relativeFile));
+  return parent && parent !== "." ? `${parent} ${base}` : base;
+}
+
+/**
+ * A function handed to another function still runs. `steps.map(runStep)`,
+ * `queue.then(onDone)`, and `withRetry(publish)` are control handoffs, and the
+ * reference is as factual as a direct invocation — only the moment of execution is
+ * deferred, which the control kind records. A value that cannot receive control,
+ * such as a prompt or a model, is recorded as data reaching the call instead.
+ */
+function collectCallbackHandoffs(
+  call: CallExpression,
+  caller: DeclarationRecord,
+  directTarget: DeclarationRecord | undefined,
+  declarations: Map<string, DeclarationRecord>,
+  relativeFile: string,
+  control: ControlFlowKind,
+  edges: RawCodeEdge[],
+): void {
+  if (routeRegistration(call)) return;
+  const expressionText = call.getExpression().getText();
+  for (const argument of referenceArguments(call)) {
+    const resolved = resolveSymbolTarget(argument.getSymbol(), declarations);
+    if (!resolved || resolved.node.id === caller.node.id || resolved.node.id === directTarget?.node.id) continue;
+    const line = argument.getStartLineNumber();
+    if (CALLABLE_NODE_KINDS.has(resolved.node.kind)) {
+      const itemEvidence = [
+        evidence(relativeFile, line, "ast", `${resolved.node.name} is handed to ${expressionText} as a callback`, 0.9),
+      ];
+      // A gate waits for a person whether it is called directly or handed over.
+      const handoffControl = resolved.node.kind === "human_gate"
+        ? "human_approval"
+        : referenceControl(expressionText, control);
+      edges.push(makeEdge(caller.node.id, resolved.node.id, "calls", itemEvidence, { control: handoffControl }));
+      continue;
+    }
+    if (resolved.node.kind === "prompt" || resolved.node.kind === "model") {
+      const itemEvidence = [
+        evidence(relativeFile, line, "ast", `${resolved.node.name} is passed into ${expressionText}`, 0.94),
+      ];
+      edges.push(makeEdge(resolved.node.id, caller.node.id, "data_flow", itemEvidence, { label: resolved.node.kind }));
+    }
+  }
+}
+
+/** Arguments that name an existing declaration, including the members of a step array. */
+function referenceArguments(call: CallExpression): Array<Identifier | PropertyAccessExpression> {
+  const found: Array<Identifier | PropertyAccessExpression> = [];
+  const consider = (node: Node): void => {
+    if (Node.isIdentifier(node) || Node.isPropertyAccessExpression(node)) found.push(node);
+  };
+  for (const argument of call.getArguments()) {
+    if (Node.isArrayLiteralExpression(argument)) argument.getElements().forEach(consider);
+    else consider(argument);
+  }
+  return found;
+}
+
+/** How often, and under what condition, a handed-over callable receives control. */
+function referenceControl(expressionText: string, ambient: ControlFlowKind): ControlFlowKind {
+  if (/^promise\s*\.\s*(all|allsettled|race|any)$/i.test(expressionText)) return "parallel";
+  const method = expressionText.split(".").at(-1)?.toLowerCase() ?? "";
+  if (ITERATION_METHODS.has(method)) return "loop";
+  if (method === "catch") return "fallback";
+  return ambient;
+}
+
 function findEnclosingDeclaration(call: CallExpression, declarations: Map<string, DeclarationRecord>): DeclarationRecord | undefined {
   let current: Node | undefined = call;
   while (current) {
-    if (Node.isFunctionDeclaration(current) || Node.isMethodDeclaration(current) || Node.isVariableDeclaration(current)) {
+    if (
+      Node.isFunctionDeclaration(current) ||
+      Node.isMethodDeclaration(current) ||
+      Node.isVariableDeclaration(current) ||
+      Node.isPropertyAssignment(current) ||
+      Node.isExportAssignment(current)
+    ) {
       const found = declarations.get(declarationKey(current));
       if (found) return found;
     }
@@ -832,20 +1104,53 @@ function inferControlMetadata(call: CallExpression, control: ControlFlowKind): R
   return { retryBounded: bounded };
 }
 
+/**
+ * A name does not always sit on the declaration it refers to. Imports alias it,
+ * destructuring rebinds it, and an object literal can hold a reference rather than a
+ * body. Resolution follows those hops, bounded so a cyclic re-export cannot loop.
+ */
 function resolveSymbolTarget(
   symbol: ReturnType<Node["getSymbol"]>,
   declarations: Map<string, DeclarationRecord>,
+  depth = 0,
 ): DeclarationRecord | undefined {
-  const symbols = [symbol, symbol?.getAliasedSymbol()].filter((item) => item !== undefined);
+  if (!symbol || depth > MAX_ALIAS_HOPS) return undefined;
+  const symbols = [symbol, symbol.getAliasedSymbol()].filter((item) => item !== undefined);
   for (const declaration of symbols.flatMap((item) => item.getDeclarations())) {
     const direct = declarations.get(declarationKey(declaration));
     if (direct) return direct;
-    if (Node.isVariableDeclaration(declaration)) {
-      const found = declarations.get(declarationKey(declaration));
+    if (Node.isBindingElement(declaration)) {
+      const found = resolveBindingTarget(declaration, declarations, depth);
       if (found) return found;
+    }
+    if (Node.isPropertyAssignment(declaration) || Node.isVariableDeclaration(declaration)) {
+      const value = declaration.getInitializer();
+      if (value && (Node.isIdentifier(value) || Node.isPropertyAccessExpression(value))) {
+        const found = resolveSymbolTarget(value.getSymbol(), declarations, depth + 1);
+        if (found) return found;
+      }
     }
   }
   return undefined;
+}
+
+/**
+ * `const { search } = tools` names a callable without declaring one. The binding
+ * points at a property of the source value, so resolution continues from there.
+ */
+function resolveBindingTarget(
+  binding: BindingElement,
+  declarations: Map<string, DeclarationRecord>,
+  depth: number,
+): DeclarationRecord | undefined {
+  const pattern = binding.getParent();
+  if (!Node.isObjectBindingPattern(pattern)) return undefined;
+  const owner = pattern.getParent();
+  if (!Node.isVariableDeclaration(owner)) return undefined;
+  const source = owner.getInitializer();
+  if (!source) return undefined;
+  const propertyName = binding.getPropertyNameNode()?.getText() ?? binding.getName();
+  return resolveSymbolTarget(source.getType().getProperty(propertyName), declarations, depth + 1);
 }
 
 function declarationName(declaration: FunctionDeclaration | MethodDeclaration | VariableDeclaration): string | undefined {

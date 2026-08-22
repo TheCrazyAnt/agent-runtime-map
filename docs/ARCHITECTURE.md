@@ -42,6 +42,8 @@ The Project Reader owns bounded, non-executable context collection. It reads pro
 
 The analyzer owns source-language and framework facts. It may emit many nodes and edges. It must never optimize its output for a particular visual layout. Control-flow classifications are attached to the exact call-site evidence that produced them.
 
+A callable is not always a `function` keyword, so the analyzer also registers object-literal members, default-exported arrows, and factory results, and it follows import aliases, destructured bindings, and reference-valued properties to the declaration a name really points at. Handing a function to another function is recorded as a call whose control kind says when it runs, because the reference is factual even though the invocation is deferred. Being callable by type inference never reaches the confidence of a declared function, and the type checker is consulted only for a name that is invoked or handed over somewhere in the project.
+
 The Logic Compiler owns abstraction. It removes infrastructure noise, keeps business-relevant nodes, projects paths across hidden functions, matches code paths to documented capabilities, discovers each user action or API entry as a feature circuit, enumerates bounded branch variants, and explains every heuristic conclusion.
 
 The optional semantic package may replace labels, descriptions, and the project summary for existing IDs. It cannot introduce topology or evidence. The default pipeline never invokes it. OpenAI mode uses a bounded snapshot, Structured Outputs, and `store: false`; callers must opt in and supply both a model and API key.
