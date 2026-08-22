@@ -1,6 +1,7 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { analyzeTypeScriptProject } from "@agent-runtime-map/typescript";
+import { analyzePythonProject } from "@agent-runtime-map/python";
 import { compileLogicGraph, type CompileOptions } from "@agent-runtime-map/logic-compiler";
 import { readProjectContext } from "@agent-runtime-map/project-reader";
 import { enrichLogicGraphWithOpenAI, type OpenAISemanticOptions } from "@agent-runtime-map/semantic";
@@ -13,6 +14,8 @@ export interface GenerateLogicMapOptions extends CompileOptions {
   maxContextFiles?: number;
   maxContextBytes?: number;
   readContext?: boolean;
+  /** Interpreter for the Python adapter. Defaults to `python3`, then `python`. */
+  pythonPath?: string;
   semantic?: OpenAISemanticOptions;
 }
 
@@ -45,7 +48,13 @@ export async function generateLogicMap(
       // summary; without this it only ever reached the summary.
       productDescription: options.productDescription,
     });
-  const rawGraph = await analyzeTypeScriptProject(root, { maxFiles: options.maxFiles });
+  // Every adapter produces the same Raw Code Graph, so a project that mixes
+  // languages produces one map rather than one map per language.
+  const [typescriptGraph, pythonGraph] = await Promise.all([
+    analyzeTypeScriptProject(root, { maxFiles: options.maxFiles }),
+    analyzePythonProject(root, { maxFiles: options.maxFiles, pythonPath: options.pythonPath }),
+  ]);
+  const rawGraph = mergeRawGraphs(typescriptGraph, pythonGraph);
   if (context) {
     const codePrompts = rawGraph.nodes.filter((node) => node.kind === "prompt").flatMap((node) => {
       const source = node.evidence[0]?.source;
@@ -86,3 +95,25 @@ function resolveOutput(root: string, file: string): string {
 
 export type { CompileOptions } from "@agent-runtime-map/logic-compiler";
 export type { LogicGraph, RawCodeGraph } from "@agent-runtime-map/schema";
+
+/**
+ * Joins the adapters' graphs into one. Ids are content-hashed from paths that cannot
+ * collide across languages, so this is a concatenation rather than a reconciliation —
+ * and deliberately so: a merge step that had to resolve conflicts would be a place
+ * for facts to get quietly rewritten.
+ */
+function mergeRawGraphs(primary: RawCodeGraph, secondary: RawCodeGraph): RawCodeGraph {
+  if (!secondary.nodes.length && !secondary.diagnostics.length) return primary;
+  return {
+    ...primary,
+    project: {
+      ...primary.project,
+      languages: [...new Set([...primary.project.languages, ...secondary.project.languages])],
+      frameworks: [...new Set([...primary.project.frameworks, ...secondary.project.frameworks])],
+      filesScanned: primary.project.filesScanned + secondary.project.filesScanned,
+    },
+    nodes: [...primary.nodes, ...secondary.nodes],
+    edges: [...primary.edges, ...secondary.edges],
+    diagnostics: [...primary.diagnostics, ...secondary.diagnostics],
+  };
+}

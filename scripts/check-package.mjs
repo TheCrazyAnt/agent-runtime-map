@@ -9,7 +9,7 @@ if (packed.status !== 0) process.exit(packed.status ?? 1);
 
 const [report] = JSON.parse(packed.stdout);
 const paths = new Set(report.files.map((file) => file.path));
-for (const required of ["dist/cli.js", "dist/viewer/index.html", "dist/licenses/elkjs.txt", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "package.json"]) {
+for (const required of ["dist/cli.js", "dist/viewer/index.html", "dist/python/extract.py", "dist/licenses/elkjs.txt", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "package.json"]) {
   if (!paths.has(required)) throw new Error(`Publish package is missing ${required}`);
 }
 if (report.size > 2_000_000) throw new Error(`Publish tarball is unexpectedly large: ${report.size} bytes`);

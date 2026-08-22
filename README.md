@@ -4,7 +4,7 @@
 
 Turn your Agent codebase into an evidence-backed circuit map you can inspect step by step.
 
-Agent Runtime Map reads a TypeScript or JavaScript repository together with its README, selected docs/PRD files, prompts, package metadata, and safe configuration. It extracts routes, calls, workflows, agents, tools, models, database operations, external services, and control flow, then compiles them into one global execution graph. A feature list on the left lets you play, pause, step through, replay, and switch between the inferred routes for each Agent capability.
+Agent Runtime Map reads a TypeScript, JavaScript, or Python repository together with its README, selected docs/PRD files, prompts, package metadata, and safe configuration. It extracts routes, calls, workflows, agents, tools, models, database operations, external services, and control flow, then compiles them into one global execution graph. A feature list on the left lets you play, pause, step through, replay, and switch between the inferred routes for each Agent capability.
 
 > Status: **0.1 alpha**. The supported scope is intentionally narrow and documented below. Agent Runtime Map does not claim to understand every codebase.
 
@@ -156,6 +156,7 @@ switch. Source symbols and file evidence always retain their original spelling.
 ## Current support
 
 - TypeScript, TSX, JavaScript, and JSX
+- Python, through a separate adapter that produces the same graph
 - `tsconfig.json` and `jsconfig.json` path aliases
 - Next.js App Router route handlers
 - Express/Hono-style route registration
@@ -163,6 +164,7 @@ switch. Source symbols and file evidence always retain their original spelling.
 - README/docs/PRD/prompt ingestion and documented feature matching
 - Agent, workflow, tool, model, prompt, human-gate, action, and service conventions
 - OpenAI Agents SDK-style configuration and LangGraph-style declarative graphs
+- FastAPI/Flask route decorators and Python Agent constructions
 - Conditional, parallel, loop, bounded/unbounded retry, fallback, and human-approval edges
 - Common Prisma-like database operations
 - Literal Fetch/Axios external URLs and selected SDK calls
@@ -192,6 +194,8 @@ packages/react              Reusable blueprint React Flow components and styles
 packages/schema             Raw Code Graph and Logic Graph protocol
 packages/project-reader     Safe README/docs/PRD/prompt and manifest reader
 adapters/typescript         TypeScript/JavaScript static analyzer
+adapters/python             Python static analyzer, same Raw Code Graph
+packages/analysis-kit       Classification and evidence rules shared by adapters
 packages/logic-compiler     Human-scale graph compiler
 packages/semantic           Optional evidence-constrained semantic enrichment
 packages/core               Analysis and output orchestration

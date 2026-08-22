@@ -8,6 +8,14 @@ const destination = path.join(packageRoot, "dist", "viewer");
 await mkdir(destination, { recursive: true });
 await cp(viewerBuild, destination, { recursive: true });
 
+// The Python adapter shells out to a bundled extractor script. tsup inlines the
+// adapter's JavaScript but not the .py file it reads, so it is copied beside the
+// bundle and resolved from there at runtime.
+const pythonExtractor = path.resolve(packageRoot, "../../adapters/python/scripts/extract.py");
+const pythonDestination = path.join(packageRoot, "dist", "python");
+await mkdir(pythonDestination, { recursive: true });
+await cp(pythonExtractor, path.join(pythonDestination, "extract.py"));
+
 const bundledPackages = [
   "elkjs",
   "@xyflow/react",
