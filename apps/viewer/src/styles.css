@@ -226,6 +226,19 @@ button { color: inherit; }
 .confidence-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #1689cf, #5bb8df); }
 .confidence-card small { display: block; color: #858f9a; font-size: 9px; line-height: 1.45; }
 
+/* A breadcrumb is the way back out of a drill-down: without it, a reader two levels
+   deep can only close the drawer and lose the place they were inspecting. */
+.evidence-breadcrumb { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.evidence-breadcrumb button { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; color: #3d8fc4; background: none; font: inherit; font-size: 11px; cursor: pointer; }
+.evidence-breadcrumb button:hover { text-decoration: underline; }
+.evidence-breadcrumb button::after { content: "›"; margin-left: 4px; color: #a7b1bb; }
+.evidence-breadcrumb > span { color: #33404c; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+
+/* The second level is deliberately quieter than the first, so depth reads at a
+   glance and the expansion never competes with the logic map above it. */
+.detail-node--depth-2 .blueprint-code-node { border-style: dashed; opacity: .92; }
+.blueprint-code-node.is-expanded { border-color: #7fb6d8; box-shadow: 0 3px 10px rgba(32,122,177,.09); }
+
 /* Product context is a claim the project makes about itself, so it is framed as a
    quieter aside rather than competing with the source evidence below it. */
 .product-card { display: grid; gap: 8px; margin-top: 14px; padding: 13px; border: 1px dashed #d8e0e6; border-radius: 10px; background: rgba(247,250,252,.85); }

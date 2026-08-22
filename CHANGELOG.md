@@ -50,6 +50,21 @@ All notable changes are documented here.
   attribution is checkable. The allow-list stays an allow-list: a file that no
   node or feature references is still refused.
 
+- A raw child opened under a step can be selected in its own right: the drawer
+  shows that child's source range, its own evidence, and a breadcrumb back to the
+  step it belongs to.
+- A raw child can be opened one further level, with an explicit control on the
+  node. Depth is capped at two, and the deepest level carries no control rather
+  than offering an interaction that does nothing.
+
+### Fixed
+
+- Expanded raw-code children were created but never became visible. They are not
+  part of the Viewer's node state, so React Flow's measurement change for them was
+  filtered out by `onNodesChange` and never applied, leaving every child at
+  `visibility: hidden`. Their size is fixed by the visual package, so it is now
+  stated rather than measured.
+
 ### Changed
 
 - Product evidence is a separate channel from code evidence. A documented match

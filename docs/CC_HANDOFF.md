@@ -159,6 +159,16 @@ detail:<logic-node-id>:<raw-node-id>
 It includes direct raw IDs first, then one-hop raw neighbors, capped at nine
 nodes. This protects map readability and React Flow performance.
 
+A reader can open one further level from a child they chose, capped by
+`MAX_DETAIL_DEPTH`. Never lift that cap: an unbounded drill-down redraws the whole
+call graph under a single node, which is the readability the Logic Compiler exists
+to protect. Reaching further is the breadcrumb's job, not a larger expansion's.
+
+Detail nodes are deliberately outside the Viewer's `nodes` state, so `onNodesChange`
+discards React Flow's measurement changes for them. They must therefore carry
+explicit `width`/`height` from the visual package; without those React Flow keeps
+them at `visibility: hidden` and the whole drill-down silently disappears.
+
 ### Playback and camera
 
 `simulation.ts` turns `(feature, variant, stepIndex)` into a `SimulationFrame`.
@@ -227,6 +237,10 @@ Then inspect these acceptance cases:
 
 - Choose **Content Generation**; it should frame the route at logic detail.
 - Double-click **Execute Content**; compact factual raw nodes should appear.
+- Open one of those children with its chevron control; a bounded second level
+  should appear as dashed nodes that carry no control of their own.
+- Click a raw child; the drawer should show that child's own source range and a
+  breadcrumb back to **Execute Content**.
 - Click it; the drawer should show a highlighted code range from
   `app/src/workflows/content.ts`.
 - Search **Generate Ideas**, press Enter; camera should fly to and spotlight it.
@@ -277,9 +291,11 @@ Work in this order unless product direction changes:
    languages, and says so when a step is code-only. `--description` is a labelled
    user claim. Still open: editing a capability from inside the Viewer, and
    showing which *feature label* was borrowed rather than derived.
-4. **Source drill-down refinement.** Let a user choose a raw child and keep its
-   source range selected in the drawer. Avoid unlimited recursive expansion;
-   use a breadcrumb or bounded second level instead.
+4. **Source drill-down refinement.** Done: selecting a raw child opens its own
+   source range and evidence with a breadcrumb back to the step, and a child can
+   be opened exactly one further level through an explicit control on the node.
+   `MAX_DETAIL_DEPTH` is 2 and the deepest level carries no control. Still open:
+   remembering a drill-down across feature switches.
 5. **Embedded package API.** Package a documented `<LogicMap />` React component
    and then a Web Component wrapper. The embedding API should accept already
    computed `LogicGraph`/`RawCodeGraph`, never need direct repository access.

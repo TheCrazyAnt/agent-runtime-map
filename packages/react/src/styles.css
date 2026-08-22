@@ -84,6 +84,9 @@
 .blueprint-code-node > i { position: absolute; top: -8px; right: 8px; padding: 2px 5px; border: 1px solid #d9e2ea; border-radius: 4px; color: #7f8b97; background: #fff; font: normal 6px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .blueprint-code-handle { width: 6px !important; height: 6px !important; border: 1px solid #6e8293 !important; background: #fff !important; opacity: 0; }
 .blueprint-code-node:hover .blueprint-code-handle { opacity: 1; }
+.blueprint-code-node__toggle { position: absolute; right: 6px; bottom: 6px; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 1px solid #d9e3eb; border-radius: 5px; color: #5b7185; background: #fbfdfe; cursor: pointer; transition: .15s ease; }
+.blueprint-code-node__toggle:hover { border-color: #8ec3e2; color: #1f7fb4; background: #f1f9fd; }
+.blueprint-code-node__toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 
 .blueprint-playback-edge__label { position: absolute; z-index: 2; padding: 2px 5px; border-radius: 3px; color: #66727f; background: rgba(248,250,252,.92); font: 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace; pointer-events: none; }
 .blueprint-playback-edge__token { filter: drop-shadow(0 0 4px currentColor); pointer-events: none; }

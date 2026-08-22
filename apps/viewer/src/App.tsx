@@ -24,15 +24,15 @@ import {
   type BlueprintLogicNodeData,
 } from "@agent-runtime-map/react";
 import {
-  Activity, AlertTriangle, Braces, CheckCircle2, ChevronRight, CircleDotDashed, Crosshair,
+  Activity, AlertTriangle, Braces, CheckCircle2, ChevronLeft, ChevronRight, CircleDotDashed, Crosshair,
   GitFork, ListTree, PanelRightClose, Pause, Pin, Play, RotateCcw, Search, SkipForward, Undo2, X,
 } from "lucide-react";
 import type {
   ChainHealth, FeaturePathVariant, FeatureScenario, LogicGraph, LogicNode as LogicGraphNode,
-  ProductEvidence, RawCodeGraph,
+  ProductEvidence, RawCodeGraph, RawCodeNode, SourceLocation,
 } from "@agent-runtime-map/schema";
 import { buildBlueprintGroupNodes } from "./blueprintGroups";
-import { applyLayoutPositions, buildCodeDetailExpansion, captureLayout, compareVariants, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
+import { applyLayoutPositions, buildCodeDetailExpansion, captureLayout, compareVariants, parseDetailNodeId, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
 import {
   chainHealthLabel, detectViewerLocale, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
   productMatchText, productOriginLabel,
@@ -60,6 +60,11 @@ function LogicMapViewer() {
   const [previousVariantId, setPreviousVariantId] = useState<string>();
   const [branchTransitioning, setBranchTransitioning] = useState(false);
   const [expandedLogicIds, setExpandedLogicIds] = useState<Set<string>>(new Set());
+  const [expandedRawIds, setExpandedRawIds] = useState<Set<string>>(new Set());
+  const [selectedRaw, setSelectedRaw] = useState<{ logicId: string; rawId: string }>();
+  const toggleRawDetail = useCallback((rawId: string) => {
+    setExpandedRawIds((current) => { const next = new Set(current); if (next.has(rawId)) next.delete(rawId); else next.add(rawId); return next; });
+  }, []);
   const [stepIndex, setStepIndex] = useState(-1);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -192,9 +197,27 @@ function LogicMapViewer() {
     return graph.nodes.flatMap((logicNode) => {
       if (!expandedLogicIds.has(logicNode.id)) return [];
       const parent = nodes.find((node) => node.id === logicNode.id);
-      return parent ? [buildCodeDetailExpansion(logicNode, parent, rawGraph)] : [];
+      if (!parent) return [];
+      const expansion = buildCodeDetailExpansion(logicNode, parent, rawGraph, { expandedRawIds });
+      // The model stays pure; behaviour is attached here, where the state lives.
+      return [{
+        ...expansion,
+        nodes: expansion.nodes.map((node) => {
+          const detail = parseDetailNodeId(node.id);
+          return detail
+            ? {
+              ...node,
+              data: {
+                ...node.data,
+                onToggle: () => toggleRawDetail(detail.rawId),
+                toggleLabel: `${node.data.expanded ? text.collapseDetail : text.expandDetail} ${node.data.label}`,
+              },
+            }
+            : node;
+        }),
+      }];
     }).reduce((all, current) => ({ nodes: [...all.nodes, ...current.nodes], edges: [...all.edges, ...current.edges] }), { nodes: [] as Node[], edges: [] as Edge[] });
-  }, [expandedLogicIds, graph, nodes, rawGraph]);
+  }, [expandedLogicIds, expandedRawIds, graph, nodes, rawGraph, text, toggleRawDetail]);
   const visibleLogicNodes = useMemo(() => nodes.map((node) => ({ ...node, className: nodeClassName(node.id, matchingIds, selectedFeature, selectedVariant, frame, transition, spotlightId, pinnedIds, expandedLogicIds) })), [expandedLogicIds, frame, matchingIds, nodes, pinnedIds, selectedFeature, selectedVariant, spotlightId, transition]);
   const visibleNodes = useMemo(() => {
     if (!graph) return [...visibleLogicNodes, ...detailExpansion.nodes];
@@ -245,10 +268,35 @@ function LogicMapViewer() {
   }, [persistLayout, updatePins]);
 
   const selected = graph?.nodes.find((node) => node.id === selectedId);
-  const selectNode = useCallback((_event: React.MouseEvent, node: Node) => setSelectedId(node.type === "codeDetail" ? node.id.split(":")[1] : node.id), []);
+  const selectedRawNode = useMemo(
+    () => (selectedRaw ? rawGraph?.nodes.find((node) => node.id === selectedRaw.rawId) : undefined),
+    [rawGraph, selectedRaw],
+  );
+  const selectNode = useCallback((_event: React.MouseEvent, node: Node) => {
+    // A raw child used to select its parent, which put the parent's source range in
+    // the drawer and left the child's own evidence unreachable.
+    const detail = node.type === "codeDetail" ? parseDetailNodeId(node.id) : undefined;
+    if (detail) { setSelectedRaw(detail); setSelectedId(detail.logicId); return; }
+    setSelectedRaw(undefined);
+    setSelectedId(node.id);
+  }, []);
   const toggleDetails = useCallback((_event: React.MouseEvent, node: Node) => {
-    if (node.type !== "logic" || !rawGraph) return;
-    setExpandedLogicIds((current) => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next; });
+    if (!rawGraph) return;
+    const detail = node.type === "codeDetail" ? parseDetailNodeId(node.id) : undefined;
+    if (detail) {
+      // Depth is capped in the model, so a second-level child simply has nothing to open.
+      const data = node.data as { expandable?: boolean };
+      if (!data.expandable) return;
+      setExpandedRawIds((current) => { const next = new Set(current); if (next.has(detail.rawId)) next.delete(detail.rawId); else next.add(detail.rawId); return next; });
+      return;
+    }
+    if (node.type !== "logic") return;
+    setExpandedLogicIds((current) => {
+      const next = new Set(current);
+      if (next.has(node.id)) { next.delete(node.id); setExpandedRawIds(new Set()); setSelectedRaw(undefined); }
+      else next.add(node.id);
+      return next;
+    });
   }, [rawGraph]);
   const selectFeature = (featureId: string | null) => { setSelectedFeatureId(featureId); setCameraFollow(true); };
   const selectVariant = (variantId: string) => {
@@ -301,9 +349,11 @@ function LogicMapViewer() {
       <div className="semantic-zoom" aria-live="polite"><span>{text.zoomLevel}</span><strong>{semanticZoomLabel(detailLevel, locale)}</strong><div className="semantic-zoom__levels" aria-hidden="true">{(["overview", "logic", "evidence"] as const).map((level) => <i className={level === detailLevel ? "is-active" : ""} key={level} />)}</div><small>{text.semanticZoomHint}</small></div>
       <div className="canvas-help"><Crosshair size={13} /><span>{text.detailHint}</span></div>
       <div className="layout-toolbar" aria-label={text.layout}><span><Pin size={12} /> {pinnedIds.size} {text.pinnedNodes}</span><button onClick={undoLayout} disabled={!layoutHistory.length} title={text.undoLayout}><Undo2 size={13} /></button><button onClick={resetLayout} title={text.resetLayout}><RotateCcw size={13} /></button></div>
-      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={selectNode} onNodeDoubleClick={toggleDetails} onPaneClick={() => setSelectedId(undefined)} onMoveStart={(event) => { setNavigating(true); if (event) setCameraFollow(false); }} onMove={(_event, viewport) => updateSemanticZoom(viewport.zoom)} onMoveEnd={() => setNavigating(false)} nodesDraggable nodesConnectable={false} elementsSelectable minZoom={0.2} maxZoom={2.2} fitView proOptions={{ hideAttribution: true }}><Controls showInteractive={false} position="bottom-left" /><MiniMap position="bottom-right" pannable zoomable nodeStrokeWidth={2} maskColor="rgba(240, 244, 248, 0.7)" /></ReactFlow>
+      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={selectNode} onNodeDoubleClick={toggleDetails} onPaneClick={() => { setSelectedId(undefined); setSelectedRaw(undefined); }} onMoveStart={(event) => { setNavigating(true); if (event) setCameraFollow(false); }} onMove={(_event, viewport) => updateSemanticZoom(viewport.zoom)} onMoveEnd={() => setNavigating(false)} nodesDraggable nodesConnectable={false} elementsSelectable minZoom={0.2} maxZoom={2.2} fitView proOptions={{ hideAttribution: true }}><Controls showInteractive={false} position="bottom-left" /><MiniMap position="bottom-right" pannable zoomable nodeStrokeWidth={2} maskColor="rgba(240, 244, 248, 0.7)" /></ReactFlow>
     </section>
-    {selected && <EvidencePanel node={selected} locale={locale} onClose={() => setSelectedId(undefined)} />}
+    {selectedRawNode
+      ? <RawEvidencePanel rawNode={selectedRawNode} parent={selected} locale={locale} onParent={() => setSelectedRaw(undefined)} onClose={() => { setSelectedRaw(undefined); setSelectedId(undefined); }} />
+      : selected && <EvidencePanel node={selected} locale={locale} onClose={() => setSelectedId(undefined)} />}
   </main>;
 }
 
@@ -345,11 +395,80 @@ function edgeFlowLabel(edge: LogicGraph["edges"][number], graph: LogicGraph, loc
 function HealthIcon({ health }: { health: ChainHealth }) { return health === "healthy" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />; }
 
 interface SourceSnippet { file: string; startLine: number; endLine: number; highlightStart: number; highlightEnd: number; lines: Array<{ number: number; text: string }>; }
+/**
+ * The source list and its preview are the same interaction whether the reader is
+ * looking at a logic node or at one raw child of it, so both panels share it rather
+ * than keeping two copies of the fetch, the bounds, and the highlight.
+ */
+function SourceEvidence({ sources, locale, heading }: { sources: SourceLocation[]; locale: UiLocale; heading: string }) {
+  const text = messages(locale);
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const [snippet, setSnippet] = useState<SourceSnippet>();
+  const [sourceError, setSourceError] = useState(false);
+  const key = sources.map((item) => `${item.file}:${item.startLine}`).join("|");
+  const source = sources[sourceIndex];
+  useEffect(() => { setSourceIndex(0); }, [key]);
+  useEffect(() => {
+    if (!source) return;
+    let active = true;
+    setSnippet(undefined);
+    setSourceError(false);
+    const params = new URLSearchParams({ file: source.file, start: String(source.startLine), end: String(source.endLine ?? source.startLine) });
+    fetch(`./source.json?${params.toString()}`, { cache: "no-store" })
+      .then(async (response) => { if (!response.ok) throw new Error(String(response.status)); return await response.json() as SourceSnippet; })
+      .then((next) => active && setSnippet(next))
+      .catch(() => active && setSourceError(true));
+    return () => { active = false; };
+  }, [source]);
+  return <>
+    <div className="evidence-list"><span className="eyebrow">{heading}</span>{sources.map((item, index) => <button className={sourceIndex === index ? "is-active" : ""} key={`${item.file}:${item.startLine}`} onClick={() => setSourceIndex(index)}><code>{item.file}</code><span>{text.lines} {item.startLine}{item.endLine && item.endLine !== item.startLine ? `–${item.endLine}` : ""}</span>{item.symbol && <small>{item.symbol}</small>}</button>)}</div>
+    <section className="source-preview"><span className="eyebrow">{text.sourceCode}</span>{!source || sourceError ? <p>{text.sourceUnavailable}</p> : !snippet ? <p>{text.loadingSource}</p> : <pre>{snippet.lines.map((line) => <code className={line.number >= snippet.highlightStart && line.number <= snippet.highlightEnd ? "is-highlighted" : ""} key={line.number}><i>{line.number}</i><span>{line.text || " "}</span></code>)}</pre>}</section>
+  </>;
+}
+
 function EvidencePanel({ node, locale, onClose }: { node: LogicGraphNode; locale: UiLocale; onClose: () => void }) {
-  const text = messages(locale); const localized = localizeNode(node, locale); const [sourceIndex, setSourceIndex] = useState(0); const [snippet, setSnippet] = useState<SourceSnippet>(); const [sourceError, setSourceError] = useState(false); const source = node.sources[sourceIndex];
-  useEffect(() => { setSourceIndex(0); }, [node.id]);
-  useEffect(() => { if (!source) return; let active = true; setSnippet(undefined); setSourceError(false); const params = new URLSearchParams({ file: source.file, start: String(source.startLine), end: String(source.endLine ?? source.startLine) }); fetch(`./source.json?${params.toString()}`, { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error(String(response.status)); return await response.json() as SourceSnippet; }).then((next) => active && setSnippet(next)).catch(() => active && setSourceError(true)); return () => { active = false; }; }, [source]);
-  return <aside className="evidence-panel"><div className="evidence-panel__header"><div><span className="eyebrow">{text.selectedLogic}</span><h2>{localized.label}</h2></div><button onClick={onClose} aria-label={text.closeEvidence}><PanelRightClose size={19} /></button></div><p className="evidence-panel__description">{localized.description}</p><div className="confidence-card"><div><span>{text.confidence}</span><strong>{Math.round(node.confidence * 100)}%</strong></div><div className="confidence-track"><i style={{ width: `${node.confidence * 100}%` }} /></div><small>{inferenceMethodLabel(node.inference.method, locale)} · {node.inference.explanation}</small></div><ProductContext product={node.product} locale={locale} /><div className="evidence-list"><span className="eyebrow">{text.sourceEvidence}</span>{node.sources.map((item, index) => <button className={sourceIndex === index ? "is-active" : ""} key={`${item.file}:${item.startLine}`} onClick={() => setSourceIndex(index)}><code>{item.file}</code><span>{text.lines} {item.startLine}{item.endLine && item.endLine !== item.startLine ? `–${item.endLine}` : ""}</span>{item.symbol && <small>{item.symbol}</small>}</button>)}</div><section className="source-preview"><span className="eyebrow">{text.sourceCode}</span>{!source ? <p>{text.sourceUnavailable}</p> : sourceError ? <p>{text.sourceUnavailable}</p> : !snippet ? <p>{text.loadingSource}</p> : <pre>{snippet.lines.map((line) => <code className={line.number >= snippet.highlightStart && line.number <= snippet.highlightEnd ? "is-highlighted" : ""} key={line.number}><i>{line.number}</i><span>{line.text || " "}</span></code>)}</pre>}</section><div className="raw-reference"><span>{text.rawReferences}</span><code>{node.rawNodeIds.join("\n")}</code></div></aside>;
+  const text = messages(locale); const localized = localizeNode(node, locale);
+  return <aside className="evidence-panel"><div className="evidence-panel__header"><div><span className="eyebrow">{text.selectedLogic}</span><h2>{localized.label}</h2></div><button onClick={onClose} aria-label={text.closeEvidence}><PanelRightClose size={19} /></button></div><p className="evidence-panel__description">{localized.description}</p><div className="confidence-card"><div><span>{text.confidence}</span><strong>{Math.round(node.confidence * 100)}%</strong></div><div className="confidence-track"><i style={{ width: `${node.confidence * 100}%` }} /></div><small>{inferenceMethodLabel(node.inference.method, locale)} · {node.inference.explanation}</small></div><ProductContext product={node.product} locale={locale} /><SourceEvidence sources={node.sources} locale={locale} heading={text.sourceEvidence} /><div className="raw-reference"><span>{text.rawReferences}</span><code>{node.rawNodeIds.join("\n")}</code></div></aside>;
+}
+
+/**
+ * A raw child keeps its own source range selected, and a breadcrumb back to the step
+ * it belongs to. Without the breadcrumb a reader who drilled two levels down has no
+ * way back except closing the drawer and losing the place they were inspecting.
+ */
+function RawEvidencePanel({ rawNode, parent, locale, onParent, onClose }: {
+  rawNode: RawCodeNode;
+  parent: LogicGraphNode | undefined;
+  locale: UiLocale;
+  onParent: () => void;
+  onClose: () => void;
+}) {
+  const text = messages(locale);
+  const sources = rawNode.evidence.map((item: typeof rawNode.evidence[number]) => item.source);
+  const strongest = rawNode.evidence.reduce<typeof rawNode.evidence[number] | undefined>(
+    (best, item) => (best && best.confidence >= item.confidence ? best : item),
+    undefined,
+  );
+  return <aside className="evidence-panel">
+    <div className="evidence-panel__header">
+      <div>
+        <span className="eyebrow">{text.selectedCode}</span>
+        <nav className="evidence-breadcrumb">
+          {parent && <button onClick={onParent}><ChevronLeft size={12} />{localizeNode(parent, locale).label}</button>}
+          <span>{rawNode.name}</span>
+        </nav>
+      </div>
+      <button onClick={onClose} aria-label={text.closeEvidence}><PanelRightClose size={19} /></button>
+    </div>
+    <p className="evidence-panel__description">{rawNode.description ?? rawNode.qualifiedName ?? rawNode.kind.replaceAll("_", " ")}</p>
+    <div className="confidence-card">
+      <div><span>{text.confidence}</span><strong>{Math.round((strongest?.confidence ?? 0) * 100)}%</strong></div>
+      <div className="confidence-track"><i style={{ width: `${(strongest?.confidence ?? 0) * 100}%` }} /></div>
+      <small>{strongest?.method} · {strongest?.detail}</small>
+    </div>
+    <SourceEvidence sources={sources} locale={locale} heading={text.sourceEvidence} />
+    <div className="raw-reference"><span>{text.rawReferences}</span><code>{rawNode.id}</code></div>
+  </aside>;
 }
 function movedFromBase(node: Node, base: LayoutPositions): boolean { const expected = base[node.id]; return Boolean(expected && (Math.abs(expected.x - node.position.x) > 1 || Math.abs(expected.y - node.position.y) > 1)); }
 function Stat({ value, label }: { value: number; label: string }) { return <div><strong>{value}</strong><span>{label}</span></div>; }
