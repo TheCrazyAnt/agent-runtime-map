@@ -67,6 +67,13 @@ All notable changes are documented here.
   one implementation. Boundary titles are supplied by the host rather than looked
   up from a locale, which keeps the visual package language-neutral.
 
+- An optional trace bridge: `TraceEvent` in the protocol and `applyTraceEvents()`
+  in the visual package map a real run onto the ids the graph already has. It adds
+  no nodes, no edges, and no confidence; an event that matches nothing is returned
+  as unmatched rather than drawn, a raw symbol is lifted to the step containing it,
+  and a failure is never erased by a later event. `<LogicMap trace={...} />` styles
+  observed elements distinctly from the statically inferred route.
+
 ### Fixed
 
 - Expanded raw-code children were created but never became visible. They are not

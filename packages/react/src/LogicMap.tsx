@@ -8,7 +8,7 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
-import type { LogicGraph, RawCodeGraph } from "@agent-runtime-map/schema";
+import type { LogicGraph, RawCodeGraph, TraceEvent, TraceOverlay } from "@agent-runtime-map/schema";
 import { BlueprintLogicNode, type BlueprintLogicNodeData } from "./BlueprintLogicNode.js";
 import { BlueprintGroupNode } from "./BlueprintGroupNode.js";
 import { BlueprintCodeNode } from "./BlueprintCodeNode.js";
@@ -18,6 +18,7 @@ import { buildBlueprintGroupNodes, type BlueprintGroupLabels } from "./blueprint
 import { layoutGraph } from "./layout.js";
 import { buildSimulationFrame, type SimulationFrame } from "./simulation.js";
 import { DEFAULT_LABELS, edgeState, nodeStateClass, toFlowEdge, toFlowNode } from "./logicMapModel.js";
+import { applyTraceEvents, traceStateClass } from "./trace.js";
 
 const NODE_TYPES = {
   logic: BlueprintLogicNode,
@@ -47,6 +48,14 @@ export interface LogicMapProps {
   stepIndex?: number;
   /** Node id to render as selected. */
   selectedNodeId?: string;
+  /**
+   * Observations from a real run, layered over the static map. Pass raw events and
+   * they are mapped here, or pass an overlay you already built. Either way it only
+   * ever lights up ids the graph already has: it adds no nodes, no edges, and no
+   * confidence, and the styling stays distinct from the inferred route so the two
+   * can never be read as the same claim.
+   */
+  trace?: TraceOverlay | readonly TraceEvent[];
   labels?: Partial<BlueprintGroupLabels>;
   className?: string;
   fitView?: boolean;
@@ -76,6 +85,7 @@ function LogicMapCanvas({
   variantId,
   stepIndex = -1,
   selectedNodeId,
+  trace,
   labels,
   className,
   fitView = true,
@@ -95,6 +105,10 @@ function LogicMapCanvas({
     [feature, variantId],
   );
   const frame = useMemo(() => buildSimulationFrame(feature, variant, stepIndex), [feature, stepIndex, variant]);
+  const overlay = useMemo(
+    () => (Array.isArray(trace) ? applyTraceEvents(graph, trace) : (trace as TraceOverlay | undefined)),
+    [graph, trace],
+  );
   useEffect(() => { onFrameChange?.(frame); }, [frame, onFrameChange]);
 
   const baseNodes = useMemo(() => graph.nodes.map(toFlowNode), [graph.nodes]);
@@ -132,9 +146,15 @@ function LogicMapCanvas({
 
   useEffect(() => {
     setFlowNodes((current) => current.map((node) => (node.type === "logic"
-      ? { ...node, selected: node.id === selectedNodeId, className: nodeStateClass(node.id, frame, variant) }
+      ? {
+        ...node,
+        selected: node.id === selectedNodeId,
+        className: [nodeStateClass(node.id, frame, variant), traceStateClass(overlay?.nodes[node.id])]
+          .filter(Boolean)
+          .join(" "),
+      }
       : node)));
-  }, [frame, selectedNodeId, variant]);
+  }, [frame, overlay, selectedNodeId, variant]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setFlowNodes((current) => applyNodeChanges(changes, current));

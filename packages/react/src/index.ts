@@ -46,6 +46,7 @@ export {
   type BlueprintGroupLabels,
 } from "./blueprintGroups.js";
 export { layoutGraph } from "./layout.js";
+export { applyTraceEvents, traceStateClass } from "./trace.js";
 export {
   buildSimulationFrame,
   nextSimulationStep,

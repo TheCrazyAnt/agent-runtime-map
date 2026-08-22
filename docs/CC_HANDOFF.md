@@ -307,9 +307,13 @@ Work in this order unless product direction changes:
    is covered by `tests/logic-map.test.ts`, but the rendering path has not been
    verified in a browser), host-driven raw drill-down, and the Viewer itself
    consuming `<LogicMap />` rather than composing React Flow directly.
-6. **Trace bridge, not an APM platform.** Add an optional event protocol that can
-   light up existing stable graph IDs. Do not replace static facts with opaque
-   runtime spans; map trace events onto the same evidence-backed nodes.
+6. **Trace bridge, not an APM platform.** `TraceEvent` and `applyTraceEvents()`
+   ship: events name ids the graph already has, raw symbols lift to the step that
+   contains them, unmatched events are reported rather than drawn, and a failure is
+   sticky. Observed styling is deliberately unlike the static route palette. Keep
+   it this way — the moment spans can introduce topology, the graph stops being
+   traceable to source. Still open: ingesting a trace from the CLI, and an
+   OpenTelemetry span adapter that maps onto these same ids.
 7. **Python support.** Add a separate adapter producing the same Raw Code Graph
    schema. Do not leak Python-specific structures into the Viewer protocol.
 
