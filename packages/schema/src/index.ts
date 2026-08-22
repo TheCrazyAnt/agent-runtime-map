@@ -307,6 +307,49 @@ export interface LogicGraph {
   diagnostics: Diagnostic[];
 }
 
+/**
+ * An optional bridge from a real run back onto the map.
+ *
+ * A trace event does not describe topology and cannot introduce any: it names an id
+ * the graph already has and says what happened there. That is the whole contract.
+ * Runtime observation is layered *over* the evidence-backed graph, never in place of
+ * it — an opaque span that matches nothing must surface as unmatched rather than
+ * appear as a node nobody can trace back to source.
+ */
+export type TraceEventKind = "started" | "completed" | "failed" | "skipped";
+
+export interface TraceEvent {
+  /** A stable id already in the graph: a LogicNode, a LogicEdge, or a RawCodeNode. */
+  target: string;
+  kind: TraceEventKind;
+  /** ISO 8601. Events without one keep the order they were given in. */
+  at?: string;
+  durationMs?: number;
+  detail?: string;
+  attributes?: Record<string, unknown>;
+}
+
+/** How an id was found, so a reader can tell a direct hit from a lifted one. */
+export type TraceMatch = "logic_node" | "logic_edge" | "raw_node";
+
+export interface TraceObservation {
+  state: TraceEventKind;
+  events: number;
+  matchedVia: TraceMatch;
+  totalDurationMs?: number;
+  lastDetail?: string;
+  lastAt?: string;
+}
+
+export interface TraceOverlay {
+  nodes: Record<string, TraceObservation>;
+  edges: Record<string, TraceObservation>;
+  /** Events naming an id this graph does not have. Reported, never invented. */
+  unmatched: TraceEvent[];
+  /** Fraction of the graph's nodes that the run actually touched. */
+  coverage: number;
+}
+
 export function assertConfidence(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(1, Math.max(0, value));

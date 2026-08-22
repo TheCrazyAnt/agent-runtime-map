@@ -4,6 +4,16 @@
 .logic-map { position: relative; width: 100%; height: 100%; min-height: 320px; background: #f8fafc; }
 .logic-map .react-flow__attribution { display: none; }
 
+/* Observed-run styling is deliberately unlike the static route palette. A reader
+   must never mistake "this is the inferred path" for "this actually ran", and one
+   shared palette for both would invite exactly that. Observation reads as a ring
+   around the node rather than as a change to the node itself. */
+.is-observed .blueprint-node__tile { box-shadow: 0 0 0 2px rgba(90,110,132,.5); }
+.is-observed-completed .blueprint-node__tile { box-shadow: 0 0 0 2px rgba(31,157,114,.72); }
+.is-observed-failed .blueprint-node__tile { box-shadow: 0 0 0 2px rgba(229,72,77,.78); }
+.is-observed-started .blueprint-node__tile { box-shadow: 0 0 0 2px rgba(20,127,193,.7); }
+.is-observed-skipped .blueprint-node__tile { box-shadow: 0 0 0 2px rgba(140,150,162,.45); opacity: .78; }
+
 .blueprint-node {
   --node-accent: #596474;
   position: relative;

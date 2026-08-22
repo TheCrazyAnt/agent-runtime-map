@@ -43,6 +43,36 @@ The canvas fills the box you give it, so the parent needs a height.
 `stepIndex` drives a **static simulation** of a statically inferred route. It is not a
 live run of the Agent, and a host must not present it as one.
 
+## Layering a real run over the map
+
+A run can light up the steps it touched. This is a bridge, **not** a tracing system:
+it adds no nodes, no edges, and no confidence — it reports which existing,
+evidence-backed elements ran, and hands back everything it could not place.
+
+```ts
+import { applyTraceEvents } from "@agent-runtime-map/react";
+
+const overlay = applyTraceEvents(graph, [
+  { target: "logic_route_a1b2", kind: "completed", durationMs: 120 },
+  { target: "agent_504378b8626b", kind: "failed", detail: "timeout" },
+]);
+
+overlay.unmatched;  // events naming ids this graph does not have
+overlay.coverage;   // fraction of the map the run actually touched
+```
+
+`target` is any stable id already in the graph — a logic node, a logic edge, or a raw
+node, which is lifted to the step that contains it, because a runtime reports the
+symbol it executed rather than the compressed step the map shows.
+
+An event that matches nothing is returned in `unmatched` rather than drawn. A failure
+is never erased by a later event: a retry somewhere else does not mean this step
+stopped failing here.
+
+Pass either the overlay or the raw events to `<LogicMap trace={...} />`. Observed
+elements are styled distinctly from the inferred route on purpose — a reader must
+never mistake "this is the statically inferred path" for "this actually ran".
+
 ## Embedding without React
 
 ```html
