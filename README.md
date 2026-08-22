@@ -56,7 +56,7 @@ dedicated detection in addition to general TypeScript call analysis.
 - **Static simulation:** play, pause, advance one step, replay, choose a branch, and change playback speed. This simulates the code-backed execution model; it does not pretend that a live request is running.
 - **Chain Doctor:** verified steps turn green, uncertain inference turns yellow, and deterministic problems turn red and stop the inspection at the failing step.
 - **Evidence-first diagnostics:** errors retain source files, lines, confidence, cause, and a suggested repair.
-- **Semantic zoom:** scrolling moves between the whole system, Agent logic, and exact source-evidence layers without deleting graph facts.
+- **Semantic zoom:** scrolling smoothly crossfades between the whole system, Agent logic, and exact source-evidence layers without deleting graph facts or flickering at level boundaries.
 - **Chinese and English:** the CLI and Viewer follow the operating-system/browser locale automatically and include explicit overrides.
 
 ## Blueprint viewer and reusable components
@@ -98,7 +98,7 @@ The same CLI can be installed directly from the CI-validated GitHub Release
 artifact without cloning the monorepo:
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.1.1/agent-runtime-map-0.1.1.tgz
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.1.2/agent-runtime-map-0.1.2.tgz
 npx agent-runtime-map .
 ```
 

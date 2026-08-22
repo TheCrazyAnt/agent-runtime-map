@@ -4,6 +4,7 @@ import {
   BLUEPRINT_SEMANTIC_ZOOM,
   blueprintEdgeAppearance,
   blueprintDetailLevelForZoom,
+  blueprintSemanticZoomProgress,
   measureBlueprintBounds,
   type BlueprintLogicNodeData,
 } from "@agent-runtime-map/react";
@@ -17,6 +18,26 @@ describe("blueprint visual primitives", () => {
     expect(blueprintDetailLevelForZoom(1)).toBe("logic");
     expect(blueprintDetailLevelForZoom(BLUEPRINT_SEMANTIC_ZOOM.evidenceMin)).toBe("evidence");
     expect(blueprintDetailLevelForZoom(Number.NaN)).toBe("overview");
+    expect(blueprintDetailLevelForZoom(0.58, "overview")).toBe("overview");
+    expect(blueprintDetailLevelForZoom(0.62, "overview")).toBe("logic");
+    expect(blueprintDetailLevelForZoom(1.18, "logic")).toBe("logic");
+    expect(blueprintDetailLevelForZoom(1.22, "logic")).toBe("evidence");
+    expect(blueprintDetailLevelForZoom(1.1, "evidence")).toBe("evidence");
+  });
+
+  it("crossfades semantic detail continuously between named levels", () => {
+    expect(blueprintSemanticZoomProgress(BLUEPRINT_SEMANTIC_ZOOM.logicFadeStart)).toEqual({
+      overview: 1,
+      logic: 0,
+      evidence: 0,
+    });
+    const betweenOverviewAndLogic = blueprintSemanticZoomProgress(0.55);
+    expect(betweenOverviewAndLogic.logic).toBeGreaterThan(0);
+    expect(betweenOverviewAndLogic.logic).toBeLessThan(1);
+    expect(betweenOverviewAndLogic.overview).toBeCloseTo(1 - betweenOverviewAndLogic.logic);
+    expect(blueprintSemanticZoomProgress(BLUEPRINT_SEMANTIC_ZOOM.logicFadeEnd).logic).toBe(1);
+    expect(blueprintSemanticZoomProgress(BLUEPRINT_SEMANTIC_ZOOM.evidenceFadeStart).evidence).toBe(0);
+    expect(blueprintSemanticZoomProgress(BLUEPRINT_SEMANTIC_ZOOM.evidenceFadeEnd).evidence).toBe(1);
   });
 
   it("measures a padded frame around positioned logic nodes", () => {

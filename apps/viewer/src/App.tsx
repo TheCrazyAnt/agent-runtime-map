@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Controls,
   MarkerType,
@@ -14,6 +14,7 @@ import {
   BlueprintLogicNode,
   blueprintDetailLevelForZoom,
   blueprintEdgeAppearance,
+  blueprintSemanticZoomProgress,
   type BlueprintDetailLevel,
   type BlueprintEdgeState,
   type BlueprintLogicNodeData,
@@ -85,6 +86,13 @@ function LogicMapViewer() {
   const [error, setError] = useState<string>();
   const [locale, setLocale] = useState<UiLocale>(detectViewerLocale);
   const [detailLevel, setDetailLevel] = useState<BlueprintDetailLevel>("logic");
+  const [navigating, setNavigating] = useState(false);
+  const canvasRef = useRef<HTMLElement>(null);
+  const detailLevelRef = useRef<BlueprintDetailLevel>("logic");
+  const reduceMotion = useMemo(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    [],
+  );
   const { fitView } = useReactFlow();
   const text = messages(locale);
 
@@ -118,9 +126,9 @@ function LogicMapViewer() {
     const flowEdges = graph.edges.map((edge) => toFlowEdge(edge, "global", graph, locale));
     void layoutGraph(flowNodes, flowEdges).then((layouted) => {
       setNodes(layouted as Node<BlueprintLogicNodeData>[]);
-      window.setTimeout(() => fitView({ padding: 0.14, duration: 500 }), 20);
+      window.setTimeout(() => fitView({ padding: 0.14, duration: reduceMotion ? 0 : 500 }), 20);
     });
-  }, [fitView, graph, locale]);
+  }, [fitView, graph, locale, reduceMotion]);
 
   useEffect(() => {
     if (!graph || selectedFeatureId !== undefined) return;
@@ -147,14 +155,14 @@ function LogicMapViewer() {
       () => fitView({
         nodes: focusNodes,
         padding: selectedVariant ? 0.22 : 0.14,
-        duration: 620,
+        duration: reduceMotion ? 0 : 620,
         minZoom: selectedVariant ? 0.46 : 0.26,
         maxZoom: 1.08,
       }),
       30,
     );
     return () => window.clearTimeout(timer);
-  }, [fitView, nodes, selectedVariant]);
+  }, [fitView, nodes, reduceMotion, selectedVariant]);
 
   useEffect(() => {
     if (!playing || !selectedFeature || !selectedVariant) return;
@@ -188,9 +196,8 @@ function LogicMapViewer() {
 
   const visibleLogicNodes = useMemo(() => nodes.map((node) => ({
     ...node,
-    data: { ...node.data, detailLevel },
     className: nodeClassName(node.id, matchingIds, selectedFeature, selectedVariant, frame),
-  })), [detailLevel, frame, matchingIds, nodes, selectedFeature, selectedVariant]);
+  })), [frame, matchingIds, nodes, selectedFeature, selectedVariant]);
 
   const visibleNodes = useMemo(() => {
     if (!graph) return visibleLogicNodes;
@@ -238,6 +245,17 @@ function LogicMapViewer() {
     rememberViewerLocale(nextLocale);
     setLocale(nextLocale);
   };
+  const updateSemanticZoom = useCallback((zoom: number) => {
+    const progress = blueprintSemanticZoomProgress(zoom);
+    const canvas = canvasRef.current;
+    canvas?.style.setProperty("--semantic-logic-progress", progress.logic.toFixed(4));
+    canvas?.style.setProperty("--semantic-evidence-progress", progress.evidence.toFixed(4));
+    const nextLevel = blueprintDetailLevelForZoom(zoom, detailLevelRef.current);
+    if (nextLevel !== detailLevelRef.current) {
+      detailLevelRef.current = nextLevel;
+      setDetailLevel(nextLevel);
+    }
+  }, []);
 
   if (error) return <ErrorState message={`${text.loadError}: ${error}`} locale={locale} />;
   if (!graph) return <LoadingState locale={locale} />;
@@ -322,7 +340,13 @@ function LogicMapViewer() {
         <div className="sidebar__footer"><Braces size={14} /> {text.staticAnalysis}</div>
       </aside>
 
-      <section className="canvas" aria-label={text.logicGraph} data-detail-level={detailLevel}>
+      <section
+        className="canvas"
+        aria-label={text.logicGraph}
+        data-detail-level={detailLevel}
+        data-navigating={navigating ? "true" : "false"}
+        ref={canvasRef}
+      >
         <div className="canvas-caption">
           <span className="canvas-caption__mark" />
           <strong>{selectedFeature ? localizeFeatureLabel(selectedFeature, graph, locale) : text.wholeSystem}</strong>
@@ -331,6 +355,11 @@ function LogicMapViewer() {
         <div className="semantic-zoom" aria-live="polite">
           <span>{text.zoomLevel}</span>
           <strong>{semanticZoomLabel(detailLevel, locale)}</strong>
+          <div className="semantic-zoom__levels" aria-hidden="true">
+            {(["overview", "logic", "evidence"] as const).map((level) => (
+              <i className={level === detailLevel ? "is-active" : ""} key={level} />
+            ))}
+          </div>
           <small>{text.semanticZoomHint}</small>
         </div>
         <ReactFlow
@@ -339,10 +368,9 @@ function LogicMapViewer() {
           nodeTypes={nodeTypes}
           onNodeClick={selectNode}
           onPaneClick={() => setSelectedId(undefined)}
-          onMove={(_event, viewport) => {
-            const nextLevel = blueprintDetailLevelForZoom(viewport.zoom);
-            setDetailLevel((current) => current === nextLevel ? current : nextLevel);
-          }}
+          onMoveStart={() => setNavigating(true)}
+          onMove={(_event, viewport) => updateSemanticZoom(viewport.zoom)}
+          onMoveEnd={() => setNavigating(false)}
           nodesDraggable
           nodesConnectable={false}
           elementsSelectable

@@ -2,6 +2,20 @@
 
 All notable changes are documented here.
 
+## 0.1.2 - 2026-08-22
+
+### Added
+
+- Continuous eased crossfades for node semantics, confidence, source counts,
+  edge labels, group details, and source-evidence cards while zooming.
+- Hysteresis around semantic-level thresholds so trackpad and wheel input do not
+  flicker between adjacent view labels near a boundary.
+- A three-segment animated level indicator and subtle navigation feedback.
+- Reduced-motion handling for viewport focus, semantic transitions, playback
+  scanning, error flashes, and the evidence drawer.
+- Public `blueprintSemanticZoomProgress()` interpolation API in the reusable
+  React component package.
+
 ## 0.1.1 - 2026-08-22
 
 ### Added

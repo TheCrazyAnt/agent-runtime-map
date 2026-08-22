@@ -17,7 +17,7 @@ Agent Runtime Map 会读取 TypeScript / JavaScript 项目，同时理解 README
 - **静态链路模拟：** 播放器模拟代码推断出的执行路线，不会假装真的有一个线上请求正在运行。
 - **链路检查：** 已确认步骤变绿；不确定推断变黄；确定性断链变红，并在出错步骤停止。
 - **源码证据：** 每个节点和诊断都保留文件、行号、置信度、识别方法与修复建议。
-- **语义缩放：** 滚轮缩放在全局、Agent 逻辑和源码证据三层之间切换，不删除图里的事实。
+- **语义缩放：** 滚轮缩放会在全局、Agent 逻辑和源码证据三层间连续渐变，不删除图里的事实，也不会在层级边界来回闪烁。
 - **自动中英文：** 中文系统和浏览器默认显示中文，海外环境默认显示英文，也可以手动切换。
 
 ## 项目理解能力
@@ -72,7 +72,7 @@ npx agent-runtime-map@latest .
 同一个已经通过发布校验的 CLI 包：
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.1.1/agent-runtime-map-0.1.1.tgz
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.1.2/agent-runtime-map-0.1.2.tgz
 npx agent-runtime-map .
 ```
 

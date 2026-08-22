@@ -7,6 +7,7 @@ import {
   BlueprintGroupNode,
   BlueprintLogicNode,
   blueprintDetailLevelForZoom,
+  blueprintSemanticZoomProgress,
   blueprintEdgeAppearance,
 } from "@agent-runtime-map/react";
 import "@agent-runtime-map/react/styles.css";
@@ -24,5 +25,6 @@ The package exports:
 - `blueprintEdgeAppearance()` — consistent main, auxiliary, active, verified, warning, and error link tokens.
 - `measureBlueprintBounds()` — computes a frame around positioned React Flow nodes.
 - `blueprintDetailLevelForZoom()` — maps wheel zoom to overview, logic, and source-evidence fidelity without dropping graph data.
+- `blueprintSemanticZoomProgress()` — returns eased continuous progress values for crossfading details between levels.
 
 All components are presentation-only. They consume the shared graph protocol and do not analyze or execute user code.
