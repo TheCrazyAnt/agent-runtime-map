@@ -1,6 +1,6 @@
 {
   "name": "agent-runtime-map",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Inspect every Agent feature as an evidence-backed, step-through execution circuit.",
   "homepage": "https://github.com/tangyishun9846/agent-runtime-map#readme",
   "repository": {

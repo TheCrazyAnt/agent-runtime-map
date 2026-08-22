@@ -14,6 +14,7 @@ import {
   Workflow,
   Wrench,
 } from "lucide-react";
+import type { BlueprintDetailLevel } from "./semanticZoom.js";
 
 export type BlueprintLogicNodeType =
   | "user_action"
@@ -39,6 +40,9 @@ export interface BlueprintLogicNodeData extends Record<string, unknown> {
   typeLabel: string;
   confidence: number;
   sourceText: string;
+  sourceDetail?: string;
+  inferenceText?: string;
+  detailLevel?: BlueprintDetailLevel;
 }
 
 const ICONS: Record<BlueprintLogicNodeType, ComponentType<{ size?: number; strokeWidth?: number }>> = {
@@ -59,8 +63,12 @@ const ICONS: Record<BlueprintLogicNodeType, ComponentType<{ size?: number; strok
 export function BlueprintLogicNode({ data, selected }: NodeProps) {
   const value = data as BlueprintLogicNodeData;
   const Icon = ICONS[value.nodeType];
+  const detailLevel = value.detailLevel ?? "logic";
   return (
-    <article className={`blueprint-node blueprint-node--${value.nodeType}${selected ? " is-selected" : ""}`}>
+    <article
+      className={`blueprint-node blueprint-node--${value.nodeType} blueprint-node--detail-${detailLevel}${selected ? " is-selected" : ""}`}
+      data-detail-level={detailLevel}
+    >
       <Handle type="target" position={Position.Left} className="blueprint-handle" />
       <div className="blueprint-node__tile">
         <span className="blueprint-node__type">{value.typeLabel}</span>
@@ -70,6 +78,12 @@ export function BlueprintLogicNode({ data, selected }: NodeProps) {
       <h3>{value.label}</h3>
       <p>{value.description}</p>
       <small>{value.sourceText}</small>
+      {value.sourceDetail && (
+        <div className="blueprint-node__evidence">
+          <code>{value.sourceDetail}</code>
+          {value.inferenceText && <span>{value.inferenceText}</span>}
+        </div>
+      )}
       <Handle type="source" position={Position.Right} className="blueprint-handle" />
     </article>
   );

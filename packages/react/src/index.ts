@@ -19,3 +19,8 @@ export {
   type BlueprintBounds,
   type BlueprintPositionedNode,
 } from "./measureBlueprintBounds.js";
+export {
+  BLUEPRINT_SEMANTIC_ZOOM,
+  blueprintDetailLevelForZoom,
+  type BlueprintDetailLevel,
+} from "./semanticZoom.js";

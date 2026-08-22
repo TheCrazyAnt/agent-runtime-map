@@ -27,6 +27,7 @@
 
 - deeper Next.js, Hono, and Express adapters
 - [x] React blueprint primitive package
+- [x] wheel-driven overview, logic, and source-evidence semantic zoom
 - [ ] high-level embeddable `<AgentRuntimeMap />` component
 - [ ] Web Component
 - [ ] saved layouts and annotations

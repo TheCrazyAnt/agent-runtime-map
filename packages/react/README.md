@@ -6,6 +6,7 @@ Reusable React Flow components for the Agent Runtime Map blueprint visual langua
 import {
   BlueprintGroupNode,
   BlueprintLogicNode,
+  blueprintDetailLevelForZoom,
   blueprintEdgeAppearance,
 } from "@agent-runtime-map/react";
 import "@agent-runtime-map/react/styles.css";
@@ -22,5 +23,6 @@ The package exports:
 - `BlueprintGroupNode` — solid or dashed labeled system boundaries.
 - `blueprintEdgeAppearance()` — consistent main, auxiliary, active, verified, warning, and error link tokens.
 - `measureBlueprintBounds()` — computes a frame around positioned React Flow nodes.
+- `blueprintDetailLevelForZoom()` — maps wheel zoom to overview, logic, and source-evidence fidelity without dropping graph data.
 
 All components are presentation-only. They consume the shared graph protocol and do not analyze or execute user code.
