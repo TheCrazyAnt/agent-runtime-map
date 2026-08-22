@@ -1,17 +1,32 @@
 import type { Node } from "@xyflow/react";
-import {
-  measureBlueprintBounds,
-  type BlueprintGroupNodeData,
-  type BlueprintGroupTone,
-  type BlueprintLogicNodeData,
-} from "@agent-runtime-map/react";
+import { measureBlueprintBounds } from "./measureBlueprintBounds.js";
+import type { BlueprintGroupNodeData, BlueprintGroupTone } from "./BlueprintGroupNode.js";
+import type { BlueprintLogicNodeData } from "./BlueprintLogicNode.js";
 import type { LogicGraph, LogicNodeType } from "@agent-runtime-map/schema";
-import type { UiLocale } from "./i18n.js";
+
+/**
+ * Boundary titles are supplied by the host rather than resolved from a locale, so an
+ * embedder can label the frames in its own product language without this package
+ * carrying a translation table it cannot keep current.
+ */
+export interface BlueprintGroupLabels {
+  runtime: string;
+  workflows: string;
+  systems: string;
+  nodeCount: (count: number) => string;
+}
+
+export const DEFAULT_BLUEPRINT_GROUP_LABELS: BlueprintGroupLabels = {
+  runtime: "AGENT RUNTIME",
+  workflows: "AGENT WORKFLOWS",
+  systems: "DATA & SERVICES",
+  nodeCount: (count) => `${count} ${count === 1 ? "node" : "nodes"}`,
+};
 
 interface GroupDefinition {
   id: string;
   types: LogicNodeType[];
-  label: Record<UiLocale, string>;
+  labelKey: keyof Omit<BlueprintGroupLabels, "nodeCount">;
   tone: BlueprintGroupTone;
   dashed?: boolean;
   padding: number;
@@ -22,7 +37,7 @@ const GROUPS: GroupDefinition[] = [
   {
     id: "runtime",
     types: ["entrypoint", "process", "workflow", "ai_process", "tool", "model", "human_gate", "decision", "data", "external_system", "result"],
-    label: { en: "AGENT RUNTIME", "zh-CN": "智能体运行时" },
+    labelKey: "runtime",
     tone: "amber",
     padding: 62,
     minimumNodes: 1,
@@ -30,7 +45,7 @@ const GROUPS: GroupDefinition[] = [
   {
     id: "workflows",
     types: ["process", "workflow", "ai_process", "tool", "human_gate", "decision"],
-    label: { en: "AGENT WORKFLOWS", "zh-CN": "AGENT 工作流" },
+    labelKey: "workflows",
     tone: "violet",
     dashed: true,
     padding: 34,
@@ -39,7 +54,7 @@ const GROUPS: GroupDefinition[] = [
   {
     id: "systems",
     types: ["data", "model", "external_system"],
-    label: { en: "DATA & SERVICES", "zh-CN": "数据与外部服务" },
+    labelKey: "systems",
     tone: "cyan",
     padding: 30,
     minimumNodes: 2,
@@ -50,7 +65,7 @@ export function buildBlueprintGroupNodes(
   nodes: Node<BlueprintLogicNodeData>[],
   graph: LogicGraph,
   activeNodeIds: Set<string> | undefined,
-  locale: UiLocale,
+  labels: BlueprintGroupLabels = DEFAULT_BLUEPRINT_GROUP_LABELS,
 ): Node<BlueprintGroupNodeData>[] {
   const typeById = new Map(graph.nodes.map((node) => [node.id, node.type]));
   const focused = activeNodeIds ? nodes.filter((node) => activeNodeIds.has(node.id)) : nodes;
@@ -65,8 +80,8 @@ export function buildBlueprintGroupNodes(
       type: "blueprintGroup",
       position: { x: bounds.x, y: bounds.y },
       data: {
-        label: group.label[locale],
-        detail: `${members.length} ${locale === "zh-CN" ? "个节点" : members.length === 1 ? "node" : "nodes"}`,
+        label: labels[group.labelKey],
+        detail: labels.nodeCount(members.length),
         tone: group.tone,
         dashed: group.dashed,
       },

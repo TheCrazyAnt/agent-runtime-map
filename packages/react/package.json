@@ -19,23 +19,29 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./styles.css": "./dist/styles.css"
+    "./styles.css": "./dist/styles.css",
+    "./element": {
+      "types": "./dist/element.d.ts",
+      "import": "./dist/element.js"
+    }
   },
   "files": [
     "dist",
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --external react --external @xyflow/react --external lucide-react && node scripts/copy-styles.mjs",
+    "build": "tsup src/index.ts src/element.tsx --format esm --dts --external react --external react-dom --external @xyflow/react --external lucide-react && node scripts/copy-styles.mjs",
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
     "@xyflow/react": "^12.10.0",
     "lucide-react": ">=0.468.0",
-    "react": ">=18.0.0"
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0"
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
   },
   "license": "MIT",
   "engines": {
@@ -46,5 +52,13 @@
   },
   "sideEffects": [
     "**/*.css"
-  ]
+  ],
+  "dependencies": {
+    "elkjs": "^0.11.0"
+  },
+  "peerDependenciesMeta": {
+    "react-dom": {
+      "optional": true
+    }
+  }
 }

@@ -9,7 +9,7 @@ import {
   type BlueprintLogicNodeData,
 } from "@agent-runtime-map/react";
 import type { LogicGraph, LogicNodeType } from "@agent-runtime-map/schema";
-import { buildBlueprintGroupNodes } from "../apps/viewer/src/blueprintGroups.js";
+import { buildBlueprintGroupNodes } from "@agent-runtime-map/react";
 
 describe("blueprint visual primitives", () => {
   it("maps wheel zoom to stable semantic detail levels", () => {
@@ -82,7 +82,7 @@ describe("blueprint visual primitives", () => {
       nodes: Object.entries(types).map(([id, type]) => ({ id, type })),
     } as unknown as LogicGraph;
 
-    const groups = buildBlueprintGroupNodes(nodes, graph, undefined, "zh-CN");
+    const groups = buildBlueprintGroupNodes(nodes, graph, undefined, { runtime: "智能体运行时", workflows: "AGENT 工作流", systems: "数据与外部服务", nodeCount: (count) => `${count} 个节点` });
 
     expect(groups).toHaveLength(3);
     expect(groups.map((group) => group.data.label)).toEqual([

@@ -77,13 +77,16 @@ apps/viewer/
   src/App.tsx                 Viewer state, interactions, source drawer
   src/interactionModel.ts     Pure helpers: raw-detail expansion, transitions,
                               layout snapshots (unit-tested)
-  src/layout.ts               ELK global layout, called once per graph
-  src/simulation.ts           Pure static playback-frame reducer
-  src/blueprintGroups.ts      Group boundary derivation
   src/i18n.ts                 English/Chinese Viewer strings + localization
   src/styles.css              Viewer layout and interaction styling
 
 packages/react/
+  src/LogicMap.tsx            Embeddable canvas for a compiled LogicGraph
+  src/logicMapModel.ts        Pure node/edge derivation for that canvas (unit-tested)
+  src/element.tsx             <logic-map> custom element (separate entry point)
+  src/simulation.ts           Pure static playback-frame reducer
+  src/layout.ts               ELK global layout, called once per graph
+  src/blueprintGroups.ts      Group boundary derivation (host supplies labels)
   src/BlueprintLogicNode.tsx  Human-scale semantic node
   src/BlueprintCodeNode.tsx   Compact raw-code evidence node
   src/BlueprintPlaybackEdge.tsx
@@ -296,9 +299,14 @@ Work in this order unless product direction changes:
    be opened exactly one further level through an explicit control on the node.
    `MAX_DETAIL_DEPTH` is 2 and the deepest level carries no control. Still open:
    remembering a drill-down across feature switches.
-5. **Embedded package API.** Package a documented `<LogicMap />` React component
-   and then a Web Component wrapper. The embedding API should accept already
-   computed `LogicGraph`/`RawCodeGraph`, never need direct repository access.
+5. **Embedded package API.** `<LogicMap />` and the `<logic-map>` custom element
+   ship from `@agent-runtime-map/react`, both taking an already compiled
+   `LogicGraph`. The simulation reducer, ELK layout, and group derivation moved
+   into that package so the Viewer and an embedded map share one implementation.
+   Still open: browser smoke-testing the embedded component (its derivation logic
+   is covered by `tests/logic-map.test.ts`, but the rendering path has not been
+   verified in a browser), host-driven raw drill-down, and the Viewer itself
+   consuming `<LogicMap />` rather than composing React Flow directly.
 6. **Trace bridge, not an APM platform.** Add an optional event protocol that can
    light up existing stable graph IDs. Do not replace static facts with opaque
    runtime spans; map trace events onto the same evidence-backed nodes.

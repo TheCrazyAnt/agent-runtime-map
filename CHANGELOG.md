@@ -57,6 +57,16 @@ All notable changes are documented here.
   node. Depth is capped at two, and the deepest level carries no control rather
   than offering an interaction that does nothing.
 
+- An embeddable `<LogicMap />` React component, and a `<logic-map>` custom element
+  on its own entry point for hosts that are not React applications. Both take an
+  already compiled `LogicGraph` and never read a repository or call a service of
+  their own. `stepIndex` drives the same static route simulation the Viewer shows,
+  and is documented as a simulation rather than a run.
+- The route simulation reducer, the ELK layout, and the boundary-frame derivation
+  moved into `@agent-runtime-map/react`, so the Viewer and an embedded map share
+  one implementation. Boundary titles are supplied by the host rather than looked
+  up from a locale, which keeps the visual package language-neutral.
+
 ### Fixed
 
 - Expanded raw-code children were created but never became visible. They are not

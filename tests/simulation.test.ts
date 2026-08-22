@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FeaturePathVariant, FeatureScenario } from "@agent-runtime-map/schema";
-import { buildSimulationFrame, nextSimulationStep } from "../apps/viewer/src/simulation.js";
+import { buildSimulationFrame, nextSimulationStep } from "@agent-runtime-map/react";
 
 const variant: FeaturePathVariant = {
   id: "default",

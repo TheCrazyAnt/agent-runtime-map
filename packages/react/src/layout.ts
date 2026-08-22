@@ -1,8 +1,18 @@
-import type { Edge, Node } from "@xyflow/react";
-import { BLUEPRINT_NODE_HEIGHT, BLUEPRINT_NODE_WIDTH } from "@agent-runtime-map/react";
+import type { Edge, Node, XYPosition } from "@xyflow/react";
+import type { ElkNode } from "elkjs/lib/elk-api.js";
+
+/**
+ * `elk.bundled.js` ships a default export that TypeScript sees as a namespace rather
+ * than a constructor, so the shape actually used is stated here instead of widening
+ * the whole import to `any`.
+ */
+interface ElkConstructor {
+  new (): { layout(graph: ElkNode): Promise<ElkNode> };
+}
+import { BLUEPRINT_NODE_HEIGHT, BLUEPRINT_NODE_WIDTH } from "./BlueprintLogicNode.js";
 
 export async function layoutGraph(nodes: Node[], edges: Edge[]): Promise<Node[]> {
-  const { default: ELK } = await import("elkjs/lib/elk.bundled.js");
+  const { default: ELK } = await import("elkjs/lib/elk.bundled.js") as unknown as { default: ElkConstructor };
   const elk = new ELK();
   const graph = await elk.layout({
     id: "root",
@@ -19,6 +29,8 @@ export async function layoutGraph(nodes: Node[], edges: Edge[]): Promise<Node[]>
     edges: edges.map((edge) => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })),
   });
 
-  const positions = new Map(graph.children?.map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
+  const positions = new Map<string, XYPosition>(
+    (graph.children ?? []).map((child: ElkNode) => [child.id, { x: child.x ?? 0, y: child.y ?? 0 }]),
+  );
   return nodes.map((node) => ({ ...node, position: positions.get(node.id) ?? node.position }));
 }
