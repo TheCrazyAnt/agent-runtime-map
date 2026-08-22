@@ -22,5 +22,7 @@ export {
 export {
   BLUEPRINT_SEMANTIC_ZOOM,
   blueprintDetailLevelForZoom,
+  blueprintSemanticZoomProgress,
   type BlueprintDetailLevel,
+  type BlueprintSemanticZoomProgress,
 } from "./semanticZoom.js";

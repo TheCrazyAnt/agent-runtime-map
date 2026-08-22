@@ -63,11 +63,11 @@ const ICONS: Record<BlueprintLogicNodeType, ComponentType<{ size?: number; strok
 export function BlueprintLogicNode({ data, selected }: NodeProps) {
   const value = data as BlueprintLogicNodeData;
   const Icon = ICONS[value.nodeType];
-  const detailLevel = value.detailLevel ?? "logic";
+  const detailClass = value.detailLevel ? ` blueprint-node--detail-${value.detailLevel}` : "";
   return (
     <article
-      className={`blueprint-node blueprint-node--${value.nodeType} blueprint-node--detail-${detailLevel}${selected ? " is-selected" : ""}`}
-      data-detail-level={detailLevel}
+      className={`blueprint-node blueprint-node--${value.nodeType}${detailClass}${selected ? " is-selected" : ""}`}
+      data-detail-level={value.detailLevel}
     >
       <Handle type="target" position={Position.Left} className="blueprint-handle" />
       <div className="blueprint-node__tile">

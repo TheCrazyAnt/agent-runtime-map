@@ -29,10 +29,12 @@ small presentation contract.
 
 ```tsx
 import { ReactFlow } from "@xyflow/react";
+import type { CSSProperties } from "react";
 import {
   BlueprintGroupNode,
   BlueprintLogicNode,
   blueprintDetailLevelForZoom,
+  blueprintSemanticZoomProgress,
   blueprintEdgeAppearance,
 } from "@agent-runtime-map/react";
 import "@xyflow/react/dist/style.css";
@@ -47,18 +49,21 @@ const activeEdge = blueprintEdgeAppearance("current");
 
 export function EmbeddedAgentMap({ nodes, edges, zoom }) {
   const detailLevel = blueprintDetailLevelForZoom(zoom);
-  const semanticNodes = nodes.map((node) => ({
-    ...node,
-    data: { ...node.data, detailLevel },
-  }));
+  const progress = blueprintSemanticZoomProgress(zoom);
+  const semanticStyle = {
+    "--semantic-logic-progress": progress.logic,
+    "--semantic-evidence-progress": progress.evidence,
+  } as CSSProperties;
   return (
-    <ReactFlow
-      nodes={semanticNodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      fitView
-      nodesConnectable={false}
-    />
+    <section data-detail-level={detailLevel} style={semanticStyle}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        fitView
+        nodesConnectable={false}
+      />
+    </section>
   );
 }
 ```
@@ -74,6 +79,14 @@ the node uses the overview treatment, from `0.55` to `1.15` it shows normal logi
 semantics, and at `1.15` or above it reveals exact source evidence. Consumers can
 pass the returned level into each node without rebuilding layout or discarding
 any graph data.
+
+The bundled Viewer uses `blueprintSemanticZoomProgress()` in addition to those
+named levels. It returns eased `overview`, `logic`, and `evidence` progress
+values, which continuously crossfade node descriptions, confidence, edge labels,
+and source cards. The named-level function accepts the current level and applies
+hysteresis, so a trackpad resting near a threshold does not flicker between two
+labels. Consumers should honor `prefers-reduced-motion` when adding transforms or
+timed viewport animations.
 
 `blueprintEdgeAppearance()` returns deterministic color, width, opacity, dash,
 and animation values for these states:
