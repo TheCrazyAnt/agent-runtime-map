@@ -56,7 +56,8 @@ In the Viewer, a user can:
    detail levels.
 6. Double-click a logic node to expand its bounded raw-code internals below the
    node; double-click again to collapse it.
-7. Click a logic node or a search result to open its source-evidence drawer.
+7. Click a logic node or a search result to open its source-evidence drawer,
+   which separates what the code says from what the project says about itself.
 8. Search by localized label, original label, description, or source path. A
    result gets a temporary spotlight and the camera flies to it.
 9. Drag a logic node. That position is stored locally for the project, marked
@@ -269,9 +270,13 @@ Work in this order unless product direction changes:
    decorators, Next.js server actions and `middleware.ts`, CrewAI task/crew
    wiring, and Mastra registries. Add each only with a clear factual evidence
    model.
-3. **Product-logic confidence UX.** Show which product conclusions came from
-   docs/prompts versus source. Add user-provided product description as an
-   explicit, labeled evidence input.
+3. **Product-logic confidence UX.** Done: `LogicNode.product` and
+   `FeatureScenario.product` carry the matched capability, its origin
+   (readme/prd/docs/prompt/config/user), the documented terms, and the strength
+   of the link; the evidence drawer shows it apart from source evidence in both
+   languages, and says so when a step is code-only. `--description` is a labelled
+   user claim. Still open: editing a capability from inside the Viewer, and
+   showing which *feature label* was borrowed rather than derived.
 4. **Source drill-down refinement.** Let a user choose a raw child and keep its
    source range selected in the drawer. Avoid unlimited recursive expansion;
    use a breadcrumb or bounded second level instead.

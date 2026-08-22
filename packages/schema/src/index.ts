@@ -105,13 +105,43 @@ export interface ProjectDependency {
   category: "runtime" | "development" | "peer";
 }
 
+/**
+ * Where a product claim came from. Code remains the source of truth; these only say
+ * what the project *says about itself*, so a reader can weigh a conclusion knowing
+ * whether it was read out of the code or out of a document someone wrote.
+ */
+export type ProductEvidenceOrigin = "readme" | "prd" | "docs" | "prompt" | "config" | "user";
+
 export interface ProjectCapabilityHint {
   id: string;
   label: string;
   description: string;
   keywords: string[];
+  origin: ProductEvidenceOrigin;
   sources: SourceLocation[];
   confidence: number;
+}
+
+/**
+ * A documented capability a code path was matched to. Kept apart from `sources` and
+ * `confidence`, which describe the code: a strong document must never make weak code
+ * look certain, and `match` is the strength of the link, not of either side.
+ */
+/**
+ * What linked the code to the documented capability. Kept as a kind plus the terms
+ * themselves, rather than a finished sentence, so the Viewer can say it in the
+ * reader's language while the documented words stay verbatim as evidence.
+ */
+export type ProductMatchKind = "documented_name" | "documented_terms" | "entry_terms" | "step_terms";
+
+export interface ProductEvidence {
+  capabilityId: string;
+  label: string;
+  origin: ProductEvidenceOrigin;
+  sources: SourceLocation[];
+  match: number;
+  matchedOn: ProductMatchKind;
+  matchedTerms: string[];
 }
 
 export interface ProjectContext {
@@ -179,6 +209,7 @@ export interface LogicNode {
     explanation: string;
   };
   rawNodeIds: string[];
+  product?: ProductEvidence;
   metadata?: Record<string, unknown>;
 }
 
@@ -248,6 +279,7 @@ export interface FeatureScenario {
   diagnostics: ChainDiagnostic[];
   health: ChainHealth;
   confidence: number;
+  product?: ProductEvidence;
 }
 
 export interface ProjectUnderstanding {

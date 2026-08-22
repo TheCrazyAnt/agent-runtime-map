@@ -225,6 +225,22 @@ button { color: inherit; }
 .confidence-track { height: 4px; margin: 10px 0; border-radius: 8px; background: #e4e8ed; overflow: hidden; }
 .confidence-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #1689cf, #5bb8df); }
 .confidence-card small { display: block; color: #858f9a; font-size: 9px; line-height: 1.45; }
+
+/* Product context is a claim the project makes about itself, so it is framed as a
+   quieter aside rather than competing with the source evidence below it. */
+.product-card { display: grid; gap: 8px; margin-top: 14px; padding: 13px; border: 1px dashed #d8e0e6; border-radius: 10px; background: rgba(247,250,252,.85); }
+.product-card .eyebrow { margin: 0; }
+.product-card__empty { margin: 0; color: #8b96a1; font-size: 9px; line-height: 1.5; }
+.product-card__claim { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.product-card__claim strong { color: #4a5560; font-size: 11px; }
+.product-card__claim em { flex: none; color: #7c8792; font-size: 9px; font-style: normal; }
+.product-card__match { display: flex; align-items: center; gap: 9px; }
+.product-card__match span { color: #8b959f; font-size: 9px; }
+.product-card__match .confidence-track { flex: 1; margin: 0; }
+.product-card__match strong { color: #5f83a0; font-size: 10px; }
+.product-card small { color: #8b959f; font-size: 9px; line-height: 1.45; }
+.product-card__source { color: #7d8994; font: 8px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+
 .evidence-list { display: flex; flex-direction: column; gap: 9px; margin-top: 23px; }
 .evidence-list .eyebrow { margin-bottom: 2px; }
 .evidence-list article, .evidence-list button { display: grid; gap: 5px; width: 100%; padding: 11px; border: 1px solid #dfe4e9; border-radius: 8px; color: inherit; background: rgba(255,255,255,.75); text-align: left; cursor: pointer; transition: .16s ease; }

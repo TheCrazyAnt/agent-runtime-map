@@ -9,6 +9,8 @@ import {
   type LogicEdge,
   type LogicNode,
   type LogicNodeType,
+  type ProductEvidence,
+  type ProductMatchKind,
   type ProjectCapabilityHint,
 } from "@agent-runtime-map/schema";
 
@@ -81,12 +83,12 @@ function compileFeature(
     ? assertConfidence(Math.min(...featureNodes.map((node) => node.confidence)))
     : root.confidence;
   const health = healthFromDiagnostics(diagnostics);
-  const label = documentedCapability?.label ?? entrypoint?.label ?? root.label;
+  const label = documentedCapability?.capability.label ?? entrypoint?.label ?? root.label;
 
   return {
     id: `feature_${hash(`${root.id}:${label}`)}`,
     label,
-    description: documentedCapability?.description ?? `Simulates the code-backed execution chain that starts at ${label}.`,
+    description: documentedCapability?.capability.description ?? `Simulates the code-backed execution chain that starts at ${label}.`,
     entryNodeIds: [root.id],
     resultNodeIds: terminalNodes.map((node) => node.id),
     nodeIds: limitedNodeIds,
@@ -95,13 +97,39 @@ function compileFeature(
     diagnostics,
     health,
     confidence,
+    product: featureProductEvidence(documentedCapability),
+  };
+}
+
+interface FeatureCapabilityMatch {
+  capability: ProjectCapabilityHint;
+  score: number;
+  matchedOn: ProductMatchKind;
+  matchedTerms: string[];
+}
+
+/**
+ * A feature's name and description are taken from documentation when one matches, so
+ * the reader is looking at a product claim, not a code fact. Recording the match lets
+ * the Viewer say so instead of presenting the borrowed name as something it derived.
+ */
+function featureProductEvidence(match: FeatureCapabilityMatch | undefined): ProductEvidence | undefined {
+  if (!match) return undefined;
+  return {
+    capabilityId: match.capability.id,
+    label: match.capability.label,
+    origin: match.capability.origin,
+    sources: match.capability.sources,
+    match: assertConfidence(Math.min(0.95, 0.35 + Math.min(match.score, 24) * 0.025) * match.capability.confidence),
+    matchedOn: match.matchedOn,
+    matchedTerms: match.matchedTerms,
   };
 }
 
 function matchDocumentedCapability(
   nodes: LogicNode[],
   capabilities: ProjectCapabilityHint[],
-): ProjectCapabilityHint | undefined {
+): FeatureCapabilityMatch | undefined {
   const tokens = semanticTokens(nodes.map((node) => `${node.label} ${node.metadata?.rawName ?? ""}`).join(" "));
   const entryTokens = semanticTokens(nodes
     .filter((node) => node.type === "entrypoint" || node.type === "user_action")
@@ -112,17 +140,22 @@ function matchDocumentedCapability(
     const id = typeof node.metadata?.documentedCapabilityId === "string" ? node.metadata.documentedCapabilityId : undefined;
     if (id) documentedCounts.set(id, (documentedCounts.get(id) ?? 0) + 1);
   }
-  let best: { capability: ProjectCapabilityHint; score: number } | undefined;
+  let best: FeatureCapabilityMatch | undefined;
   for (const capability of capabilities) {
     const capabilityTokens = semanticTokens(`${capability.label} ${capability.keywords.join(" ")}`);
     const entryHits = [...capabilityTokens].filter((token) => entryTokens.has(token)).length;
     const graphHits = [...capabilityTokens].filter((token) => tokens.has(token)).length;
     const score = entryHits * 8 + graphHits + (documentedCounts.get(capability.id) ?? 0) * 0.5;
     if (score > 0 && (!best || score > best.score || (score === best.score && capability.confidence > best.capability.confidence))) {
-      best = { capability, score };
+      best = {
+        capability,
+        score,
+        matchedOn: entryHits > 0 ? "entry_terms" : "step_terms",
+        matchedTerms: [...capabilityTokens].filter((token) => entryTokens.has(token) || tokens.has(token)).slice(0, 4),
+      };
     }
   }
-  return best?.capability;
+  return best;
 }
 
 function semanticTokens(value: string): Set<string> {

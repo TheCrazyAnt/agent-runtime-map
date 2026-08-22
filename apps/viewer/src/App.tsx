@@ -28,12 +28,14 @@ import {
   GitFork, ListTree, PanelRightClose, Pause, Pin, Play, RotateCcw, Search, SkipForward, Undo2, X,
 } from "lucide-react";
 import type {
-  ChainHealth, FeaturePathVariant, FeatureScenario, LogicGraph, LogicNode as LogicGraphNode, RawCodeGraph,
+  ChainHealth, FeaturePathVariant, FeatureScenario, LogicGraph, LogicNode as LogicGraphNode,
+  ProductEvidence, RawCodeGraph,
 } from "@agent-runtime-map/schema";
 import { buildBlueprintGroupNodes } from "./blueprintGroups";
 import { applyLayoutPositions, buildCodeDetailExpansion, captureLayout, compareVariants, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
 import {
   chainHealthLabel, detectViewerLocale, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
+  productMatchText, productOriginLabel,
   localizeGraphDescription, localizeGraphTitle, localizeNode, localizeVariantLabel, messages, nodeTypeLabel,
   rememberViewerLocale, sourceCountText, type UiLocale,
 } from "./i18n";
@@ -314,6 +316,27 @@ function nodeClassName(nodeId: string, matchingIds: Set<string>, feature: Featur
   const classes: string[] = []; if (!matchingIds.has(nodeId)) classes.push("is-dimmed"); if (spotlightId === nodeId) classes.push("is-search-spotlight"); if (pinnedIds.has(nodeId)) classes.push("is-pinned"); if (expandedLogicIds.has(nodeId)) classes.push("is-expanded"); if (transition?.enteringNodeIds.has(nodeId)) classes.push("is-branch-entering"); if (transition?.exitingNodeIds.has(nodeId)) classes.push("is-branch-exiting"); if (transition?.sharedNodeIds.has(nodeId)) classes.push("is-branch-shared"); if (!feature || !variant) return classes.join(" "); if (!variant.nodeIds.includes(nodeId)) classes.push("is-outside-path"); else if (frame.errorNodeIds.has(nodeId)) classes.push("is-chain-error"); else if (frame.warningNodeIds.has(nodeId)) classes.push("is-chain-warning"); else if (frame.currentNodeIds.has(nodeId)) classes.push("is-current"); else if (frame.completedNodeIds.has(nodeId)) classes.push("is-chain-complete"); else classes.push("is-path-pending"); return classes.join(" ");
 }
 
+/**
+ * Product context is kept visually apart from source evidence, because it is a
+ * different kind of claim: the code was read, whereas this is what the project — or
+ * the person running the tool — says it does. Saying "code only" out loud matters as
+ * much as showing a match, so a reader is never left guessing which one they have.
+ */
+function ProductContext({ product, locale }: { product?: ProductEvidence; locale: UiLocale }) {
+  const text = messages(locale);
+  return <div className="product-card">
+    <span className="eyebrow">{text.productContext}</span>
+    {!product
+      ? <p className="product-card__empty">{text.productCodeOnly}</p>
+      : <>
+        <div className="product-card__claim"><strong>{product.label}</strong><em>{productOriginLabel(product.origin, locale)}</em></div>
+        <div className="product-card__match"><span>{text.productMatch}</span><div className="confidence-track"><i style={{ width: `${product.match * 100}%` }} /></div><strong>{Math.round(product.match * 100)}%</strong></div>
+        <small>{text.productMatchedOn}: {productMatchText(product, locale)}</small>
+        {product.sources.map((item) => <code className="product-card__source" key={`${item.file}:${item.startLine}`}>{item.file}:{item.startLine}</code>)}
+      </>}
+  </div>;
+}
+
 function toFlowNode(node: LogicGraphNode, locale: UiLocale): Node<BlueprintLogicNodeData> { const localized = localizeNode(node, locale); const primarySource = node.sources[0]; return { id: node.id, type: "logic", position: { x: 0, y: 0 }, data: { label: localized.label, description: localized.description, nodeType: node.type, typeLabel: nodeTypeLabel(node.type, locale), confidence: node.confidence, sourceText: sourceCountText(node.sources.length, locale), sourceDetail: primarySource ? `${primarySource.file}:${primarySource.startLine}${primarySource.symbol ? ` · ${primarySource.symbol}` : ""}` : undefined, inferenceText: inferenceMethodLabel(node.inference.method, locale) } }; }
 function semanticZoomLabel(level: BlueprintDetailLevel, locale: UiLocale): string { return locale === "zh-CN" ? { overview: "全局层", logic: "逻辑层", evidence: "证据层" }[level] : { overview: "Overview", logic: "Logic", evidence: "Evidence" }[level]; }
 type EdgeVisualState = BlueprintEdgeState;
@@ -326,7 +349,7 @@ function EvidencePanel({ node, locale, onClose }: { node: LogicGraphNode; locale
   const text = messages(locale); const localized = localizeNode(node, locale); const [sourceIndex, setSourceIndex] = useState(0); const [snippet, setSnippet] = useState<SourceSnippet>(); const [sourceError, setSourceError] = useState(false); const source = node.sources[sourceIndex];
   useEffect(() => { setSourceIndex(0); }, [node.id]);
   useEffect(() => { if (!source) return; let active = true; setSnippet(undefined); setSourceError(false); const params = new URLSearchParams({ file: source.file, start: String(source.startLine), end: String(source.endLine ?? source.startLine) }); fetch(`./source.json?${params.toString()}`, { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error(String(response.status)); return await response.json() as SourceSnippet; }).then((next) => active && setSnippet(next)).catch(() => active && setSourceError(true)); return () => { active = false; }; }, [source]);
-  return <aside className="evidence-panel"><div className="evidence-panel__header"><div><span className="eyebrow">{text.selectedLogic}</span><h2>{localized.label}</h2></div><button onClick={onClose} aria-label={text.closeEvidence}><PanelRightClose size={19} /></button></div><p className="evidence-panel__description">{localized.description}</p><div className="confidence-card"><div><span>{text.confidence}</span><strong>{Math.round(node.confidence * 100)}%</strong></div><div className="confidence-track"><i style={{ width: `${node.confidence * 100}%` }} /></div><small>{inferenceMethodLabel(node.inference.method, locale)} · {node.inference.explanation}</small></div><div className="evidence-list"><span className="eyebrow">{text.sourceEvidence}</span>{node.sources.map((item, index) => <button className={sourceIndex === index ? "is-active" : ""} key={`${item.file}:${item.startLine}`} onClick={() => setSourceIndex(index)}><code>{item.file}</code><span>{text.lines} {item.startLine}{item.endLine && item.endLine !== item.startLine ? `–${item.endLine}` : ""}</span>{item.symbol && <small>{item.symbol}</small>}</button>)}</div><section className="source-preview"><span className="eyebrow">{text.sourceCode}</span>{!source ? <p>{text.sourceUnavailable}</p> : sourceError ? <p>{text.sourceUnavailable}</p> : !snippet ? <p>{text.loadingSource}</p> : <pre>{snippet.lines.map((line) => <code className={line.number >= snippet.highlightStart && line.number <= snippet.highlightEnd ? "is-highlighted" : ""} key={line.number}><i>{line.number}</i><span>{line.text || " "}</span></code>)}</pre>}</section><div className="raw-reference"><span>{text.rawReferences}</span><code>{node.rawNodeIds.join("\n")}</code></div></aside>;
+  return <aside className="evidence-panel"><div className="evidence-panel__header"><div><span className="eyebrow">{text.selectedLogic}</span><h2>{localized.label}</h2></div><button onClick={onClose} aria-label={text.closeEvidence}><PanelRightClose size={19} /></button></div><p className="evidence-panel__description">{localized.description}</p><div className="confidence-card"><div><span>{text.confidence}</span><strong>{Math.round(node.confidence * 100)}%</strong></div><div className="confidence-track"><i style={{ width: `${node.confidence * 100}%` }} /></div><small>{inferenceMethodLabel(node.inference.method, locale)} · {node.inference.explanation}</small></div><ProductContext product={node.product} locale={locale} /><div className="evidence-list"><span className="eyebrow">{text.sourceEvidence}</span>{node.sources.map((item, index) => <button className={sourceIndex === index ? "is-active" : ""} key={`${item.file}:${item.startLine}`} onClick={() => setSourceIndex(index)}><code>{item.file}</code><span>{text.lines} {item.startLine}{item.endLine && item.endLine !== item.startLine ? `–${item.endLine}` : ""}</span>{item.symbol && <small>{item.symbol}</small>}</button>)}</div><section className="source-preview"><span className="eyebrow">{text.sourceCode}</span>{!source ? <p>{text.sourceUnavailable}</p> : sourceError ? <p>{text.sourceUnavailable}</p> : !snippet ? <p>{text.loadingSource}</p> : <pre>{snippet.lines.map((line) => <code className={line.number >= snippet.highlightStart && line.number <= snippet.highlightEnd ? "is-highlighted" : ""} key={line.number}><i>{line.number}</i><span>{line.text || " "}</span></code>)}</pre>}</section><div className="raw-reference"><span>{text.rawReferences}</span><code>{node.rawNodeIds.join("\n")}</code></div></aside>;
 }
 function movedFromBase(node: Node, base: LayoutPositions): boolean { const expected = base[node.id]; return Boolean(expected && (Math.abs(expected.x - node.position.x) > 1 || Math.abs(expected.y - node.position.y) > 1)); }
 function Stat({ value, label }: { value: number; label: string }) { return <div><strong>{value}</strong><span>{label}</span></div>; }

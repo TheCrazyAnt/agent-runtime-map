@@ -141,7 +141,13 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
       graphFile: result.outputFile,
       rawGraphFile: result.rawOutputFile,
       projectRoot: result.rawGraph.project.root,
-      sourceFiles: [...new Set(result.graph.nodes.flatMap((node) => node.sources.map((source) => source.file)))],
+      // Product evidence points at README/PRD/prompt files, which the drawer must be
+      // able to preview for the attribution to be checkable rather than merely stated.
+      sourceFiles: [...new Set([
+        ...result.graph.nodes.flatMap((node) => node.sources.map((source) => source.file)),
+        ...result.graph.nodes.flatMap((node) => node.product?.sources.map((source) => source.file) ?? []),
+        ...result.graph.features.flatMap((feature) => feature.product?.sources.map((source) => source.file) ?? []),
+      ])],
       host,
       port,
     });

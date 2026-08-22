@@ -41,6 +41,9 @@ export async function generateLogicMap(
     : await readProjectContext(root, {
       maxDocuments: options.maxContextFiles,
       maxTotalBytes: options.maxContextBytes,
+      // A description the person supplied is a capability claim as well as a
+      // summary; without this it only ever reached the summary.
+      productDescription: options.productDescription,
     });
   const rawGraph = await analyzeTypeScriptProject(root, { maxFiles: options.maxFiles });
   if (context) {
