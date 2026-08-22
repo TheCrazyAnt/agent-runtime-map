@@ -7,6 +7,8 @@ import {
   type LogicGraph,
   type LogicNode,
   type LogicNodeType,
+  type ProductEvidence,
+  type ProductMatchKind,
   type ProjectCapabilityHint,
   type ProjectUnderstanding,
   type RawCodeEdge,
@@ -142,8 +144,12 @@ function rankCandidates(nodes: RawCodeNode[], degree: Map<string, number>): RawC
 function toLogicNode(raw: RawCodeNode, capabilities: ProjectCapabilityHint[]): LogicNode {
   const type = logicType(raw);
   const confidence = maxEvidenceConfidence(raw);
+  // How this conclusion was reached is a fact about the code. A document that
+  // happens to describe the same capability does not change it, so product evidence
+  // stays a separate channel rather than relabelling every node "mixed".
   const heuristic = raw.evidence.some((item) => item.method.includes("heuristic") || item.method === "framework_convention");
-  const capability = bestCapabilityForText(`${raw.name} ${raw.qualifiedName ?? ""} ${raw.description ?? ""}`, capabilities);
+  const match = bestCapabilityForText(`${raw.name} ${raw.qualifiedName ?? ""} ${raw.description ?? ""}`, capabilities);
+  const product = productEvidence(match);
   return {
     id: `logic_${raw.id}`,
     type,
@@ -156,11 +162,12 @@ function toLogicNode(raw: RawCodeNode, capabilities: ProjectCapabilityHint[]): L
       explanation: raw.evidence.map((item) => item.detail).join("; "),
     },
     rawNodeIds: [raw.id],
+    product,
     metadata: {
       rawKind: raw.kind,
       rawName: raw.name,
-      documentedCapabilityId: capability?.id,
-      documentedCapabilityLabel: capability?.label,
+      documentedCapabilityId: match?.capability.id,
+      documentedCapabilityLabel: match?.capability.label,
       generatedDescription: !raw.description,
       ...raw.metadata,
     },
@@ -308,19 +315,56 @@ function buildProjectUnderstanding(
   };
 }
 
-function bestCapabilityForText(text: string, capabilities: ProjectCapabilityHint[]): ProjectCapabilityHint | undefined {
+/** A documented name, or at least two documented terms, before a link is claimed. */
+const MIN_CAPABILITY_SCORE = 2;
+
+interface CapabilityMatch {
+  capability: ProjectCapabilityHint;
+  score: number;
+  matchedOn: ProductMatchKind;
+  matchedTerms: string[];
+}
+
+function bestCapabilityForText(text: string, capabilities: ProjectCapabilityHint[]): CapabilityMatch | undefined {
   const normalized = normalizeSemanticText(text);
-  let best: { capability: ProjectCapabilityHint; score: number } | undefined;
+  let best: CapabilityMatch | undefined;
   for (const capability of capabilities) {
     const label = normalizeSemanticText(capability.label);
-    const keywordHits = capability.keywords.filter((keyword) => normalized.includes(normalizeSemanticText(keyword))).length;
+    const hits = capability.keywords.filter((keyword) => normalized.includes(normalizeSemanticText(keyword)));
     const labelHit = label.length >= 3 && normalized.includes(label) ? 3 : 0;
-    const score = labelHit + keywordHits;
+    const score = labelHit + hits.length;
     if (score > 0 && (!best || score > best.score || (score === best.score && capability.confidence > best.capability.confidence))) {
-      best = { capability, score };
+      best = {
+        capability,
+        score,
+        matchedOn: labelHit ? "documented_name" : "documented_terms",
+        matchedTerms: labelHit ? [capability.label] : hits.slice(0, 4),
+      };
     }
   }
-  return best?.capability;
+  return best;
+}
+
+/**
+ * How strongly a code path and a documented capability were linked. This is the
+ * strength of the *link*, not of the document or of the code: a confident
+ * specification matched on one shared word is still a weak match, and saying so is
+ * the point of showing it at all.
+ */
+function productEvidence(match: CapabilityMatch | undefined): ProductEvidence | undefined {
+  // One shared word between a node name and a document is a coincidence, not a
+  // product conclusion. Attributing every node to the same capability at a weak
+  // score would make the attribution worth nothing wherever it is real.
+  if (!match || match.score < MIN_CAPABILITY_SCORE) return undefined;
+  return {
+    capabilityId: match.capability.id,
+    label: match.capability.label,
+    origin: match.capability.origin,
+    sources: match.capability.sources,
+    match: assertConfidence(Math.min(0.95, 0.4 + match.score * 0.15) * match.capability.confidence),
+    matchedOn: match.matchedOn,
+    matchedTerms: match.matchedTerms,
+  };
 }
 
 function normalizeSemanticText(value: string): string {

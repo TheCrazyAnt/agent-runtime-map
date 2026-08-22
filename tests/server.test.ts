@@ -67,4 +67,42 @@ describe("viewer server", () => {
     const sourceTraversal = await fetch(`${server.url}/source.json?file=${encodeURIComponent("../../package.json")}`);
     expect(sourceTraversal.status).toBe(403);
   });
+
+  it("previews a document a product claim came from, and still refuses everything else", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-product-server-"));
+    temporaryDirectories.push(root);
+    await cp(fixture, root, { recursive: true });
+    await writeFile(path.join(root, "SECRET.md"), "# Not part of the graph\n");
+    const viewerDirectory = path.join(root, "viewer");
+    await mkdir(viewerDirectory);
+    await writeFile(path.join(viewerDirectory, "index.html"), '<!doctype html><div id="root"></div>');
+    const result = await generateLogicMap(root);
+    const productFiles = [
+      ...result.graph.nodes.flatMap((node) => node.product?.sources.map((source) => source.file) ?? []),
+      ...result.graph.features.flatMap((feature) => feature.product?.sources.map((source) => source.file) ?? []),
+    ];
+    expect(productFiles.length).toBeGreaterThan(0);
+
+    const server = await startViewerServer({
+      graphFile: result.outputFile,
+      rawGraphFile: result.rawOutputFile,
+      projectRoot: result.rawGraph.project.root,
+      // The CLI widens the allow-list the same way, so attribution is checkable.
+      sourceFiles: [...new Set([
+        ...result.graph.nodes.flatMap((node) => node.sources.map((source) => source.file)),
+        ...productFiles,
+      ])],
+      viewerDirectory,
+      port: 0,
+    });
+    servers.push(server);
+
+    const documented = await fetch(`${server.url}/source.json?file=${encodeURIComponent(productFiles[0]!)}&start=1&end=4`);
+    expect(documented.status).toBe(200);
+    expect((await documented.json()).file).toBe(productFiles[0]);
+
+    // Widening the allow-list must not turn it into a general file endpoint.
+    const unrelated = await fetch(`${server.url}/source.json?file=${encodeURIComponent("SECRET.md")}`);
+    expect(unrelated.status).toBe(403);
+  });
 });

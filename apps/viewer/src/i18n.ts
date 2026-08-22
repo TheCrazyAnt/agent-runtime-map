@@ -5,6 +5,8 @@ import type {
   FeatureScenario,
   LogicGraph,
   LogicNode,
+  ProductEvidence,
+  ProductEvidenceOrigin,
   LogicNodeType,
 } from "@agent-runtime-map/schema";
 
@@ -29,6 +31,10 @@ const EN = {
   closeEvidence: "Close evidence",
   confidence: "Confidence",
   sourceEvidence: "SOURCE EVIDENCE",
+  productContext: "PRODUCT CONTEXT",
+  productMatch: "Match",
+  productCodeOnly: "Read from code only. Nothing the project writes about itself was matched to this step.",
+  productMatchedOn: "Matched on",
   lines: "Lines",
   rawReferences: "Raw references",
   loadingTitle: "Compiling the view",
@@ -99,6 +105,10 @@ const ZH: Record<keyof typeof EN, string> = {
   closeEvidence: "关闭证据面板",
   confidence: "置信度",
   sourceEvidence: "源码证据",
+  productContext: "产品语境",
+  productMatch: "匹配度",
+  productCodeOnly: "仅来自代码。项目自述中没有内容与这一步匹配。",
+  productMatchedOn: "匹配依据",
   lines: "代码行",
   rawReferences: "原始节点引用",
   loadingTitle: "正在编译逻辑图",
@@ -321,6 +331,55 @@ export function localizeNode(node: LogicNode, locale: UiLocale): { label: string
 export function inferenceMethodLabel(method: LogicNode["inference"]["method"], locale: UiLocale): string {
   if (locale === "en") return method;
   return { deterministic: "确定性分析", heuristic: "启发式分析", llm: "LLM 语义分析", mixed: "混合分析" }[method];
+}
+
+/**
+ * What linked this step to the documented capability. The documented terms stay
+ * verbatim, because they are the evidence; only the sentence around them is
+ * translated.
+ */
+export function productMatchText(product: ProductEvidence, locale: UiLocale): string {
+  const terms = product.matchedTerms.map((term) => `“${term}”`).join("、");
+  const quoted = product.matchedTerms.map((term) => `"${term}"`).join(", ");
+  if (locale === "en") {
+    return {
+      documented_name: `the documented name ${quoted}`,
+      documented_terms: `the documented terms ${quoted}`,
+      entry_terms: `terms shared with this feature's entry point${quoted ? `: ${quoted}` : ""}`,
+      step_terms: `terms shared with steps in this feature${quoted ? `: ${quoted}` : ""}`,
+    }[product.matchedOn];
+  }
+  return {
+    documented_name: `文档中的名称 ${terms}`,
+    documented_terms: `文档中的术语 ${terms}`,
+    entry_terms: `与该功能入口共有的术语${terms ? `：${terms}` : ""}`,
+    step_terms: `与该功能步骤共有的术语${terms ? `：${terms}` : ""}`,
+  }[product.matchedOn];
+}
+
+/**
+ * Where a product claim came from, in words rather than a code. A reader weighing a
+ * borrowed name needs to know whether the project's own specification said it or
+ * whether they said it themselves a minute ago on the command line.
+ */
+export function productOriginLabel(origin: ProductEvidenceOrigin, locale: UiLocale): string {
+  const english: Record<ProductEvidenceOrigin, string> = {
+    readme: "From the README",
+    prd: "From the product spec",
+    docs: "From project documentation",
+    prompt: "From an Agent prompt",
+    config: "From the project config",
+    user: "Provided by you",
+  };
+  if (locale === "en") return english[origin];
+  return {
+    readme: "来自 README",
+    prd: "来自产品文档",
+    docs: "来自项目文档",
+    prompt: "来自 Agent 提示词",
+    config: "来自项目配置",
+    user: "由你提供",
+  }[origin];
 }
 
 export function chainHealthLabel(health: ChainHealth, locale: UiLocale): string {

@@ -9,6 +9,7 @@ import type {
   ProjectDocument,
   ProjectDocumentKind,
   ProjectPrompt,
+  ProductEvidenceOrigin,
   SourceLocation,
 } from "@agent-runtime-map/schema";
 
@@ -45,6 +46,12 @@ export interface ProjectReaderOptions {
   maxDocuments?: number;
   maxDocumentBytes?: number;
   maxTotalBytes?: number;
+  /**
+   * What the person running the tool says the project does. It is the only context
+   * input with no file behind it, so it is labelled as theirs rather than presented
+   * as something the repository stated.
+   */
+  productDescription?: string;
 }
 
 interface ReaderConfig {
@@ -118,8 +125,10 @@ export async function readProjectContext(
   }
 
   const capabilityHints = mergeCapabilities([
-    ...documents.flatMap(capabilitiesFromDocument),
+    ...capabilitiesFromUser(options.productDescription),
     ...capabilitiesFromConfig(config),
+    ...documents.flatMap(capabilitiesFromDocument),
+    ...prompts.flatMap(capabilitiesFromPrompt),
   ]).slice(0, 48);
 
   return {
@@ -214,11 +223,55 @@ function capabilitiesFromDocument(document: ProjectDocument): ProjectCapabilityH
       label,
       description: following || `Project documentation describes ${label}.`,
       keywords: keywords(`${label} ${following}`),
+      origin: documentOrigin(document.kind),
       sources: [{ file: document.path, startLine: index + 1 }],
       confidence: document.kind === "prd" ? 0.9 : document.kind === "readme" ? 0.8 : 0.74,
     });
   }
   return hints;
+}
+
+function documentOrigin(kind: ProjectDocumentKind): ProductEvidenceOrigin {
+  if (kind === "readme") return "readme";
+  if (kind === "prd") return "prd";
+  if (kind === "prompt") return "prompt";
+  return "docs";
+}
+
+/**
+ * A prompt states what an Agent is meant to do, in the product's own words. That is
+ * a weaker capability claim than a written specification, because it describes one
+ * step rather than a feature, so it is reported as such.
+ */
+function capabilitiesFromPrompt(prompt: ProjectPrompt): ProjectCapabilityHint[] {
+  const label = cleanMarkdown(prompt.name);
+  if (!isCapabilityLabel(label)) return [];
+  const description = firstSentence(prompt.excerpt);
+  if (!description) return [];
+  return [{
+    id: `capability_${hash(`prompt:${prompt.path}:${label}`)}`,
+    label,
+    description,
+    keywords: keywords(`${label} ${description}`),
+    origin: "prompt",
+    sources: [{ file: prompt.path, startLine: 1, symbol: prompt.name }],
+    confidence: 0.7,
+  }];
+}
+
+/** The description a person supplied on the command line, kept as their claim. */
+function capabilitiesFromUser(description: string | undefined): ProjectCapabilityHint[] {
+  const trimmed = description?.trim();
+  if (!trimmed) return [];
+  return [{
+    id: `capability_${hash(`user:${trimmed}`)}`,
+    label: cleanMarkdown(firstSentence(trimmed)) || trimmed.slice(0, 80),
+    description: trimmed.slice(0, 600),
+    keywords: keywords(trimmed),
+    origin: "user",
+    sources: [],
+    confidence: 1,
+  }];
 }
 
 function capabilitiesFromConfig(config: ReaderConfig): ProjectCapabilityHint[] {
@@ -229,6 +282,7 @@ function capabilitiesFromConfig(config: ReaderConfig): ProjectCapabilityHint[] {
       label,
       description: feature.description?.trim() || `Configured project capability ${label}.`,
       keywords: unique([...(feature.keywords ?? []), ...keywords(`${id} ${label} ${feature.description ?? ""}`)]),
+      origin: "config",
       sources: [{ file: "agent-runtime-map.config.json", startLine: 1, symbol: id }],
       confidence: 1,
     };
@@ -244,6 +298,8 @@ function mergeCapabilities(items: ProjectCapabilityHint[]): ProjectCapabilityHin
       merged.set(key, item);
       continue;
     }
+    // The first origin wins, and the list is ordered strongest-claim-first, so a
+    // README heading cannot take credit for what a person or a config file stated.
     merged.set(key, {
       ...existing,
       description: existing.description.length >= item.description.length ? existing.description : item.description,
@@ -369,6 +425,13 @@ async function exists(file: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** The opening claim of a block of prose, used when a whole excerpt is too long. */
+function firstSentence(value: string): string {
+  const normalized = cleanMarkdown(value.split(/\r?\n/).find((line) => line.trim().length > 0) ?? "");
+  const match = /^(.{10,200}?[.!?。！？])\s/.exec(`${normalized} `);
+  return (match?.[1] ?? normalized).slice(0, 200).trim();
 }
 
 function cleanMarkdown(value: string): string {

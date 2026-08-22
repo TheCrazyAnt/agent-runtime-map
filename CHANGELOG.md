@@ -36,8 +36,25 @@ All notable changes are documented here.
   constants rather than writing them as string literals.
 - Shorthand properties (`tools: { searchWeb }`) resolve to the value they name.
 
+- Every logic node and feature carries where its product claim came from: the
+  README, a product spec, project documentation, an Agent prompt, the project
+  config, or the person running the tool. The evidence drawer shows it as its own
+  block, separate from source evidence, with the strength of the link and the
+  documented terms that produced it. A step with no documented match says so
+  rather than leaving the reader to guess.
+- `--description` now becomes a labelled capability claim, not only the project
+  summary. It is attributed to the person who supplied it and carries no file,
+  because there is none.
+- Prompts contribute capability hints, attributed as prompts.
+- The Viewer server can preview a document a product claim came from, so the
+  attribution is checkable. The allow-list stays an allow-list: a file that no
+  node or feature references is still refused.
+
 ### Changed
 
+- Product evidence is a separate channel from code evidence. A documented match
+  never changes a node's confidence or how its classification was reached, and a
+  single incidental shared word no longer counts as a match at all.
 - The Logic Compiler treats a model as a side dependency of the step that
   requests it, alongside prompts, tables, and external systems. Requesting a
   model is not a decision, so it no longer multiplies a feature's branch
