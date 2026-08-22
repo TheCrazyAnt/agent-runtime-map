@@ -73,6 +73,9 @@ describe("viewer server", () => {
     temporaryDirectories.push(root);
     await cp(fixture, root, { recursive: true });
     await writeFile(path.join(root, "SECRET.md"), "# Not part of the graph\n");
+    const viewerDirectory = path.join(root, "viewer");
+    await mkdir(viewerDirectory);
+    await writeFile(path.join(viewerDirectory, "index.html"), '<!doctype html><div id="root"></div>');
     const result = await generateLogicMap(root);
     const productFiles = [
       ...result.graph.nodes.flatMap((node) => node.product?.sources.map((source) => source.file) ?? []),
@@ -89,6 +92,7 @@ describe("viewer server", () => {
         ...result.graph.nodes.flatMap((node) => node.sources.map((source) => source.file)),
         ...productFiles,
       ])],
+      viewerDirectory,
       port: 0,
     });
     servers.push(server);
