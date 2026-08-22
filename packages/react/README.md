@@ -1,6 +1,66 @@
 # @agent-runtime-map/react
 
-Reusable React Flow components for the Agent Runtime Map blueprint visual language.
+Reusable React Flow components for the Agent Runtime Map blueprint visual language,
+plus an embeddable `<LogicMap />` that renders a whole compiled graph.
+
+## Embedding a map
+
+`LogicMap` takes an **already compiled** `LogicGraph`. It never reads a repository,
+runs an analyzer, or calls a service of its own — producing the graph is the host's
+job, which is what lets the same component sit in a docs site, an internal dashboard,
+or the bundled Viewer.
+
+```tsx
+import { LogicMap } from "@agent-runtime-map/react";
+import "@xyflow/react/dist/style.css";
+import "@agent-runtime-map/react/styles.css";
+
+const graph = await (await fetch("/graph.json")).json();
+
+<div style={{ height: "70vh" }}>
+  <LogicMap
+    graph={graph}
+    featureId={graph.features[0]?.id}
+    stepIndex={2}
+    onSelectNode={(id, node) => console.log(node.label, node.sources)}
+  />
+</div>;
+```
+
+The canvas fills the box you give it, so the parent needs a height.
+
+| Prop | Meaning |
+| --- | --- |
+| `graph` | The compiled `LogicGraph`. Required. |
+| `featureId` | Frames one feature's route. Omit for the whole system. |
+| `variantId` | Which inferred branch to frame. Defaults to the first. |
+| `stepIndex` | How far along the route to highlight. `-1` shows it unplayed. |
+| `selectedNodeId` | Node to render as selected. |
+| `labels` | Boundary titles, so frames can be labelled in your product's language. |
+| `interactive` | `false` renders a static, non-pannable map. |
+| `onSelectNode` | Called with the node id and the compiled node behind it. |
+
+`stepIndex` drives a **static simulation** of a statically inferred route. It is not a
+live run of the Agent, and a host must not present it as one.
+
+## Embedding without React
+
+```html
+<logic-map id="map" style="display:block;height:70vh"></logic-map>
+<script type="module">
+  import { defineLogicMapElement } from "@agent-runtime-map/react/element";
+  defineLogicMapElement();
+  const map = document.getElementById("map");
+  map.graph = await (await fetch("/graph.json")).json();
+  map.addEventListener("select-node", (event) => console.log(event.detail.node.label));
+</script>
+```
+
+The graph is set as a property rather than an attribute, because a Logic Graph is far
+larger than an attribute should carry. `feature-id`, `variant-id`, `step-index`, and
+`interactive` are attributes. The element needs `react-dom`, which is why it lives on
+its own entry point: a React host never pays for a dependency it does not use.
+
 
 ```tsx
 import {

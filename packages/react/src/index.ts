@@ -36,3 +36,26 @@ export {
   type BlueprintDetailLevel,
   type BlueprintSemanticZoomProgress,
 } from "./semanticZoom.js";
+export {
+  LogicMap,
+  type LogicMapProps,
+} from "./LogicMap.js";
+export {
+  DEFAULT_BLUEPRINT_GROUP_LABELS,
+  buildBlueprintGroupNodes,
+  type BlueprintGroupLabels,
+} from "./blueprintGroups.js";
+export { layoutGraph } from "./layout.js";
+export {
+  buildSimulationFrame,
+  nextSimulationStep,
+  type SimulationFrame,
+  type SimulationOutcome,
+} from "./simulation.js";
+export {
+  DEFAULT_LABELS as DEFAULT_LOGIC_MAP_LABELS,
+  edgeState,
+  nodeStateClass,
+  toFlowEdge,
+  toFlowNode,
+} from "./logicMapModel.js";

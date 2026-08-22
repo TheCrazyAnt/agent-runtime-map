@@ -19,9 +19,14 @@ import {
   blueprintDetailLevelForZoom,
   blueprintEdgeAppearance,
   blueprintSemanticZoomProgress,
+  buildBlueprintGroupNodes,
+  buildSimulationFrame,
+  layoutGraph,
+  nextSimulationStep,
   type BlueprintDetailLevel,
   type BlueprintEdgeState,
   type BlueprintLogicNodeData,
+  type SimulationFrame,
 } from "@agent-runtime-map/react";
 import {
   Activity, AlertTriangle, Braces, CheckCircle2, ChevronLeft, ChevronRight, CircleDotDashed, Crosshair,
@@ -31,16 +36,13 @@ import type {
   ChainHealth, FeaturePathVariant, FeatureScenario, LogicGraph, LogicNode as LogicGraphNode,
   ProductEvidence, RawCodeGraph, RawCodeNode, SourceLocation,
 } from "@agent-runtime-map/schema";
-import { buildBlueprintGroupNodes } from "./blueprintGroups";
 import { applyLayoutPositions, buildCodeDetailExpansion, captureLayout, compareVariants, parseDetailNodeId, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
 import {
-  chainHealthLabel, detectViewerLocale, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
+  chainHealthLabel, detectViewerLocale, groupLabels, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
   productMatchText, productOriginLabel,
   localizeGraphDescription, localizeGraphTitle, localizeNode, localizeVariantLabel, messages, nodeTypeLabel,
   rememberViewerLocale, sourceCountText, type UiLocale,
 } from "./i18n";
-import { layoutGraph } from "./layout";
-import { buildSimulationFrame, nextSimulationStep, type SimulationFrame } from "./simulation";
 
 const nodeTypes = { logic: BlueprintLogicNode, blueprintGroup: BlueprintGroupNode, codeDetail: BlueprintCodeNode };
 const edgeTypes = { playback: BlueprintPlaybackEdge };
@@ -222,7 +224,7 @@ function LogicMapViewer() {
   const visibleNodes = useMemo(() => {
     if (!graph) return [...visibleLogicNodes, ...detailExpansion.nodes];
     const activeNodeIds = selectedVariant ? new Set(selectedVariant.nodeIds) : undefined;
-    const groups = buildBlueprintGroupNodes(nodes, graph, activeNodeIds, locale);
+    const groups = buildBlueprintGroupNodes(nodes, graph, activeNodeIds, groupLabels(locale));
     return [...groups, ...visibleLogicNodes, ...detailExpansion.nodes];
   }, [detailExpansion.nodes, graph, locale, nodes, selectedVariant, visibleLogicNodes]);
   const visibleEdges = useMemo(() => {

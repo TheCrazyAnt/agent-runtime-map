@@ -10,6 +10,8 @@ import type {
   LogicNodeType,
 } from "@agent-runtime-map/schema";
 
+import { DEFAULT_BLUEPRINT_GROUP_LABELS, type BlueprintGroupLabels } from "@agent-runtime-map/react";
+
 export type UiLocale = "zh-CN" | "en";
 
 const STORAGE_KEY = "agent-runtime-map.locale";
@@ -334,6 +336,20 @@ export function localizeNode(node: LogicNode, locale: UiLocale): { label: string
     result: `流程产出“${label}”。`,
   };
   return { label, description: descriptions[node.type] };
+}
+
+/**
+ * Boundary titles for the shared visual package, which is locale-neutral by design
+ * so an embedder can label the frames in its own product language.
+ */
+export function groupLabels(locale: UiLocale): BlueprintGroupLabels {
+  if (locale === "en") return DEFAULT_BLUEPRINT_GROUP_LABELS;
+  return {
+    runtime: "智能体运行时",
+    workflows: "AGENT 工作流",
+    systems: "数据与外部服务",
+    nodeCount: (count) => `${count} 个节点`,
+  };
 }
 
 export function inferenceMethodLabel(method: LogicNode["inference"]["method"], locale: UiLocale): string {
