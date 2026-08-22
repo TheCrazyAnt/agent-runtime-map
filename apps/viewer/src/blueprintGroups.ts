@@ -21,7 +21,7 @@ interface GroupDefinition {
 const GROUPS: GroupDefinition[] = [
   {
     id: "runtime",
-    types: ["entrypoint", "process", "ai_process", "decision", "data", "external_system", "result"],
+    types: ["entrypoint", "process", "workflow", "ai_process", "tool", "model", "human_gate", "decision", "data", "external_system", "result"],
     label: { en: "AGENT RUNTIME", "zh-CN": "智能体运行时" },
     tone: "amber",
     padding: 62,
@@ -29,7 +29,7 @@ const GROUPS: GroupDefinition[] = [
   },
   {
     id: "workflows",
-    types: ["process", "ai_process", "decision"],
+    types: ["process", "workflow", "ai_process", "tool", "human_gate", "decision"],
     label: { en: "AGENT WORKFLOWS", "zh-CN": "AGENT 工作流" },
     tone: "violet",
     dashed: true,
@@ -38,7 +38,7 @@ const GROUPS: GroupDefinition[] = [
   },
   {
     id: "systems",
-    types: ["data", "external_system"],
+    types: ["data", "model", "external_system"],
     label: { en: "DATA & SERVICES", "zh-CN": "数据与外部服务" },
     tone: "cyan",
     padding: 30,

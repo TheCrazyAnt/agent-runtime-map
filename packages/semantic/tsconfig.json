@@ -7,10 +7,6 @@
   },
   "include": ["src/**/*.ts"],
   "references": [
-    { "path": "../schema" },
-    { "path": "../project-reader" },
-    { "path": "../semantic" },
-    { "path": "../logic-compiler" },
-    { "path": "../../adapters/typescript" }
+    { "path": "../schema" }
   ]
 }

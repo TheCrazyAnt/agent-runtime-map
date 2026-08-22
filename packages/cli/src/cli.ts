@@ -30,9 +30,15 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
         "raw-out": { type: "string" },
         "no-raw": { type: "boolean" },
         "max-files": { type: "string" },
+        "max-context-files": { type: "string" },
+        "max-context-bytes": { type: "string" },
+        "no-context": { type: "boolean" },
         "max-nodes": { type: "string" },
         "graph-type": { type: "string" },
         description: { type: "string" },
+        semantic: { type: "string" },
+        "semantic-model": { type: "string" },
+        "semantic-base-url": { type: "string" },
         locale: { type: "string" },
         port: { type: "string", short: "p" },
         host: { type: "string" },
@@ -71,6 +77,19 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
     process.stderr.write(`agent-runtime-map: ${text.graphTypeInvalid}\n`);
     return 1;
   }
+  const semanticProvider = parsed.values.semantic;
+  if (semanticProvider !== undefined && semanticProvider !== "openai") {
+    process.stderr.write(`agent-runtime-map: ${text.semanticProviderInvalid}\n`);
+    return 1;
+  }
+  if (semanticProvider === "openai" && !parsed.values["semantic-model"]) {
+    process.stderr.write(`agent-runtime-map: ${text.semanticModelRequired}\n`);
+    return 1;
+  }
+  if (semanticProvider === "openai" && !process.env.OPENAI_API_KEY) {
+    process.stderr.write(`agent-runtime-map: ${text.semanticApiKeyMissing}\n`);
+    return 1;
+  }
 
   try {
     process.stdout.write(`${text.analyzing(projectPath)}\n`);
@@ -78,14 +97,29 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
       outputFile: parsed.values.out,
       rawOutputFile: parsed.values["no-raw"] ? false : parsed.values["raw-out"],
       maxFiles: positiveInteger(parsed.values["max-files"], "--max-files", text),
+      maxContextFiles: positiveInteger(parsed.values["max-context-files"], "--max-context-files", text),
+      maxContextBytes: positiveInteger(parsed.values["max-context-bytes"], "--max-context-bytes", text),
+      readContext: !parsed.values["no-context"],
       maxNodes: positiveInteger(parsed.values["max-nodes"], "--max-nodes", text),
       graphType,
       productDescription: parsed.values.description,
+      semantic: semanticProvider === "openai" ? {
+        apiKey: process.env.OPENAI_API_KEY!,
+        model: parsed.values["semantic-model"]!,
+        baseUrl: parsed.values["semantic-base-url"],
+      } : undefined,
     });
 
     process.stdout.write(
       [
         text.scanned(result.rawGraph.project.filesScanned),
+        result.rawGraph.context
+          ? text.contextSummary(
+            result.rawGraph.context.documents.length,
+            result.rawGraph.context.prompts.length,
+            result.rawGraph.context.capabilityHints.length,
+          )
+          : undefined,
         text.found(result.rawGraph.nodes.length, result.rawGraph.edges.length),
         text.compiled(result.graph.nodes.length, result.graph.edges.length),
         text.featureSummary(

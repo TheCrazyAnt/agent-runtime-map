@@ -12,22 +12,25 @@
 - Chain Doctor with green, yellow, and red evidence-backed states
 - public CLI package
 
-## 0.2 — Semantic compiler
+## 0.2 — Project understanding and semantic compiler
 
-- README and selected docs ingestion
-- prompt and Agent metadata extraction
-- optional provider-neutral LLM semantic pass
-- explicit privacy preview before sending context
-- clustering multiple code nodes into one logic stage
-- evaluation fixtures for label quality and hallucination rate
+- [x] README, docs, PRD, prompt, package, and safe config ingestion
+- [x] Agent, workflow, tool, model, prompt, and human-gate metadata extraction
+- [x] conditional, parallel, loop, retry, fallback, and approval control evidence
+- [x] OpenAI Agents SDK-style and LangGraph-style declarative detection
+- [x] optional evidence-constrained OpenAI Responses semantic pass
+- [x] bounded privacy snapshot and immutable graph topology during enrichment
+- [ ] clustering multiple low-level code nodes into one multi-source logic stage
+- [ ] larger evaluation corpus for label quality and hallucination rate
 
 ## 0.3 — Framework depth and embedding
 
 - deeper Next.js, Hono, and Express adapters
-- React component package
-- Web Component
-- saved layouts and annotations
-- Python AST adapter
+- [x] React blueprint primitive package
+- [ ] high-level embeddable `<AgentRuntimeMap />` component
+- [ ] Web Component
+- [ ] saved layouts and annotations
+- [ ] Python AST adapter
 
 ## Later — Static Logic to Live Logic
 

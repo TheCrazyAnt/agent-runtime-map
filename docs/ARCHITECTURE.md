@@ -5,11 +5,16 @@ Agent Runtime Map is a compiler pipeline, not a diagram parser.
 ```text
 Codebase
   │
-  ├─ discovery and framework detection
-  ├─ TypeScript AST and symbol resolution
-  └─ deterministic conventions
+  ├─ Project Reader
+  │  ├─ package metadata and dependencies
+  │  ├─ README / docs / PRD
+  │  └─ prompt and safe configuration context
+  └─ Static Analyzer
+     ├─ TypeScript AST and symbol resolution
+     ├─ Agent framework conventions
+     └─ control-flow evidence
           ↓
-     RawCodeGraph
+     RawCodeGraph + ProjectContext
           ↓
      Logic Compiler
   ├─ candidate selection
@@ -17,10 +22,14 @@ Codebase
   ├─ hidden-node path projection
   ├─ redundant-flow reduction
   ├─ semantic labels and confidence
+  ├─ documented capability matching
   ├─ feature-root and branch extraction
   └─ deterministic Chain Doctor diagnostics
           ↓
       LogicGraph + FeatureScenario[]
+          ↓ optional explicit opt-in
+     evidence-constrained semantic labels
+     (topology and evidence are immutable)
           ↓
      ELK → blueprint component layer → React Flow
                        ↓
@@ -29,15 +38,19 @@ Codebase
 
 ## Boundaries
 
-The analyzer owns source-language and framework facts. It may emit many nodes and edges. It must never optimize its output for a particular visual layout.
+The Project Reader owns bounded, non-executable context collection. It reads product documents, prompts, package metadata, and JSON overrides while excluding credentials, environment files, private keys, dependencies, build output, and VCS data.
 
-The Logic Compiler owns abstraction. It removes infrastructure noise, keeps business-relevant nodes, projects paths across hidden functions, discovers each user action or API entry as a feature circuit, enumerates bounded branch variants, and explains every heuristic conclusion.
+The analyzer owns source-language and framework facts. It may emit many nodes and edges. It must never optimize its output for a particular visual layout. Control-flow classifications are attached to the exact call-site evidence that produced them.
+
+The Logic Compiler owns abstraction. It removes infrastructure noise, keeps business-relevant nodes, projects paths across hidden functions, matches code paths to documented capabilities, discovers each user action or API entry as a feature circuit, enumerates bounded branch variants, and explains every heuristic conclusion.
+
+The optional semantic package may replace labels, descriptions, and the project summary for existing IDs. It cannot introduce topology or evidence. The default pipeline never invokes it. OpenAI mode uses a bounded snapshot, Structured Outputs, and `store: false`; callers must opt in and supply both a model and API key.
 
 The Viewer owns presentation and deterministic playback state only. It fetches `graph.json`, computes one global layout with ELK, and highlights the selected `FeatureScenario` step by step. Blueprint nodes, group frames, edge appearances, and measurement helpers are isolated in `packages/react`, so an embedded viewer can consume the same visual contract without importing analyzer code. The Viewer does not execute the inspected project or claim that a live request is running. This keeps future Python, actual runtime trace, and model-assisted adapters compatible with the same UI.
 
 ## Chain Doctor
 
-The static compiler currently reports broken graph references, entries with no resolvable downstream work, cycles without a result, low-confidence steps, and bounded-path limits. Each diagnostic is attached to a node or edge and retains source evidence. During simulation, an error halts playback when its affected step is reached; warnings remain inspectable without pretending they are confirmed failures.
+The static compiler currently reports broken graph references, entries with no resolvable downstream work, cycles without a result, low-confidence steps, bounded-path limits, unbounded retry evidence, external calls without a visible fallback, and Agents without an output contract. Each diagnostic is attached to a node or edge and retains source evidence. During simulation, an error halts playback when its affected step is reached; warnings remain inspectable without pretending they are confirmed failures.
 
 ## Stable IDs
 
@@ -45,4 +58,4 @@ Raw IDs are derived from node kind and stable source identity using SHA-1 prefix
 
 ## Trust model
 
-Agent Runtime Map parses repository text but does not execute the inspected project. Evidence paths are relative to the project root. The absolute root exists only in project metadata and should be treated as sensitive if graph files are shared.
+Agent Runtime Map parses repository text but does not execute the inspected project. Evidence paths are relative to the project root. The absolute root exists only in local project metadata and is removed from optional semantic snapshots. Generated graph files still contain code structure and should be treated as sensitive if shared.

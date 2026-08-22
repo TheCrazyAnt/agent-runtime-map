@@ -504,7 +504,10 @@ function edgeFlowLabel(edge: LogicGraph["edges"][number], graph: LogicGraph, loc
   if (source?.type === "user_action" && target?.type === "entrypoint") return "HTTPS";
   if (edge.type === "data_flow" && target?.type === "data") return locale === "zh-CN" ? "读 / 写" : "read / write";
   if (target?.type === "external_system") return "API";
-  if (target?.type === "ai_process") return locale === "zh-CN" ? "调用" : "invoke";
+  if (target?.type === "model") return locale === "zh-CN" ? "模型" : "model";
+  if (target?.type === "tool") return locale === "zh-CN" ? "工具" : "tool";
+  if (target?.type === "human_gate") return locale === "zh-CN" ? "人工确认" : "approve";
+  if (target?.type === "workflow" || target?.type === "ai_process") return locale === "zh-CN" ? "调用" : "invoke";
   if (target?.type === "result") return locale === "zh-CN" ? "返回" : "return";
   return locale === "zh-CN" ? "执行" : "flow";
 }

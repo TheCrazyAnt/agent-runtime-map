@@ -1,0 +1,25 @@
+{
+  "description": "An Agent service that generates, reviews, imports, and publishes structured content.",
+  "features": {
+    "generate": {
+      "label": "Content Generation",
+      "description": "Turn a user brief into ideas, a story, a script, and a saved generation.",
+      "keywords": ["generate", "idea", "story", "script"]
+    },
+    "review": {
+      "label": "Draft Review",
+      "description": "Score a draft and route it through approval or revision.",
+      "keywords": ["review", "score", "approve", "revise"]
+    },
+    "import": {
+      "label": "Knowledge Import",
+      "description": "Parse, index, and store an uploaded knowledge document.",
+      "keywords": ["import", "document", "knowledge", "index"]
+    },
+    "publish": {
+      "label": "Publishing",
+      "description": "Publish an approved draft to its destination.",
+      "keywords": ["publish"]
+    }
+  }
+}

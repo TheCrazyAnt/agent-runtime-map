@@ -4,7 +4,7 @@
 
 让 Agent 代码自己画出它的功能电路，并逐步检查每一条执行链路。
 
-Agent Runtime Map 会读取 TypeScript / JavaScript 项目，通过 AST 和框架规则提取页面操作、API、工作流、Agent、工具、数据库与外部服务，然后编译成一张全局 Agent 执行图。
+Agent Runtime Map 会读取 TypeScript / JavaScript 项目，同时理解 README、docs/PRD、Prompt、依赖和安全配置；再通过 AST 与框架规则提取页面操作、API、工作流、Agent、工具、模型、数据库、外部服务与控制流，最后编译成一张全局 Agent 执行图。
 
 左侧是项目的全部功能。点击某个功能，就能在右侧全局图上播放、暂停、单步前进、重新检查、调整速度，并切换该功能的不同执行分支。
 
@@ -18,6 +18,18 @@ Agent Runtime Map 会读取 TypeScript / JavaScript 项目，通过 AST 和框�
 - **链路检查：** 已确认步骤变绿；不确定推断变黄；确定性断链变红，并在出错步骤停止。
 - **源码证据：** 每个节点和诊断都保留文件、行号、置信度、识别方法与修复建议。
 - **自动中英文：** 中文系统和浏览器默认显示中文，海外环境默认显示英文，也可以手动切换。
+
+## 项目理解能力
+
+- 读取 `package.json`、框架依赖、脚本与包管理器。
+- 读取 README、`docs/`、PRD、Prompt 文件和代码内的 instructions。
+- 识别 Agent、Workflow、Tool、Model、Prompt、人工审批、数据库和外部系统。
+- 识别顺序、条件、并行、循环、重试、fallback 与人工确认链路。
+- 支持 OpenAI Agents SDK 风格配置与 LangGraph 风格声明式拓扑。
+- 支持 `agent-runtime-map.config.json` 补充产品说明、功能名称与关键词。
+
+Project Reader 不会把 `.env`、凭据、私钥、`node_modules`、构建产物或 Git
+元数据作为语义上下文，也不会执行被分析项目及其配置文件。
 
 ## 蓝图 Viewer 与可复用组件
 
@@ -55,6 +67,14 @@ npm 正式发布后可以直接运行：
 npx agent-runtime-map@latest .
 ```
 
+在 npm registry 发布前，也可以不克隆 Monorepo，直接从 GitHub Release 安装
+同一个已经通过发布校验的 CLI 包：
+
+```bash
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.1.0/agent-runtime-map-0.1.0.tgz
+npx agent-runtime-map .
+```
+
 ## 常用命令
 
 ```text
@@ -67,12 +87,17 @@ agent-runtime-map analyze [项目] [选项]  只生成 JSON
 
 ```text
 --max-files <数量>      最大分析文件数（默认：2000）
+--max-context-files <数量> 最大项目文档数（默认：80）
+--max-context-bytes <数量> 项目上下文字节上限（默认：750000）
+--no-context            不读取 README、docs、PRD 和 Prompt
 --max-nodes <数量>      最大逻辑节点数（默认：40）
 --graph-type <类型>     runtime_logic 或 product_logic
 --locale <语言>         auto、zh-CN 或 en
 --port <端口>           Viewer 端口（默认：4173）
 --no-open               不自动打开浏览器
 --no-raw                不生成详细 Raw Code Graph
+--semantic openai       显式开启可选 LLM 语义压缩
+--semantic-model <名称> semantic 模式使用的模型（必填）
 ```
 
 输出位于 `.logic-map/`：
@@ -86,12 +111,21 @@ agent-runtime-map analyze [项目] [选项]  只生成 JSON
 - `tsconfig.json` / `jsconfig.json` 路径别名
 - Next.js App Router、Express / Hono 风格路由
 - 函数、方法、导入、静态调用与结果数据流
-- Agent、workflow、tool、action、service 命名与目录规则
+- README/docs/PRD/Prompt 理解与文档功能匹配
+- Agent、Workflow、Tool、Model、Prompt、人工审批、action、service 识别
+- OpenAI Agents SDK 风格配置与 LangGraph 声明式拓扑
+- 条件、并行、循环、重试、fallback 与人工确认控制流
 - 常见 Prisma 数据操作、Fetch / Axios 外部 URL、部分 SDK 调用
 - 全局 Agent 图、功能路线、分支、静态播放器与链路诊断
 - ELK 自动布局、React Flow、搜索、缩略图、置信度和源码证据
 
-当前不会执行被分析的项目，也不会上传源码、调用 LLM 或发送遥测。Python、实际运行追踪、Token、性能与 APM 不属于 0.1。
+默认模式不会执行被分析的项目、上传源码、调用 LLM 或发送遥测。只有显式使用
+`--semantic openai --semantic-model <模型>` 并设置 `OPENAI_API_KEY` 时，才会发送
+经过裁剪的证据摘要；请求不包含绝对项目根目录或原始源码文件，并且模型只能修改
+已有节点和功能的名称、说明，不能新增节点、连线或证据。Python、实际运行追踪、
+Token、性能与 APM 仍不属于当前静态版本。
+
+启用联网语义能力前请阅读 [Project Context](docs/PROJECT_CONTEXT.md)。
 
 ## 开发
 

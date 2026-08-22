@@ -1,0 +1,16 @@
+{
+  "name": "@agent-runtime-map/semantic",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Optional evidence-constrained semantic enrichment for Agent Runtime Map.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agent-runtime-map/schema": "*"
+  }
+}

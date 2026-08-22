@@ -8,13 +8,18 @@ import {
   type FeatureSimulationStep,
   type LogicEdge,
   type LogicNode,
+  type ProjectCapabilityHint,
 } from "@agent-runtime-map/schema";
 
 const MAX_FEATURE_NODES = 120;
 const MAX_PATHS = 12;
 const MAX_PATH_DEPTH = 48;
 
-export function compileFeatureScenarios(nodes: LogicNode[], edges: LogicEdge[]): FeatureScenario[] {
+export function compileFeatureScenarios(
+  nodes: LogicNode[],
+  edges: LogicEdge[],
+  capabilities: ProjectCapabilityHint[] = [],
+): FeatureScenario[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const outgoing = adjacency(edges);
   const incoming = reverseAdjacency(edges);
@@ -32,7 +37,7 @@ export function compileFeatureScenarios(nodes: LogicNode[], edges: LogicEdge[]):
   const roots = uniqueById([...userRoots, ...entryRoots, ...(userRoots.length || entryRoots.length ? [] : fallbackRoots)]);
 
   return roots
-    .map((root) => compileFeature(root, edges, nodeById, outgoing))
+    .map((root) => compileFeature(root, edges, nodeById, outgoing, capabilities))
     .sort((a, b) => healthWeight(b.health) - healthWeight(a.health) || a.label.localeCompare(b.label));
 }
 
@@ -41,6 +46,7 @@ function compileFeature(
   allEdges: LogicEdge[],
   nodeById: Map<string, LogicNode>,
   outgoing: Map<string, LogicEdge[]>,
+  capabilities: ProjectCapabilityHint[],
 ): FeatureScenario {
   const reachable = reachableNodeIds(root.id, outgoing);
   const limitedNodeIds = [...reachable].slice(0, MAX_FEATURE_NODES);
@@ -60,16 +66,17 @@ function compileFeature(
   );
   const variants = buildVariants(root.id, featureNodes, featureEdges, paths, nodeById);
   const entrypoint = nearestEntrypoint(root.id, outgoing, nodeById);
+  const documentedCapability = matchDocumentedCapability(featureNodes, capabilities);
   const confidence = featureNodes.length
     ? assertConfidence(Math.min(...featureNodes.map((node) => node.confidence)))
     : root.confidence;
   const health = healthFromDiagnostics(diagnostics);
-  const label = entrypoint?.label ?? root.label;
+  const label = documentedCapability?.label ?? entrypoint?.label ?? root.label;
 
   return {
     id: `feature_${hash(`${root.id}:${label}`)}`,
     label,
-    description: `Simulates the code-backed execution chain that starts at ${label}.`,
+    description: documentedCapability?.description ?? `Simulates the code-backed execution chain that starts at ${label}.`,
     entryNodeIds: [root.id],
     resultNodeIds: terminalNodes.map((node) => node.id),
     nodeIds: limitedNodeIds,
@@ -79,6 +86,45 @@ function compileFeature(
     health,
     confidence,
   };
+}
+
+function matchDocumentedCapability(
+  nodes: LogicNode[],
+  capabilities: ProjectCapabilityHint[],
+): ProjectCapabilityHint | undefined {
+  const tokens = semanticTokens(nodes.map((node) => `${node.label} ${node.metadata?.rawName ?? ""}`).join(" "));
+  const entryTokens = semanticTokens(nodes
+    .filter((node) => node.type === "entrypoint" || node.type === "user_action")
+    .map((node) => `${node.label} ${node.metadata?.rawName ?? ""}`)
+    .join(" "));
+  const documentedCounts = new Map<string, number>();
+  for (const node of nodes) {
+    const id = typeof node.metadata?.documentedCapabilityId === "string" ? node.metadata.documentedCapabilityId : undefined;
+    if (id) documentedCounts.set(id, (documentedCounts.get(id) ?? 0) + 1);
+  }
+  let best: { capability: ProjectCapabilityHint; score: number } | undefined;
+  for (const capability of capabilities) {
+    const capabilityTokens = semanticTokens(`${capability.label} ${capability.keywords.join(" ")}`);
+    const entryHits = [...capabilityTokens].filter((token) => entryTokens.has(token)).length;
+    const graphHits = [...capabilityTokens].filter((token) => tokens.has(token)).length;
+    const score = entryHits * 8 + graphHits + (documentedCounts.get(capability.id) ?? 0) * 0.5;
+    if (score > 0 && (!best || score > best.score || (score === best.score && capability.confidence > best.capability.confidence))) {
+      best = { capability, score };
+    }
+  }
+  return best?.capability;
+}
+
+function semanticTokens(value: string): Set<string> {
+  const matches = value.toLowerCase().match(/[a-z][a-z0-9-]{2,}|[\u3400-\u9fff]{2,8}/g) ?? [];
+  return new Set(matches.map((token) => semanticStem(token)
+    .replace(/^(post|get|put|patch|delete)$/, ""))
+    .filter((token) => token.length >= 3));
+}
+
+function semanticStem(value: string): string {
+  if (/(ations?|tion)$/.test(value)) return value.replace(/ations?$/, "ate").replace(/tion$/, "te");
+  return value.replace(/(ing|ed|es|s)$/i, "");
 }
 
 function diagnoseFeature(
@@ -164,6 +210,59 @@ function diagnoseFeature(
       sources: node.sources,
       confidence: node.confidence,
     });
+  }
+
+  for (const edge of edges.filter((edge) => edge.control === "retry" && edge.metadata?.retryBounded !== true)) {
+    const source = nodeById.get(edge.source);
+    diagnostics.push({
+      id: `diagnostic_${hash(`retry:${edge.id}`)}`,
+      code: "CHAIN_RETRY_WITHOUT_LIMIT",
+      severity: "warning",
+      message: "A retry path was detected without a statically resolvable attempt limit.",
+      suggestion: "Set a maximum retry count, backoff policy, and explicit failure exit.",
+      nodeId: edge.source,
+      edgeId: edge.id,
+      sources: source?.sources ?? [],
+      confidence: 0.82,
+    });
+  }
+
+  const outgoing = adjacency(edges);
+  for (const node of nodes.filter((candidate) => candidate.type === "external_system")) {
+    const callers = edges.filter((edge) => edge.target === node.id).flatMap((edge) => nodeById.get(edge.source) ?? []);
+    const protectedCall = callers.some((caller) => Number(caller.metadata?.catches ?? 0) > 0 || (outgoing.get(caller.id) ?? []).some((edge) => edge.control === "fallback"));
+    if (callers.length && !protectedCall) {
+      diagnostics.push({
+        id: `diagnostic_${hash(`fallback:${node.id}`)}`,
+        code: "CHAIN_EXTERNAL_NO_FALLBACK",
+        severity: "info",
+        message: `The external call to ${node.label} has no statically resolvable fallback path.`,
+        suggestion: "Add error handling, a bounded retry, or a degraded response for this dependency.",
+        nodeId: node.id,
+        sources: node.sources,
+        confidence: 0.72,
+      });
+    }
+  }
+
+  for (const node of nodes.filter((candidate) => candidate.type === "ai_process")) {
+    const mainOutgoing = (outgoing.get(node.id) ?? []).filter((edge) => {
+      const target = nodeById.get(edge.target);
+      return target && !["data", "external_system", "model"].includes(target.type);
+    });
+    const returnType = typeof node.metadata?.returnType === "string" ? node.metadata.returnType : "";
+    if (!mainOutgoing.length && /(^|<)(void|undefined)(>|$)/i.test(returnType) && node.metadata?.terminal !== true) {
+      diagnostics.push({
+        id: `diagnostic_${hash(`agent-output:${node.id}`)}`,
+        code: "CHAIN_AGENT_NO_OUTPUT",
+        severity: "warning",
+        message: `The Agent step “${node.label}” has no structured output or downstream handoff.`,
+        suggestion: "Declare an output type or schema, persist a result, or connect the Agent to its next step.",
+        nodeId: node.id,
+        sources: node.sources,
+        confidence: 0.86,
+      });
+    }
   }
 
   if (reachableCount > MAX_FEATURE_NODES || pathsTruncated) {

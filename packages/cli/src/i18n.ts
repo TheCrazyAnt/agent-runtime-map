@@ -3,6 +3,7 @@ export type CliLocale = "zh-CN" | "en";
 export interface CliText {
   analyzing(project: string): string;
   scanned(files: number): string;
+  contextSummary(documents: number, prompts: number, capabilities: number): string;
   found(nodes: number, edges: number): string;
   compiled(nodes: number, edges: number): string;
   featureSummary(features: number, errors: number, warnings: number): string;
@@ -14,6 +15,9 @@ export interface CliText {
   openFailed(url: string): string;
   graphTypeInvalid: string;
   localeInvalid: string;
+  semanticProviderInvalid: string;
+  semanticModelRequired: string;
+  semanticApiKeyMissing: string;
   stop: string;
   portInvalid: string;
   positiveInteger(option: string): string;
@@ -23,6 +27,7 @@ const TEXT: Record<CliLocale, CliText> = {
   en: {
     analyzing: (project) => `Analyzing ${project}...`,
     scanned: (files) => `Scanned ${files} files.`,
+    contextSummary: (documents, prompts, capabilities) => `Read ${documents} project documents, ${prompts} prompt files, and ${capabilities} documented capability hints.`,
     found: (nodes, edges) => `Found ${nodes} code nodes and ${edges} relationships.`,
     compiled: (nodes, edges) => `Compiled ${nodes} logic nodes and ${edges} flows.`,
     featureSummary: (features, errors, warnings) => `Detected ${features} feature circuits (${errors} errors, ${warnings} warnings).`,
@@ -34,6 +39,9 @@ const TEXT: Record<CliLocale, CliText> = {
     openFailed: (url) => `Could not open a browser automatically. Open ${url} manually.`,
     graphTypeInvalid: "--graph-type must be runtime_logic or product_logic",
     localeInvalid: "--locale must be auto, zh-CN, or en",
+    semanticProviderInvalid: "--semantic currently supports openai only",
+    semanticModelRequired: "--semantic-model is required when --semantic openai is enabled",
+    semanticApiKeyMissing: "OPENAI_API_KEY is required when --semantic openai is enabled",
     stop: "Press Ctrl+C to stop.",
     portInvalid: "--port must be an integer between 1 and 65535",
     positiveInteger: (option) => `${option} must be a positive integer`,
@@ -41,6 +49,7 @@ const TEXT: Record<CliLocale, CliText> = {
   "zh-CN": {
     analyzing: (project) => `正在分析 ${project}…`,
     scanned: (files) => `已扫描 ${files} 个代码文件。`,
+    contextSummary: (documents, prompts, capabilities) => `已读取 ${documents} 个项目文档、${prompts} 个 Prompt 文件，并提取 ${capabilities} 条功能线索。`,
     found: (nodes, edges) => `发现 ${nodes} 个代码节点和 ${edges} 条关系。`,
     compiled: (nodes, edges) => `已编译为 ${nodes} 个逻辑节点和 ${edges} 条逻辑流。`,
     featureSummary: (features, errors, warnings) => `识别到 ${features} 个功能电路（${errors} 个错误，${warnings} 个警告）。`,
@@ -52,6 +61,9 @@ const TEXT: Record<CliLocale, CliText> = {
     openFailed: (url) => `无法自动打开浏览器，请手动访问 ${url}。`,
     graphTypeInvalid: "--graph-type 必须是 runtime_logic 或 product_logic",
     localeInvalid: "--locale 必须是 auto、zh-CN 或 en",
+    semanticProviderInvalid: "--semantic 当前只支持 openai",
+    semanticModelRequired: "启用 --semantic openai 时必须提供 --semantic-model",
+    semanticApiKeyMissing: "启用 --semantic openai 时必须设置 OPENAI_API_KEY",
     stop: "按 Ctrl+C 停止服务。",
     portInvalid: "--port 必须是 1 到 65535 之间的整数",
     positiveInteger: (option) => `${option} 必须是正整数`,
@@ -110,9 +122,15 @@ export function helpText(locale: CliLocale, version: string): string {
       --raw-out <文件>        Raw Code Graph 输出位置（默认：.logic-map/raw-graph.json）
       --no-raw                不生成 Raw Code Graph
       --max-files <数量>      最大分析文件数（默认：2000）
+      --max-context-files <数量> 最大项目文档数（默认：80）
+      --max-context-bytes <数量> 项目文档读取字节上限（默认：750000）
+      --no-context            不读取 README、docs、PRD 和 Prompt
       --max-nodes <数量>      最大逻辑节点数（默认：40）
       --graph-type <类型>     runtime_logic 或 product_logic
       --description <说明>    可选的产品背景说明
+      --semantic openai      显式启用可选 LLM 语义压缩（默认关闭）
+      --semantic-model <模型> OpenAI 模型名称（启用 semantic 时必填）
+      --semantic-base-url <地址> 可选的 Responses API 基础地址
       --locale <语言>         auto、zh-CN 或 en（默认：自动识别）
   -p, --port <端口>           Viewer 端口（默认：4173；被占用时自动递增）
       --host <主机>           Viewer 主机（默认：127.0.0.1）
@@ -138,9 +156,15 @@ Options:
       --raw-out <file>        Raw Code Graph output (default: .logic-map/raw-graph.json)
       --no-raw                Do not write the Raw Code Graph
       --max-files <number>    Maximum source files to analyze (default: 2000)
+      --max-context-files <number> Maximum project documents to read (default: 80)
+      --max-context-bytes <number> Project context byte limit (default: 750000)
+      --no-context            Skip README, docs, PRD, and prompt reading
       --max-nodes <number>    Maximum compiled logic nodes (default: 40)
       --graph-type <type>     runtime_logic or product_logic
       --description <text>    Optional product context for the graph
+      --semantic openai      Explicitly enable optional LLM semantic compression (off by default)
+      --semantic-model <model> OpenAI model name (required with semantic mode)
+      --semantic-base-url <url> Optional Responses API base URL
       --locale <locale>       auto, zh-CN, or en (default: auto)
   -p, --port <number>         Viewer port (default: 4173; increments if busy)
       --host <host>           Viewer host (default: 127.0.0.1)

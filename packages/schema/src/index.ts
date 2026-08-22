@@ -10,7 +10,11 @@ export type RawNodeKind =
   | "route"
   | "service"
   | "agent"
+  | "workflow"
   | "tool"
+  | "model"
+  | "prompt"
+  | "human_gate"
   | "database"
   | "external_api";
 
@@ -61,7 +65,65 @@ export interface RawCodeEdge {
   target: string;
   kind: RawEdgeKind;
   label?: string;
+  control?: ControlFlowKind;
+  metadata?: Record<string, unknown>;
   evidence: Evidence[];
+}
+
+export type ControlFlowKind =
+  | "sequential"
+  | "conditional"
+  | "parallel"
+  | "loop"
+  | "retry"
+  | "fallback"
+  | "human_approval";
+
+export type ProjectDocumentKind = "readme" | "documentation" | "prd" | "prompt" | "configuration";
+
+export interface ProjectDocument {
+  path: string;
+  kind: ProjectDocumentKind;
+  title: string;
+  summary: string;
+  headings: string[];
+  excerpt: string;
+  truncated: boolean;
+}
+
+export interface ProjectPrompt {
+  path: string;
+  name: string;
+  excerpt: string;
+  variables: string[];
+  source: "file" | "code";
+}
+
+export interface ProjectDependency {
+  name: string;
+  version: string;
+  category: "runtime" | "development" | "peer";
+}
+
+export interface ProjectCapabilityHint {
+  id: string;
+  label: string;
+  description: string;
+  keywords: string[];
+  sources: SourceLocation[];
+  confidence: number;
+}
+
+export interface ProjectContext {
+  description?: string;
+  packageManager?: string;
+  scripts: string[];
+  dependencies: ProjectDependency[];
+  documents: ProjectDocument[];
+  prompts: ProjectPrompt[];
+  configurationFiles: string[];
+  capabilityHints: ProjectCapabilityHint[];
+  diagnostics: Diagnostic[];
 }
 
 export interface ProjectSummary {
@@ -76,6 +138,7 @@ export interface RawCodeGraph {
   schemaVersion: typeof SCHEMA_VERSION;
   generatedAt: string;
   project: ProjectSummary;
+  context?: ProjectContext;
   nodes: RawCodeNode[];
   edges: RawCodeEdge[];
   diagnostics: Diagnostic[];
@@ -94,7 +157,11 @@ export type LogicNodeType =
   | "user_action"
   | "entrypoint"
   | "process"
+  | "workflow"
   | "ai_process"
+  | "tool"
+  | "model"
+  | "human_gate"
   | "decision"
   | "data"
   | "external_system"
@@ -121,6 +188,8 @@ export interface LogicEdge {
   target: string;
   type: "flow" | "branch" | "data_flow";
   label?: string;
+  control?: ControlFlowKind;
+  metadata?: Record<string, unknown>;
   confidence: number;
   rawEdgeIds: string[];
 }
@@ -137,7 +206,10 @@ export interface ChainDiagnostic {
     | "CHAIN_LOW_CONFIDENCE"
     | "CHAIN_NO_DOWNSTREAM"
     | "CHAIN_NO_RESULT"
-    | "CHAIN_PATH_LIMIT";
+    | "CHAIN_PATH_LIMIT"
+    | "CHAIN_EXTERNAL_NO_FALLBACK"
+    | "CHAIN_RETRY_WITHOUT_LIMIT"
+    | "CHAIN_AGENT_NO_OUTPUT";
   severity: ChainDiagnosticSeverity;
   message: string;
   suggestion: string;
@@ -178,6 +250,17 @@ export interface FeatureScenario {
   confidence: number;
 }
 
+export interface ProjectUnderstanding {
+  summary: string;
+  capabilities: ProjectCapabilityHint[];
+  agentNodeIds: string[];
+  workflowNodeIds: string[];
+  toolNodeIds: string[];
+  modelNodeIds: string[];
+  documentsUsed: string[];
+  confidence: number;
+}
+
 export interface LogicGraph {
   schemaVersion: typeof SCHEMA_VERSION;
   generatedAt: string;
@@ -185,6 +268,7 @@ export interface LogicGraph {
   title: string;
   description: string;
   project: ProjectSummary;
+  understanding?: ProjectUnderstanding;
   nodes: LogicNode[];
   edges: LogicEdge[];
   features: FeatureScenario[];

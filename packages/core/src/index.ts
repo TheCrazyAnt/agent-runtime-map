@@ -2,12 +2,18 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { analyzeTypeScriptProject } from "@agent-runtime-map/typescript";
 import { compileLogicGraph, type CompileOptions } from "@agent-runtime-map/logic-compiler";
+import { readProjectContext } from "@agent-runtime-map/project-reader";
+import { enrichLogicGraphWithOpenAI, type OpenAISemanticOptions } from "@agent-runtime-map/semantic";
 import type { LogicGraph, RawCodeGraph } from "@agent-runtime-map/schema";
 
 export interface GenerateLogicMapOptions extends CompileOptions {
   outputFile?: string;
   rawOutputFile?: string | false;
   maxFiles?: number;
+  maxContextFiles?: number;
+  maxContextBytes?: number;
+  readContext?: boolean;
+  semantic?: OpenAISemanticOptions;
 }
 
 export interface GenerateLogicMapResult {
@@ -30,8 +36,35 @@ export async function generateLogicMap(
       ? undefined
       : resolveOutput(root, options.rawOutputFile ?? ".logic-map/raw-graph.json");
 
+  const context = options.readContext === false
+    ? undefined
+    : await readProjectContext(root, {
+      maxDocuments: options.maxContextFiles,
+      maxTotalBytes: options.maxContextBytes,
+    });
   const rawGraph = await analyzeTypeScriptProject(root, { maxFiles: options.maxFiles });
-  const graph = compileLogicGraph(rawGraph, options);
+  if (context) {
+    const codePrompts = rawGraph.nodes.filter((node) => node.kind === "prompt").flatMap((node) => {
+      const source = node.evidence[0]?.source;
+      const excerpt = typeof node.metadata?.excerpt === "string" ? node.metadata.excerpt : undefined;
+      if (!source || !excerpt) return [];
+      return [{
+        path: source.file,
+        name: node.name,
+        excerpt,
+        variables: Array.isArray(node.metadata?.variables)
+          ? node.metadata.variables.filter((value): value is string => typeof value === "string")
+          : [],
+        source: "code" as const,
+      }];
+    });
+    const promptKeys = new Set(context.prompts.map((prompt) => `${prompt.path}:${prompt.name}`));
+    context.prompts.push(...codePrompts.filter((prompt) => !promptKeys.has(`${prompt.path}:${prompt.name}`)));
+    rawGraph.context = context;
+    rawGraph.diagnostics.push(...context.diagnostics);
+  }
+  let graph = compileLogicGraph(rawGraph, options);
+  if (options.semantic) graph = await enrichLogicGraphWithOpenAI(rawGraph, graph, options.semantic);
 
   await writeJson(outputFile, graph);
   if (rawOutputFile) await writeJson(rawOutputFile, rawGraph);

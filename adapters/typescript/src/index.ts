@@ -7,13 +7,16 @@ import {
   ScriptTarget,
   SyntaxKind,
   type CallExpression,
+  type Expression,
   type FunctionDeclaration,
   type MethodDeclaration,
+  type ObjectLiteralExpression,
   type SourceFile,
   type VariableDeclaration,
 } from "ts-morph";
 import {
   SCHEMA_VERSION,
+  type ControlFlowKind,
   type Diagnostic,
   type Evidence,
   type RawCodeEdge,
@@ -131,9 +134,16 @@ export async function analyzeTypeScriptProject(
   }
 
   for (const sourceFile of sourceFiles) {
+    const fileId = fileNodeIds.get(sourceFile.getFilePath());
+    if (fileId) collectSemanticConstructs(sourceFile, root, fileId, nodes, edges, declarations);
+  }
+
+  for (const sourceFile of sourceFiles) {
     collectImports(sourceFile, root, fileNodeIds, edges);
     collectCalls(sourceFile, root, declarations, nodes, edges);
     collectFrameworkRoutes(sourceFile, root, declarations, nodes, edges);
+    collectSemanticRelations(sourceFile, root, declarations, nodes, edges);
+    collectDeclarativeWorkflow(sourceFile, root, declarations, nodes, edges);
   }
 
   const frameworks = await detectFrameworks(root, sourceFiles.map((item) => relativePath(root, item.getFilePath())));
@@ -240,10 +250,12 @@ function collectDeclarations(
           declaration.getEndLineNumber(),
         ),
       ],
-      metadata:
-        kind === "route"
+      metadata: {
+        ...declarationMetadata(declaration),
+        ...(kind === "route"
           ? { method: name.toUpperCase(), path: nextRoutePath(relativeFile), framework: "nextjs" }
-          : undefined,
+          : {}),
+      },
     };
     nodes.push(node);
     edges.push(makeEdge(fileId, id, "contains", node.evidence));
@@ -259,6 +271,359 @@ function collectDeclarations(
     nodes.push({ id, kind: "class", name, qualifiedName: `${relativeFile}#${name}`, language: languageForFile(relativeFile), evidence: itemEvidence });
     edges.push(makeEdge(fileId, id, "contains", itemEvidence));
   }
+}
+
+function declarationMetadata(
+  declaration: FunctionDeclaration | MethodDeclaration | VariableDeclaration,
+): Record<string, unknown> {
+  const initializer = Node.isVariableDeclaration(declaration) ? declaration.getInitializer() : undefined;
+  const callable = initializer && (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
+    ? initializer
+    : Node.isFunctionDeclaration(declaration) || Node.isMethodDeclaration(declaration)
+      ? declaration
+      : undefined;
+  if (!callable) return {};
+  const parameters = callable.getParameters().map((parameter) => ({
+    name: parameter.getName(),
+    type: parameter.getTypeNode()?.getText() ?? parameter.getType().getText(parameter),
+    optional: parameter.isOptional(),
+  }));
+  const returnType = callable.getReturnTypeNode()?.getText() ?? callable.getReturnType().getText(callable);
+  return {
+    parameters,
+    returnType,
+    async: callable.hasModifier(SyntaxKind.AsyncKeyword),
+    returnStatements: callable.getDescendantsOfKind(SyntaxKind.ReturnStatement).length,
+    throwStatements: callable.getDescendantsOfKind(SyntaxKind.ThrowStatement).length,
+    branches:
+      callable.getDescendantsOfKind(SyntaxKind.IfStatement).length +
+      callable.getDescendantsOfKind(SyntaxKind.SwitchStatement).length +
+      callable.getDescendantsOfKind(SyntaxKind.ConditionalExpression).length,
+    loops:
+      callable.getDescendantsOfKind(SyntaxKind.ForStatement).length +
+      callable.getDescendantsOfKind(SyntaxKind.ForOfStatement).length +
+      callable.getDescendantsOfKind(SyntaxKind.ForInStatement).length +
+      callable.getDescendantsOfKind(SyntaxKind.WhileStatement).length +
+      callable.getDescendantsOfKind(SyntaxKind.DoStatement).length,
+    catches: callable.getDescendantsOfKind(SyntaxKind.CatchClause).length,
+  };
+}
+
+function collectSemanticConstructs(
+  sourceFile: SourceFile,
+  root: string,
+  fileId: string,
+  nodes: RawCodeNode[],
+  edges: RawCodeEdge[],
+  declarations: Map<string, DeclarationRecord>,
+): void {
+  const relativeFile = relativePath(root, sourceFile.getFilePath());
+  for (const declaration of sourceFile.getVariableDeclarations()) {
+    if (declarations.has(declarationKey(declaration))) continue;
+    const initializer = declaration.getInitializer();
+    if (!initializer) continue;
+    const name = declaration.getName();
+    const promptText = promptLiteral(name, initializer);
+    if (promptText) {
+      const promptId = stableId("prompt", `${relativeFile}:${name}:${declaration.getStartLineNumber()}`);
+      const promptEvidence = [evidence(relativeFile, declaration.getStartLineNumber(), "name_heuristic", "Prompt or instructions constant", 0.88, name, declaration.getEndLineNumber())];
+      const promptNode: RawCodeNode = {
+        id: promptId,
+        kind: "prompt",
+        name,
+        qualifiedName: `${relativeFile}#${name}`,
+        description: firstSentence(promptText),
+        language: languageForFile(relativeFile),
+        metadata: { excerpt: promptText.slice(0, 4_000), variables: templateVariables(promptText) },
+        evidence: promptEvidence,
+      };
+      nodes.push(promptNode);
+      edges.push(makeEdge(fileId, promptId, "contains", promptEvidence));
+      declarations.set(declarationKey(declaration), { node: promptNode, declaration });
+      continue;
+    }
+
+    const semantic = semanticConstruct(name, initializer, relativeFile);
+    if (!semantic) continue;
+    const line = declaration.getStartLineNumber();
+    const id = stableId(semantic.kind, `${relativeFile}:${name}:${line}`);
+    const itemEvidence = [evidence(relativeFile, line, semantic.method, semantic.detail, semantic.confidence, name, declaration.getEndLineNumber())];
+    const object = semanticObject(initializer);
+    const role = object ? propertyLiteral(object, "role") : undefined;
+    const description = object
+      ? propertyLiteral(object, "description") ?? propertyLiteral(object, "goal") ?? role
+      : undefined;
+    const instructions = object
+      ? propertyLiteral(object, "instructions") ?? propertyLiteral(object, "systemPrompt") ?? propertyLiteral(object, "prompt")
+      : undefined;
+    const model = object ? propertyLiteral(object, "model") : undefined;
+    const node: RawCodeNode = {
+      id,
+      kind: semantic.kind,
+      name: object ? propertyLiteral(object, "name") ?? name : name,
+      qualifiedName: `${relativeFile}#${name}`,
+      description: description ?? (instructions ? firstSentence(instructions) : undefined),
+      language: languageForFile(relativeFile),
+      metadata: {
+        factory: semantic.factory,
+        role,
+        instructions: instructions?.slice(0, 2_000),
+        model,
+        toolNames: object ? propertyIdentifierNames(object, "tools") : [],
+        taskNames: object ? propertyIdentifierNames(object, "tasks") : [],
+      },
+      evidence: itemEvidence,
+    };
+    nodes.push(node);
+    edges.push(makeEdge(fileId, id, "contains", itemEvidence));
+    declarations.set(declarationKey(declaration), { node, declaration });
+
+    if (model) {
+      const modelId = stableId("model", model);
+      const modelEvidence = [evidence(relativeFile, line, "framework_convention", `Configured model ${model}`, 0.94, name)];
+      nodes.push({
+        id: modelId,
+        kind: "model",
+        name: model,
+        qualifiedName: `model:${model}`,
+        language: languageForFile(relativeFile),
+        metadata: { model },
+        evidence: modelEvidence,
+      });
+      edges.push(makeEdge(id, modelId, "requests", modelEvidence, { label: "model" }));
+    }
+    if (instructions && instructions.length >= 24) {
+      const promptId = stableId("prompt", `${relativeFile}:${name}:inline-instructions`);
+      const promptEvidence = [evidence(relativeFile, line, "framework_convention", `Inline instructions configured for ${name}`, 0.94, name)];
+      nodes.push({
+        id: promptId,
+        kind: "prompt",
+        name: `${name} instructions`,
+        qualifiedName: `${relativeFile}#${name}:instructions`,
+        description: firstSentence(instructions),
+        language: languageForFile(relativeFile),
+        metadata: { excerpt: instructions.slice(0, 4_000), variables: templateVariables(instructions) },
+        evidence: promptEvidence,
+      });
+      edges.push(makeEdge(id, promptId, "data_flow", promptEvidence, { label: "instructions" }));
+    }
+  }
+}
+
+interface SemanticConstruct {
+  kind: Extract<RawNodeKind, "agent" | "workflow" | "tool" | "model" | "human_gate">;
+  factory: string;
+  confidence: number;
+  detail: string;
+  method: Evidence["method"];
+}
+
+function semanticConstruct(name: string, initializer: Expression, relativeFile: string): SemanticConstruct | undefined {
+  const factory = initializerExpressionName(initializer);
+  const normalized = `${factory} ${name}`.toLowerCase();
+  const framework = /stategraph|messagegraph|create(react)?agent|defineagent|new agent|agent\(|crew\(|crewai|task\(|tool\(|createtool|definetool|chatopenai|chatanthropic/.test(normalized);
+  const make = (kind: SemanticConstruct["kind"], detail: string, confidence = framework ? 0.96 : 0.82): SemanticConstruct => ({
+    kind,
+    factory,
+    confidence,
+    detail,
+    method: framework ? "framework_convention" : "name_heuristic",
+  });
+  if (/chatopenai|chatanthropic|azurechatopenai|generative(model|ai)|createmodel|language.?model/.test(normalized)) return make("model", `Recognized model construction through ${factory}`);
+  if (/stategraph|messagegraph|workflow|orchestrator|pipeline|\bcrew\b/.test(normalized)) return make("workflow", `Recognized workflow construction through ${factory || name}`);
+  if (/createtool|definetool|dynamicstructuredtool|\btool\b/.test(normalized)) return make("tool", `Recognized tool construction through ${factory || name}`);
+  if (/human.?approval|human.?review|approval.?gate|confirm.?step|interruptbefore/.test(normalized)) return make("human_gate", `Recognized human approval gate through ${factory || name}`, 0.86);
+  if (/create(react)?agent|defineagent|\bagent\b/.test(normalized)) return make("agent", `Recognized Agent construction through ${factory || name}`);
+  if (/(^|\/)(agents?|crews?)\//i.test(relativeFile)) return make("agent", "Declared under an Agent directory", 0.72);
+  return undefined;
+}
+
+function initializerExpressionName(initializer: Expression): string {
+  if (Node.isCallExpression(initializer) || Node.isNewExpression(initializer)) return initializer.getExpression().getText();
+  return initializer.getKindName();
+}
+
+function semanticObject(initializer: Expression): ObjectLiteralExpression | undefined {
+  if (Node.isObjectLiteralExpression(initializer)) return initializer;
+  if (Node.isCallExpression(initializer) || Node.isNewExpression(initializer)) {
+    return initializer.getArguments().find(Node.isObjectLiteralExpression);
+  }
+  return undefined;
+}
+
+function propertyLiteral(object: ObjectLiteralExpression, name: string): string | undefined {
+  const property = object.getProperty(name);
+  if (!property || !Node.isPropertyAssignment(property)) return undefined;
+  const value = property.getInitializer();
+  if (!value) return undefined;
+  if (Node.isStringLiteral(value) || Node.isNoSubstitutionTemplateLiteral(value)) return value.getLiteralText();
+  return undefined;
+}
+
+function propertyIdentifierNames(object: ObjectLiteralExpression, name: string): string[] {
+  const property = object.getProperty(name);
+  if (!property || !Node.isPropertyAssignment(property)) return [];
+  const value = property.getInitializer();
+  if (!value) return [];
+  const identifiers = Node.isIdentifier(value) ? [value] : value.getDescendantsOfKind(SyntaxKind.Identifier);
+  return [...new Set(identifiers.map((identifier) => identifier.getText()))];
+}
+
+function promptLiteral(name: string, initializer: Expression): string | undefined {
+  if (!/(prompt|instructions?|system(message|text)?|persona)/i.test(name)) return undefined;
+  if (Node.isStringLiteral(initializer) || Node.isNoSubstitutionTemplateLiteral(initializer)) return initializer.getLiteralText();
+  if (Node.isTemplateExpression(initializer)) return initializer.getText().slice(1, -1);
+  return undefined;
+}
+
+function templateVariables(value: string): string[] {
+  return [...new Set([
+    ...value.matchAll(/\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/g),
+    ...value.matchAll(/\$\{\s*([A-Za-z_][\w.-]*)\s*\}/g),
+  ].map((match) => match[1]).filter((item): item is string => Boolean(item)))];
+}
+
+function firstSentence(value: string): string {
+  return value.replace(/\s+/g, " ").trim().split(/(?<=[.!?。！？])\s*/)[0]?.slice(0, 320) ?? "";
+}
+
+function collectSemanticRelations(
+  sourceFile: SourceFile,
+  root: string,
+  declarations: Map<string, DeclarationRecord>,
+  _nodes: RawCodeNode[],
+  edges: RawCodeEdge[],
+): void {
+  const relativeFile = relativePath(root, sourceFile.getFilePath());
+  for (const declaration of sourceFile.getVariableDeclarations()) {
+    const source = declarations.get(declarationKey(declaration));
+    const initializer = declaration.getInitializer();
+    if (!source || !initializer || !["agent", "workflow", "tool", "human_gate"].includes(source.node.kind)) continue;
+    const object = semanticObject(initializer);
+    if (!object) continue;
+    for (const propertyName of ["tools", "agents", "tasks", "handoffs", "instructions", "prompt", "systemPrompt", "model"]) {
+      const property = object.getProperty(propertyName);
+      if (!property || !Node.isPropertyAssignment(property)) continue;
+      const value = property.getInitializer();
+      if (!value) continue;
+      const identifiers = Node.isIdentifier(value) ? [value] : value.getDescendantsOfKind(SyntaxKind.Identifier);
+      for (const identifier of identifiers) {
+        const target = resolveSymbolTarget(identifier.getSymbol(), declarations);
+        if (!target || target.node.id === source.node.id) continue;
+        const kind: RawCodeEdge["kind"] = target.node.kind === "model"
+          ? "requests"
+          : target.node.kind === "prompt"
+            ? "data_flow"
+            : "calls";
+        const relationEvidence = [evidence(
+          relativeFile,
+          property.getStartLineNumber(),
+          "framework_convention",
+          `${source.node.name} configures ${propertyName} with ${target.node.name}`,
+          0.96,
+          declaration.getName(),
+        )];
+        edges.push(makeEdge(source.node.id, target.node.id, kind, relationEvidence, {
+          label: propertyName,
+          control: propertyName === "handoffs" ? "conditional" : "sequential",
+        }));
+      }
+    }
+  }
+}
+
+function collectDeclarativeWorkflow(
+  sourceFile: SourceFile,
+  root: string,
+  declarations: Map<string, DeclarationRecord>,
+  nodes: RawCodeNode[],
+  edges: RawCodeEdge[],
+): void {
+  const relativeFile = relativePath(root, sourceFile.getFilePath());
+  const namedMembers = new Map<string, RawCodeNode>();
+  const calls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression);
+
+  for (const call of calls) {
+    const expression = call.getExpression();
+    if (!Node.isPropertyAccessExpression(expression) || expression.getName() !== "addNode") continue;
+    const [nameArgument, handlerArgument] = call.getArguments();
+    if (!nameArgument || !Node.isStringLiteral(nameArgument)) continue;
+    const frameworkName = nameArgument.getLiteralValue();
+    const handler = handlerArgument && Node.isIdentifier(handlerArgument)
+      ? resolveSymbolTarget(handlerArgument.getSymbol(), declarations)
+      : undefined;
+    const itemEvidence = [evidence(relativeFile, call.getStartLineNumber(), "framework_convention", `Registers workflow node ${frameworkName}`, 0.98, frameworkName)];
+    const member = handler?.node ?? createFrameworkMember(frameworkName, relativeFile, call.getStartLineNumber(), itemEvidence);
+    if (!handler) nodes.push(member);
+    member.metadata = { ...member.metadata, frameworkNodeName: frameworkName };
+    namedMembers.set(frameworkName, member);
+    const owner = resolveSymbolTarget(expression.getExpression().getSymbol(), declarations);
+    if (owner && owner.node.id !== member.id) {
+      edges.push(makeEdge(owner.node.id, member.id, "calls", itemEvidence, { label: "node", control: "sequential" }));
+    }
+  }
+
+  for (const call of calls) {
+    const expression = call.getExpression();
+    if (!Node.isPropertyAccessExpression(expression)) continue;
+    const method = expression.getName();
+    if (!["addEdge", "addConditionalEdges"].includes(method)) continue;
+    const owner = resolveSymbolTarget(expression.getExpression().getSymbol(), declarations);
+    const [sourceArgument, targetArgument, pathMapArgument] = call.getArguments();
+    if (!sourceArgument || !Node.isStringLiteral(sourceArgument)) continue;
+    const sourceName = sourceArgument.getLiteralValue();
+    const sourceNode = isFrameworkStart(sourceName) ? owner?.node : namedMembers.get(sourceName);
+    if (!sourceNode) continue;
+    const targetNames = method === "addConditionalEdges"
+      ? conditionalTargets(pathMapArgument)
+      : targetArgument && Node.isStringLiteral(targetArgument)
+        ? [targetArgument.getLiteralValue()]
+        : [];
+    for (const targetName of targetNames) {
+      if (isFrameworkEnd(targetName)) {
+        sourceNode.metadata = { ...sourceNode.metadata, terminal: true, terminalReason: "workflow_end" };
+        continue;
+      }
+      const targetNode = namedMembers.get(targetName);
+      if (!targetNode || sourceNode.id === targetNode.id) continue;
+      const control: ControlFlowKind = method === "addConditionalEdges" ? "conditional" : "sequential";
+      const itemEvidence = [evidence(relativeFile, call.getStartLineNumber(), "framework_convention", `${method} connects ${sourceName} to ${targetName}`, 0.98, sourceName)];
+      edges.push(makeEdge(sourceNode.id, targetNode.id, "calls", itemEvidence, {
+        label: method === "addConditionalEdges" ? "branch" : undefined,
+        control,
+      }));
+    }
+  }
+}
+
+function createFrameworkMember(name: string, relativeFile: string, line: number, itemEvidence: Evidence[]): RawCodeNode {
+  const kind: RawNodeKind = /(agent|research|writer|review|planner)/i.test(name) ? "agent" : "service";
+  return {
+    id: stableId(kind, `${relativeFile}:framework-node:${name}:${line}`),
+    kind,
+    name,
+    qualifiedName: `${relativeFile}#workflow:${name}`,
+    language: languageForFile(relativeFile),
+    metadata: { frameworkNodeName: name },
+    evidence: itemEvidence,
+  };
+}
+
+function conditionalTargets(node: Node | undefined): string[] {
+  if (!node || !Node.isObjectLiteralExpression(node)) return [];
+  return node.getProperties().flatMap((property) => {
+    if (!Node.isPropertyAssignment(property)) return [];
+    const initializer = property.getInitializer();
+    return initializer && Node.isStringLiteral(initializer) ? [initializer.getLiteralValue()] : [];
+  });
+}
+
+function isFrameworkStart(value: string): boolean {
+  return ["__start__", "START", "start"].includes(value);
+}
+
+function isFrameworkEnd(value: string): boolean {
+  return ["__end__", "END", "end"].includes(value);
 }
 
 function collectImports(
@@ -290,14 +655,16 @@ function collectCalls(
   for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const caller = findEnclosingDeclaration(call, declarations);
     if (!caller) continue;
-    const target = resolveCallTarget(call, declarations);
+    const target = resolveCallTarget(call, declarations) ?? resolveAgentRunTarget(call, declarations);
     const expressionText = call.getExpression().getText();
     const internalRoute = internalFetchRoute(call, expressionText, nodes);
-    const callEvidence = [evidence(relativeFile, call.getStartLineNumber(), "ast", `Calls ${expressionText}`, target || internalRoute ? 0.96 : 0.8)];
-    if (target) edges.push(makeEdge(caller.node.id, target.node.id, "calls", callEvidence));
+    const control = target?.node.kind === "human_gate" ? "human_approval" : inferControlFlow(call, expressionText);
+    const controlMetadata = inferControlMetadata(call, control);
+    const callEvidence = [evidence(relativeFile, call.getStartLineNumber(), "ast", `${control === "sequential" ? "Calls" : `${control} call to`} ${expressionText}`, target || internalRoute ? 0.96 : 0.8)];
+    if (target) edges.push(makeEdge(caller.node.id, target.node.id, "calls", callEvidence, { control, metadata: controlMetadata }));
     if (target) collectArgumentDataFlows(call, target, declarations, relativeFile, edges);
 
-    if (internalRoute) edges.push(makeEdge(caller.node.id, internalRoute.id, "requests", callEvidence));
+    if (internalRoute) edges.push(makeEdge(caller.node.id, internalRoute.id, "requests", callEvidence, { control, metadata: controlMetadata }));
 
     const external = externalCall(call, expressionText);
     if (external) {
@@ -311,7 +678,7 @@ function collectCalls(
         metadata: external.metadata,
         evidence: callEvidence,
       });
-      edges.push(makeEdge(caller.node.id, externalId, "requests", callEvidence));
+      edges.push(makeEdge(caller.node.id, externalId, "requests", callEvidence, { control, metadata: controlMetadata }));
     }
 
     const database = databaseCall(expressionText);
@@ -327,7 +694,7 @@ function collectCalls(
         metadata: { operation: database.operation },
         evidence: databaseEvidence,
       });
-      edges.push(makeEdge(caller.node.id, databaseId, database.edgeKind, databaseEvidence));
+      edges.push(makeEdge(caller.node.id, databaseId, database.edgeKind, databaseEvidence, { control, metadata: controlMetadata }));
     }
   }
 }
@@ -414,7 +781,55 @@ function findEnclosingDeclaration(call: CallExpression, declarations: Map<string
 }
 
 function resolveCallTarget(call: CallExpression, declarations: Map<string, DeclarationRecord>): DeclarationRecord | undefined {
-  return resolveSymbolTarget(call.getExpression().getSymbol(), declarations);
+  const expression = call.getExpression();
+  const direct = resolveSymbolTarget(expression.getSymbol(), declarations);
+  if (direct) return direct;
+  if (Node.isPropertyAccessExpression(expression)) {
+    return resolveSymbolTarget(expression.getExpression().getSymbol(), declarations);
+  }
+  return undefined;
+}
+
+function resolveAgentRunTarget(call: CallExpression, declarations: Map<string, DeclarationRecord>): DeclarationRecord | undefined {
+  const expressionText = call.getExpression().getText().toLowerCase();
+  if (!/(^|\.)(run|runstreamed|invoke|execute)$/.test(expressionText)) return undefined;
+  const firstArgument = call.getArguments()[0];
+  if (!firstArgument || !Node.isIdentifier(firstArgument)) return undefined;
+  const target = resolveSymbolTarget(firstArgument.getSymbol(), declarations);
+  return target && ["agent", "workflow"].includes(target.node.kind) ? target : undefined;
+}
+
+function inferControlFlow(call: CallExpression, expressionText: string): ControlFlowKind {
+  if (/retry|backoff|withretry/i.test(expressionText)) return "retry";
+  for (const ancestor of call.getAncestors()) {
+    if (Node.isFunctionDeclaration(ancestor) || Node.isMethodDeclaration(ancestor) || Node.isArrowFunction(ancestor) || Node.isFunctionExpression(ancestor)) break;
+    if (Node.isCallExpression(ancestor) && /^(Promise\.(all|allSettled|race|any)|parallel|all)$/.test(ancestor.getExpression().getText())) return "parallel";
+    if (Node.isCatchClause(ancestor)) return "fallback";
+    if (
+      Node.isForStatement(ancestor) ||
+      Node.isForOfStatement(ancestor) ||
+      Node.isForInStatement(ancestor) ||
+      Node.isWhileStatement(ancestor) ||
+      Node.isDoStatement(ancestor)
+    ) {
+      return /retry|attempt|backoff/i.test(ancestor.getText().slice(0, 240)) ? "retry" : "loop";
+    }
+    if (Node.isIfStatement(ancestor) || Node.isSwitchStatement(ancestor) || Node.isConditionalExpression(ancestor)) return "conditional";
+  }
+  return "sequential";
+}
+
+function inferControlMetadata(call: CallExpression, control: ControlFlowKind): Record<string, unknown> | undefined {
+  if (control !== "retry") return undefined;
+  const texts = [call.getText().slice(0, 600)];
+  for (const ancestor of call.getAncestors()) {
+    if (Node.isFunctionDeclaration(ancestor) || Node.isMethodDeclaration(ancestor) || Node.isArrowFunction(ancestor) || Node.isFunctionExpression(ancestor)) break;
+    texts.push(ancestor.getText().slice(0, 600));
+    if (Node.isForStatement(ancestor) || Node.isWhileStatement(ancestor) || Node.isDoStatement(ancestor)) break;
+  }
+  const context = texts.join(" ");
+  const bounded = /max[A-Z_\s-]?(attempts?|retries)|retryLimit|attempt\s*[<>=!]+\s*\d+|retries\s*:\s*\d+|maxRetries\s*:\s*\d+/i.test(context);
+  return { retryBounded: bounded };
 }
 
 function resolveSymbolTarget(
@@ -496,11 +911,20 @@ function classifyDeclaration(relativeFile: string, name: string, declaration: No
   if (isInternalMember(declaration)) {
     return { kind: "function", confidence: 1, detail: "Private class member, treated as an implementation detail", method: "ast" };
   }
-  if (hasQualifiedSuffix(normalizedName, /(agent|crew|workflow|orchestrator)$/)) {
-    return { kind: "agent", confidence: 0.8, detail: "Agent or workflow naming convention", method: "name_heuristic" };
+  if (hasQualifiedSuffix(normalizedName, /(workflow|orchestrator|pipeline|graph|crew)$/)) {
+    return { kind: "workflow", confidence: 0.84, detail: "Workflow or orchestrator naming convention", method: "name_heuristic" };
   }
-  if (pathConventionsApply && /(^|\/)(agents?|crews?|workflows?)(\/|$)/.test(normalizedPath)) {
-    return { kind: "agent", confidence: 0.65, detail: "Declared under an agent or workflow directory", method: "path_heuristic" };
+  if (pathConventionsApply && /(^|\/)(workflows?|orchestrators?|pipelines?|graphs?|crews?)(\/|$)/.test(normalizedPath)) {
+    return { kind: "workflow", confidence: 0.72, detail: "Declared under a workflow or orchestrator directory", method: "path_heuristic" };
+  }
+  if (hasQualifiedSuffix(normalizedName, /agent$/)) {
+    return { kind: "agent", confidence: 0.84, detail: "Agent naming convention", method: "name_heuristic" };
+  }
+  if (pathConventionsApply && /(^|\/)(agents?)(\/|$)/.test(normalizedPath)) {
+    return { kind: "agent", confidence: 0.72, detail: "Declared under an Agent directory", method: "path_heuristic" };
+  }
+  if (/(approve|approval|humanreview|human_review|confirm|moderate)/.test(normalizedName)) {
+    return { kind: "human_gate", confidence: 0.68, detail: "Human approval or review naming convention", method: "name_heuristic" };
   }
   if (hasQualifiedSuffix(normalizedName, /(tool|action)$/)) {
     return { kind: "tool", confidence: 0.8, detail: "Tool or action naming convention", method: "name_heuristic" };
@@ -603,7 +1027,14 @@ async function detectFrameworks(root: string, files: string[]): Promise<string[]
       hono: "Hono",
       "@nestjs/core": "NestJS",
       "@langchain/langgraph": "LangGraph",
+      "langchain": "LangChain",
       "@openai/agents": "OpenAI Agents SDK",
+      "@mastra/core": "Mastra",
+      "ai": "Vercel AI SDK",
+      "openai": "OpenAI SDK",
+      "@anthropic-ai/sdk": "Anthropic SDK",
+      "@temporalio/workflow": "Temporal",
+      "inngest": "Inngest",
     };
     for (const [dependency, label] of Object.entries(known)) if (dependency in dependencies) frameworks.add(label);
   } catch {
@@ -635,8 +1066,23 @@ function evidence(
   return { source: { file, startLine, endLine, symbol }, method, detail, confidence };
 }
 
-function makeEdge(source: string, target: string, kind: RawCodeEdge["kind"], itemEvidence: Evidence[]): RawCodeEdge {
-  return { id: stableId("edge", `${source}:${kind}:${target}`), source, target, kind, evidence: itemEvidence };
+function makeEdge(
+  source: string,
+  target: string,
+  kind: RawCodeEdge["kind"],
+  itemEvidence: Evidence[],
+  options: { label?: string; control?: ControlFlowKind; metadata?: Record<string, unknown> } = {},
+): RawCodeEdge {
+  return {
+    id: stableId("edge", `${source}:${kind}:${target}:${options.control ?? "sequential"}:${options.label ?? ""}`),
+    source,
+    target,
+    kind,
+    label: options.label,
+    control: options.control,
+    metadata: options.metadata,
+    evidence: itemEvidence,
+  };
 }
 
 function stableId(prefix: string, value: string): string {
