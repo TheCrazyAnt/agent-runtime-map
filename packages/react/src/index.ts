@@ -10,6 +10,16 @@ export {
   type BlueprintGroupTone,
 } from "./BlueprintGroupNode.js";
 export {
+  BLUEPRINT_CODE_NODE_HEIGHT,
+  BLUEPRINT_CODE_NODE_WIDTH,
+  BlueprintCodeNode,
+  type BlueprintCodeNodeData,
+} from "./BlueprintCodeNode.js";
+export {
+  BlueprintPlaybackEdge,
+  type BlueprintPlaybackEdgeData,
+} from "./BlueprintPlaybackEdge.js";
+export {
   blueprintEdgeAppearance,
   type BlueprintEdgeAppearance,
   type BlueprintEdgeState,

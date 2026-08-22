@@ -57,6 +57,9 @@ dedicated detection in addition to general TypeScript call analysis.
 - **Chain Doctor:** verified steps turn green, uncertain inference turns yellow, and deterministic problems turn red and stop the inspection at the failing step.
 - **Evidence-first diagnostics:** errors retain source files, lines, confidence, cause, and a suggested repair.
 - **Semantic zoom:** scrolling smoothly crossfades between the whole system, Agent logic, and exact source-evidence layers without deleting graph facts or flickering at level boundaries.
+- **Inspectable code internals:** double-click a logic node to reveal a bounded local subgraph of the real Agents, functions, tools, and calls that support it—without disturbing the global map.
+- **Source-linked map:** click a node or search result to read its local, line-highlighted source evidence. The Viewer exposes only analyzed source paths, never arbitrary local files.
+- **Calm navigation:** search flies to a result, playback can follow the active step until the user touches the map, and dragged nodes keep their project-local positions with undo and reset.
 - **Chinese and English:** the CLI and Viewer follow the operating-system/browser locale automatically and include explicit overrides.
 
 ## Blueprint viewer and reusable components
@@ -98,7 +101,7 @@ The same CLI can be installed directly from the CI-validated GitHub Release
 artifact without cloning the monorepo:
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.1.2/agent-runtime-map-0.1.2.tgz
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.2.0/agent-runtime-map-0.2.0.tgz
 npx agent-runtime-map .
 ```
 
@@ -198,6 +201,7 @@ tests                       Analyzer and viewer-server tests
 ```
 
 More detail is available in [Architecture](docs/ARCHITECTURE.md), [Graph Schema](docs/GRAPH_SCHEMA.md), [Project Context](docs/PROJECT_CONTEXT.md), [Visual Components](docs/VISUAL_COMPONENTS.md), the [Roadmap](docs/ROADMAP.md), and [Third-Party Notices](THIRD_PARTY_NOTICES.md).
+For implementation continuation, see the detailed [CC handoff guide](docs/CC_HANDOFF.md).
 
 ## Development
 

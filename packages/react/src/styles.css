@@ -59,6 +59,35 @@
 .blueprint-handle { top: 44px !important; width: 6px !important; height: 6px !important; border: 1px solid #7b8795 !important; background: #fff !important; opacity: 0; }
 .blueprint-node:hover .blueprint-handle { opacity: 1; }
 
+.blueprint-code-node {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 176px;
+  height: 88px;
+  padding: 10px;
+  border: 1px solid #cfd8e2;
+  border-radius: 9px;
+  color: #52606d;
+  background: rgba(255,255,255,.97);
+  box-shadow: 0 7px 22px rgba(39,52,65,.09), inset 0 0 0 1px rgba(255,255,255,.7);
+  transition: border-color .2s ease, box-shadow .2s ease, opacity .25s ease, transform .25s cubic-bezier(.2,.8,.2,1);
+}
+.blueprint-code-node:hover, .blueprint-code-node.is-selected { border-color: #4b9dcc; box-shadow: 0 0 0 3px rgba(22,137,207,.09), 0 10px 28px rgba(39,52,65,.12); }
+.blueprint-code-node__icon { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #d9e3eb; border-radius: 7px; color: #247fae; background: #f2f8fb; }
+.blueprint-code-node__body { display: grid; min-width: 0; gap: 4px; text-align: left; }
+.blueprint-code-node small { color: #87939f; font: 700 6.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; text-transform: uppercase; }
+.blueprint-code-node strong { overflow: hidden; color: #34404c; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.blueprint-code-node code { overflow: hidden; color: #7b8794; font: 7px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.blueprint-code-node > i { position: absolute; top: -8px; right: 8px; padding: 2px 5px; border: 1px solid #d9e2ea; border-radius: 4px; color: #7f8b97; background: #fff; font: normal 6px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.blueprint-code-handle { width: 6px !important; height: 6px !important; border: 1px solid #6e8293 !important; background: #fff !important; opacity: 0; }
+.blueprint-code-node:hover .blueprint-code-handle { opacity: 1; }
+
+.blueprint-playback-edge__label { position: absolute; z-index: 2; padding: 2px 5px; border-radius: 3px; color: #66727f; background: rgba(248,250,252,.92); font: 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace; pointer-events: none; }
+.blueprint-playback-edge__token { filter: drop-shadow(0 0 4px currentColor); pointer-events: none; }
+
 .blueprint-group {
   width: 100%;
   height: 100%;
@@ -83,4 +112,6 @@
   .blueprint-node p,
   .blueprint-node small,
   .blueprint-node__evidence { transition-duration: .01ms !important; }
+  .blueprint-code-node { transition-duration: .01ms !important; }
+  .blueprint-playback-edge__token { display: none; }
 }

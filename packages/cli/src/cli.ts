@@ -11,7 +11,7 @@ import {
   type CliText,
 } from "./i18n.js";
 
-const VERSION = "0.1.2";
+const VERSION = "0.2.0";
 
 export async function run(argv = process.argv.slice(2)): Promise<number> {
   const requestedLocale = localeArgument(argv);
@@ -140,6 +140,8 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
     const server = await startViewerServer({
       graphFile: result.outputFile,
       rawGraphFile: result.rawOutputFile,
+      projectRoot: result.rawGraph.project.root,
+      sourceFiles: [...new Set(result.graph.nodes.flatMap((node) => node.sources.map((source) => source.file)))],
       host,
       port,
     });
