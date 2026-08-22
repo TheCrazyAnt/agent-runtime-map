@@ -35,6 +35,21 @@ Every visible node includes source files, line numbers, an inference explanation
 - **Evidence-first diagnostics:** errors retain source files, lines, confidence, cause, and a suggested repair.
 - **Chinese and English:** the CLI and Viewer follow the operating-system/browser locale automatically and include explicit overrides.
 
+## Blueprint viewer and reusable components
+
+The Viewer uses an open engineering-blueprint visual system: a fine grid canvas,
+icon-first nodes, labeled solid/dashed system boundaries, blue orthogonal main
+flows, and dashed auxiliary data links. Playback is part of the same visual
+language: the current step scans blue, verified steps turn green, uncertain
+steps turn amber, and a deterministic failure turns the affected circuit red.
+
+The visual primitives live in the separate open-source
+[`@agent-runtime-map/react`](packages/react/README.md) workspace package instead
+of being locked inside the Viewer. It exports React Flow node components, group
+frames, edge-state tokens, and boundary measurement helpers for embedding the
+same map in another product. See [Visual Components](docs/VISUAL_COMPONENTS.md)
+for the component contract and integration example.
+
 ## Try it
 
 From this repository:
@@ -128,6 +143,7 @@ Analysis runs locally. Agent Runtime Map does not upload source code, invoke an 
 
 ```text
 apps/viewer                 React Flow + ELK interactive viewer
+packages/react              Reusable blueprint React Flow components and styles
 packages/schema             Raw Code Graph and Logic Graph protocol
 adapters/typescript         TypeScript/JavaScript static analyzer
 packages/logic-compiler     Human-scale graph compiler
@@ -137,7 +153,7 @@ examples/simple-agent       End-to-end example project
 tests                       Analyzer and viewer-server tests
 ```
 
-More detail is available in [Architecture](docs/ARCHITECTURE.md), [Graph Schema](docs/GRAPH_SCHEMA.md), the [Roadmap](docs/ROADMAP.md), and [Third-Party Notices](THIRD_PARTY_NOTICES.md).
+More detail is available in [Architecture](docs/ARCHITECTURE.md), [Graph Schema](docs/GRAPH_SCHEMA.md), [Visual Components](docs/VISUAL_COMPONENTS.md), the [Roadmap](docs/ROADMAP.md), and [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
 ## Development
 

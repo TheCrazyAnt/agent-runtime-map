@@ -27,3 +27,27 @@ if (Object.keys(manifest.dependencies ?? {}).some((name) => name.startsWith("@ag
 }
 
 process.stdout.write(`Package check passed: ${report.filename}, ${report.size} bytes, ${report.entryCount} files.\n`);
+
+const componentPacked = spawnSync("npm", ["pack", "--workspace", "@agent-runtime-map/react", "--dry-run", "--json", "--ignore-scripts"], {
+  encoding: "utf8",
+  stdio: ["ignore", "pipe", "inherit"],
+});
+if (componentPacked.status !== 0) process.exit(componentPacked.status ?? 1);
+
+const [componentReport] = JSON.parse(componentPacked.stdout);
+const componentPaths = new Set(componentReport.files.map((file) => file.path));
+for (const required of ["dist/index.js", "dist/index.d.ts", "dist/styles.css", "README.md", "package.json"]) {
+  if (!componentPaths.has(required)) throw new Error(`React component package is missing ${required}`);
+}
+
+const componentManifest = JSON.parse(await readFile(new URL("../packages/react/package.json", import.meta.url), "utf8"));
+if (
+  componentManifest.name !== "@agent-runtime-map/react" ||
+  componentManifest.publishConfig?.access !== "public" ||
+  !componentManifest.peerDependencies?.["@xyflow/react"] ||
+  !componentManifest.peerDependencies?.react
+) {
+  throw new Error("React component package metadata or peer dependencies are invalid.");
+}
+
+process.stdout.write(`Component package check passed: ${componentReport.filename}, ${componentReport.size} bytes, ${componentReport.entryCount} files.\n`);

@@ -19,6 +19,18 @@ Agent Runtime Map 会读取 TypeScript / JavaScript 项目，通过 AST 和框�
 - **源码证据：** 每个节点和诊断都保留文件、行号、置信度、识别方法与修复建议。
 - **自动中英文：** 中文系统和浏览器默认显示中文，海外环境默认显示英文，也可以手动切换。
 
+## 蓝图 Viewer 与可复用组件
+
+Viewer 采用开源的工程蓝图视觉系统：细密网格画布、图标型节点、带标题的
+实线/虚线分区、蓝色直角主链路，以及灰色虚线数据链路。播放状态直接作用于
+这张图：当前步骤蓝色扫描，已验证步骤变绿，不确定步骤变黄，确定性故障则让
+对应节点和链路爆红。
+
+这些 UI 不只存在于 Viewer 内部，而是独立放在开源的
+[`@agent-runtime-map/react`](packages/react/README.md) 工作区包中。其他 Agent
+后台可以复用节点、分区边框、链路状态 token 和自动边界计算工具。组件接口和
+嵌入示例见 [Visual Components](docs/VISUAL_COMPONENTS.md)。
+
 ## 本地体验
 
 ```bash
@@ -91,6 +103,6 @@ npm run build
 npm run release:check
 ```
 
-架构和协议详见 [Architecture](docs/ARCHITECTURE.md)、[Graph Schema](docs/GRAPH_SCHEMA.md) 与 [Roadmap](docs/ROADMAP.md)。
+架构、协议和 UI 组件详见 [Architecture](docs/ARCHITECTURE.md)、[Graph Schema](docs/GRAPH_SCHEMA.md)、[Visual Components](docs/VISUAL_COMPONENTS.md) 与 [Roadmap](docs/ROADMAP.md)。
 
 MIT License。

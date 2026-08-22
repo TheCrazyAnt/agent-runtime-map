@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -13,6 +14,7 @@
     "baseUrl": ".",
     "paths": {
       "@agent-runtime-map/schema": ["packages/schema/src/index.ts"],
+      "@agent-runtime-map/react": ["packages/react/src/index.ts"],
       "@agent-runtime-map/typescript": ["adapters/typescript/src/index.ts"],
       "@agent-runtime-map/logic-compiler": ["packages/logic-compiler/src/index.ts"],
       "@agent-runtime-map/core": ["packages/core/src/index.ts"]
@@ -20,6 +22,7 @@
   },
   "include": [
     "packages/**/*.ts",
+    "packages/**/*.tsx",
     "adapters/**/*.ts",
     "tests/**/*.ts"
   ]

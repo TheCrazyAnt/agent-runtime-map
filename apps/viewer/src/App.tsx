@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Background,
-  BackgroundVariant,
   Controls,
   MarkerType,
   MiniMap,
@@ -11,6 +9,13 @@ import {
   type Edge,
   type Node,
 } from "@xyflow/react";
+import {
+  BlueprintGroupNode,
+  BlueprintLogicNode,
+  blueprintEdgeAppearance,
+  type BlueprintEdgeState,
+  type BlueprintLogicNodeData,
+} from "@agent-runtime-map/react";
 import {
   Activity,
   AlertTriangle,
@@ -36,7 +41,7 @@ import type {
   LogicNode as LogicGraphNode,
 } from "@agent-runtime-map/schema";
 import { layoutGraph } from "./layout";
-import { LogicNodeCard, type LogicNodeData } from "./LogicNodeCard";
+import { buildBlueprintGroupNodes } from "./blueprintGroups";
 import {
   chainHealthLabel,
   detectViewerLocale,
@@ -55,7 +60,7 @@ import {
 } from "./i18n";
 import { buildSimulationFrame, nextSimulationStep, type SimulationFrame } from "./simulation";
 
-const nodeTypes = { logic: LogicNodeCard };
+const nodeTypes = { logic: BlueprintLogicNode, blueprintGroup: BlueprintGroupNode };
 
 export function App() {
   return (
@@ -67,7 +72,7 @@ export function App() {
 
 function LogicMapViewer() {
   const [graph, setGraph] = useState<LogicGraph>();
-  const [nodes, setNodes] = useState<Node<LogicNodeData>[]>([]);
+  const [nodes, setNodes] = useState<Node<BlueprintLogicNodeData>[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>();
   const [selectedVariantId, setSelectedVariantId] = useState<string>();
@@ -107,9 +112,9 @@ function LogicMapViewer() {
   useEffect(() => {
     if (!graph) return;
     const flowNodes = graph.nodes.map((node) => toFlowNode(node, locale));
-    const flowEdges = graph.edges.map((edge) => toFlowEdge(edge, "global"));
+    const flowEdges = graph.edges.map((edge) => toFlowEdge(edge, "global", graph, locale));
     void layoutGraph(flowNodes, flowEdges).then((layouted) => {
-      setNodes(layouted as Node<LogicNodeData>[]);
+      setNodes(layouted as Node<BlueprintLogicNodeData>[]);
       window.setTimeout(() => fitView({ padding: 0.14, duration: 500 }), 20);
     });
   }, [fitView, graph, locale]);
@@ -128,12 +133,21 @@ function LogicMapViewer() {
 
   useEffect(() => {
     if (!nodes.length) return;
+    const focusIds = selectedVariant
+      ? selectedVariant.steps.slice(0, 5).flatMap((step) => step.nodeIds)
+      : [];
     const focusNodes = selectedVariant
-      ? nodes.filter((node) => selectedVariant.nodeIds.includes(node.id))
+      ? focusIds.flatMap((id) => nodes.find((node) => node.id === id) ?? [])
       : nodes;
     if (!focusNodes.length) return;
     const timer = window.setTimeout(
-      () => fitView({ nodes: focusNodes, padding: selectedVariant ? 0.32 : 0.14, duration: 620, maxZoom: 1.08 }),
+      () => fitView({
+        nodes: focusNodes,
+        padding: selectedVariant ? 0.22 : 0.14,
+        duration: 620,
+        minZoom: selectedVariant ? 0.46 : 0.26,
+        maxZoom: 1.08,
+      }),
       30,
     );
     return () => window.clearTimeout(timer);
@@ -169,10 +183,17 @@ function LogicMapViewer() {
     );
   }, [graph, locale, query]);
 
-  const visibleNodes = useMemo(() => nodes.map((node) => ({
+  const visibleLogicNodes = useMemo(() => nodes.map((node) => ({
     ...node,
     className: nodeClassName(node.id, matchingIds, selectedFeature, selectedVariant, frame),
   })), [frame, matchingIds, nodes, selectedFeature, selectedVariant]);
+
+  const visibleNodes = useMemo(() => {
+    if (!graph) return visibleLogicNodes;
+    const activeNodeIds = selectedVariant ? new Set(selectedVariant.nodeIds) : undefined;
+    const groups = buildBlueprintGroupNodes(nodes, graph, activeNodeIds, locale);
+    return [...groups, ...visibleLogicNodes];
+  }, [graph, locale, nodes, selectedVariant, visibleLogicNodes]);
 
   const visibleEdges = useMemo(() => graph?.edges.map((edge) => {
     let state: EdgeVisualState = "global";
@@ -180,10 +201,11 @@ function LogicMapViewer() {
       state = selectedVariant.edgeIds.includes(edge.id) ? "path" : "outside";
       if (frame.reachedEdgeIds.has(edge.id)) state = "reached";
       if (frame.currentEdgeIds.has(edge.id)) state = "current";
+      if (frame.warningEdgeIds.has(edge.id)) state = "warning";
       if (frame.errorEdgeIds.has(edge.id) || (frame.errorNodeIds.has(edge.target) && frame.reachedEdgeIds.has(edge.id))) state = "error";
     }
-    return toFlowEdge(edge, state);
-  }) ?? [], [frame, graph, selectedVariant]);
+    return toFlowEdge(edge, state, graph, locale);
+  }) ?? [], [frame, graph, locale, selectedVariant]);
 
   const selected = graph?.nodes.find((node) => node.id === selectedId);
   const selectNode = useCallback((_event: React.MouseEvent, node: Node) => setSelectedId(node.id), []);
@@ -297,6 +319,11 @@ function LogicMapViewer() {
       </aside>
 
       <section className="canvas" aria-label={text.logicGraph}>
+        <div className="canvas-caption">
+          <span className="canvas-caption__mark" />
+          <strong>{selectedFeature ? localizeFeatureLabel(selectedFeature, graph, locale) : text.wholeSystem}</strong>
+          <small>{selectedVariant ? localizeVariantLabel(selectedVariant, graph, locale) : text.globalView}</small>
+        </div>
         <ReactFlow
           nodes={visibleNodes}
           edges={visibleEdges}
@@ -311,9 +338,8 @@ function LogicMapViewer() {
           fitView
           proOptions={{ hideAttribution: true }}
         >
-          <Background color="#29303c" gap={28} size={1} variant={BackgroundVariant.Dots} />
           <Controls showInteractive={false} position="bottom-left" />
-          <MiniMap position="bottom-right" pannable zoomable nodeStrokeWidth={2} maskColor="rgba(8, 10, 15, 0.78)" />
+          <MiniMap position="bottom-right" pannable zoomable nodeStrokeWidth={2} maskColor="rgba(240, 244, 248, 0.7)" />
         </ReactFlow>
       </section>
 
@@ -416,14 +442,14 @@ function nodeClassName(
   if (!feature || !variant) return classes.join(" ");
   if (!variant.nodeIds.includes(nodeId)) classes.push("is-outside-path");
   else if (frame.errorNodeIds.has(nodeId)) classes.push("is-chain-error");
-  else if (frame.currentNodeIds.has(nodeId)) classes.push("is-current");
   else if (frame.warningNodeIds.has(nodeId)) classes.push("is-chain-warning");
+  else if (frame.currentNodeIds.has(nodeId)) classes.push("is-current");
   else if (frame.completedNodeIds.has(nodeId)) classes.push("is-chain-complete");
   else classes.push("is-path-pending");
   return classes.join(" ");
 }
 
-function toFlowNode(node: LogicGraphNode, locale: UiLocale): Node<LogicNodeData> {
+function toFlowNode(node: LogicGraphNode, locale: UiLocale): Node<BlueprintLogicNodeData> {
   const localized = localizeNode(node, locale);
   return {
     id: node.id,
@@ -440,30 +466,47 @@ function toFlowNode(node: LogicGraphNode, locale: UiLocale): Node<LogicNodeData>
   };
 }
 
-type EdgeVisualState = "global" | "outside" | "path" | "reached" | "current" | "error";
+type EdgeVisualState = BlueprintEdgeState;
 
-function toFlowEdge(edge: LogicGraph["edges"][number], state: EdgeVisualState): Edge {
+function toFlowEdge(
+  edge: LogicGraph["edges"][number],
+  state: EdgeVisualState,
+  graph: LogicGraph,
+  locale: UiLocale,
+): Edge {
   const dataFlow = edge.type === "data_flow";
-  const colors: Record<EdgeVisualState, string> = {
-    global: dataFlow ? "#a78bfa" : "#637086",
-    outside: "#303642",
-    path: "#6f6594",
-    reached: "#34d399",
-    current: "#b8a8ff",
-    error: "#fb4d62",
-  };
-  const color = colors[state];
+  const appearance = blueprintEdgeAppearance(state, dataFlow);
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: "smoothstep",
-    animated: state === "current" || (state === "global" && dataFlow),
-    label: edge.label,
+    type: "step",
+    animated: appearance.animated,
+    label: edge.label ?? edgeFlowLabel(edge, graph, locale),
     className: `chain-edge chain-edge--${state}`,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color },
-    style: { stroke: color, strokeWidth: ["current", "error"].includes(state) ? 2.8 : state === "reached" ? 2.1 : 1.35, opacity: state === "outside" ? 0.16 : 1 },
+    markerEnd: { type: MarkerType.ArrowClosed, width: 17, height: 17, color: appearance.color },
+    style: {
+      stroke: appearance.color,
+      strokeWidth: appearance.width,
+      opacity: appearance.opacity,
+      strokeDasharray: appearance.dash,
+    },
+    labelStyle: { fill: appearance.color, fontSize: 8, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
+    labelBgStyle: { fill: "#f8fafc", fillOpacity: 0.92 },
+    labelBgPadding: [5, 3],
+    labelBgBorderRadius: 3,
   };
+}
+
+function edgeFlowLabel(edge: LogicGraph["edges"][number], graph: LogicGraph, locale: UiLocale): string {
+  const source = graph.nodes.find((node) => node.id === edge.source);
+  const target = graph.nodes.find((node) => node.id === edge.target);
+  if (source?.type === "user_action" && target?.type === "entrypoint") return "HTTPS";
+  if (edge.type === "data_flow" && target?.type === "data") return locale === "zh-CN" ? "读 / 写" : "read / write";
+  if (target?.type === "external_system") return "API";
+  if (target?.type === "ai_process") return locale === "zh-CN" ? "调用" : "invoke";
+  if (target?.type === "result") return locale === "zh-CN" ? "返回" : "return";
+  return locale === "zh-CN" ? "执行" : "flow";
 }
 
 function HealthIcon({ health }: { health: ChainHealth }) {
