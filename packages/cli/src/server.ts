@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { access, stat } from "node:fs/promises";
+import { access, readFile, stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 export interface ViewerServerOptions {
   graphFile: string;
   rawGraphFile?: string;
+  projectRoot?: string;
+  sourceFiles?: string[];
   viewerDirectory?: string;
   host?: string;
   port?: number;
@@ -78,9 +80,11 @@ async function handleRequest(
     return;
   }
 
+  let requestUrl: URL;
   let pathname: string;
   try {
-    pathname = decodeURIComponent(new URL(rawUrl, "http://localhost").pathname);
+    requestUrl = new URL(rawUrl, "http://localhost");
+    pathname = decodeURIComponent(requestUrl.pathname);
   } catch {
     response.writeHead(400);
     response.end("Bad Request");
@@ -103,6 +107,10 @@ async function handleRequest(
     await sendFile(response, options.rawGraphFile, method, "no-store");
     return;
   }
+  if (pathname === "/source.json") {
+    await sendSource(response, options, requestUrl, method);
+    return;
+  }
 
   const relativeRequest = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const file = path.resolve(viewerDirectory, relativeRequest);
@@ -111,6 +119,71 @@ async function handleRequest(
     return;
   }
   await sendFile(response, file, method, relativeRequest === "index.html" ? "no-cache" : "public, max-age=31536000, immutable", viewerDirectory);
+}
+
+interface SourceSnippet {
+  file: string;
+  startLine: number;
+  endLine: number;
+  highlightStart: number;
+  highlightEnd: number;
+  lines: Array<{ number: number; text: string }>;
+}
+
+async function sendSource(
+  response: import("node:http").ServerResponse,
+  options: ViewerServerOptions,
+  requestUrl: URL,
+  method: string,
+): Promise<void> {
+  if (!options.projectRoot || !options.sourceFiles?.length) {
+    sendText(response, 404, "Source access is unavailable.", "text/plain; charset=utf-8", method);
+    return;
+  }
+  const requestedFile = normalizeSourcePath(requestUrl.searchParams.get("file") ?? "");
+  const allowedFiles = new Set(options.sourceFiles.map(normalizeSourcePath));
+  if (!requestedFile || path.isAbsolute(requestedFile) || requestedFile.startsWith("../") || !allowedFiles.has(requestedFile)) {
+    sendText(response, 403, "Source file is not part of this graph.", "text/plain; charset=utf-8", method);
+    return;
+  }
+  const projectRoot = path.resolve(options.projectRoot);
+  const sourceFile = path.resolve(projectRoot, requestedFile);
+  if (sourceFile === projectRoot || !sourceFile.startsWith(`${projectRoot}${path.sep}`)) {
+    sendText(response, 403, "Forbidden", "text/plain; charset=utf-8", method);
+    return;
+  }
+  try {
+    const details = await stat(sourceFile);
+    if (!details.isFile() || details.size > 1_500_000) throw new Error("Unsupported source file");
+    const contents = await readFile(sourceFile, "utf8");
+    const allLines = contents.split(/\r?\n/);
+    const requestedStart = positiveLine(requestUrl.searchParams.get("start"), 1);
+    const requestedEnd = positiveLine(requestUrl.searchParams.get("end"), requestedStart);
+    const highlightStart = Math.min(requestedStart, Math.max(1, allLines.length));
+    const highlightEnd = Math.max(highlightStart, Math.min(requestedEnd, highlightStart + 119, allLines.length));
+    const startLine = Math.max(1, highlightStart - 6);
+    const endLine = Math.min(allLines.length, Math.max(highlightEnd + 8, startLine + 24), startLine + 159);
+    const payload: SourceSnippet = {
+      file: requestedFile,
+      startLine,
+      endLine,
+      highlightStart,
+      highlightEnd,
+      lines: allLines.slice(startLine - 1, endLine).map((text, index) => ({ number: startLine + index, text })),
+    };
+    sendText(response, 200, JSON.stringify(payload), "application/json; charset=utf-8", method);
+  } catch {
+    sendText(response, 404, "Source file could not be read.", "text/plain; charset=utf-8", method);
+  }
+}
+
+function normalizeSourcePath(file: string): string {
+  return path.posix.normalize(file.replaceAll("\\", "/")).replace(/^\.\//, "");
+}
+
+function positiveLine(value: string | null, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 async function sendFile(

@@ -28,6 +28,8 @@ describe("viewer server", () => {
     const server = await startViewerServer({
       graphFile: result.outputFile,
       rawGraphFile: result.rawOutputFile,
+      projectRoot: result.rawGraph.project.root,
+      sourceFiles: [...new Set(result.graph.nodes.flatMap((node) => node.sources.map((source) => source.file)))],
       viewerDirectory,
       port: 0,
     });
@@ -49,5 +51,20 @@ describe("viewer server", () => {
 
     const traversal = await fetch(`${server.url}/..%2F..%2Fpackage.json`);
     expect(traversal.status).toBe(403);
+
+    const source = result.graph.nodes.flatMap((node) => node.sources)[0];
+    expect(source).toBeDefined();
+    const snippet = await fetch(`${server.url}/source.json?file=${encodeURIComponent(source!.file)}&start=${source!.startLine}&end=${source!.endLine ?? source!.startLine}`);
+    expect(snippet.status).toBe(200);
+    expect(snippet.headers.get("cache-control")).toBeNull();
+    expect(await snippet.json()).toMatchObject({
+      file: source!.file,
+      highlightStart: source!.startLine,
+    });
+
+    const unlisted = await fetch(`${server.url}/source.json?file=${encodeURIComponent("package.json")}`);
+    expect(unlisted.status).toBe(403);
+    const sourceTraversal = await fetch(`${server.url}/source.json?file=${encodeURIComponent("../../package.json")}`);
+    expect(sourceTraversal.status).toBe(403);
   });
 });

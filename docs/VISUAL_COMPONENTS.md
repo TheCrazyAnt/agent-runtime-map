@@ -32,7 +32,9 @@ import { ReactFlow } from "@xyflow/react";
 import type { CSSProperties } from "react";
 import {
   BlueprintGroupNode,
+  BlueprintCodeNode,
   BlueprintLogicNode,
+  BlueprintPlaybackEdge,
   blueprintDetailLevelForZoom,
   blueprintSemanticZoomProgress,
   blueprintEdgeAppearance,
@@ -43,7 +45,9 @@ import "@agent-runtime-map/react/styles.css";
 const nodeTypes = {
   logic: BlueprintLogicNode,
   blueprintGroup: BlueprintGroupNode,
+  codeDetail: BlueprintCodeNode,
 };
+const edgeTypes = { playback: BlueprintPlaybackEdge };
 
 const activeEdge = blueprintEdgeAppearance("current");
 
@@ -60,6 +64,7 @@ export function EmbeddedAgentMap({ nodes, edges, zoom }) {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         nodesConnectable={false}
       />
@@ -73,6 +78,14 @@ type label, confidence, evidence-count text, optional exact source detail, and a
 `overview | logic | evidence` detail level. `BlueprintGroupNode` accepts a label,
 optional detail text, one of four tones, and an optional dashed style.
 `measureBlueprintBounds()` creates a padded boundary around laid-out nodes.
+
+`BlueprintCodeNode` is the compact, evidence-level node used below an expanded
+logic node. Its contract is deliberately code-factual: `label`, raw `kind`, and a
+relative `file:line` source label. `BlueprintPlaybackEdge` renders the normal
+edge plus an optional restrained execution token (`data.showToken`). It does not
+decide which route is active; the consuming Viewer supplies that deterministic
+playback state. Both components disable non-essential motion under
+`prefers-reduced-motion`.
 
 `blueprintDetailLevelForZoom()` provides stable default thresholds: below `0.55`
 the node uses the overview treatment, from `0.55` to `1.15` it shows normal logic

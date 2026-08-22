@@ -2,6 +2,24 @@
 
 All notable changes are documented here.
 
+## 0.2.0 - 2026-08-22
+
+### Added
+
+- Bounded raw-code drill-down: double-click any logic node to inspect the real
+  supporting Agents, workflows, functions, tools, and calls without re-laying
+  out the global map.
+- A source-evidence drawer with line-highlighted local code previews. The local
+  Viewer server permits only source paths already referenced by the Logic Graph.
+- Search result fly-to and spotlight behavior, playback camera following that
+  yields immediately to manual navigation, and a Resume follow control.
+- Path-switch crossfades that keep shared nodes/edges stable, plus one subtle
+  moving token on the current simulated edge.
+- Project-local drag/pin layout memory with undo and reset controls.
+- Reusable `BlueprintCodeNode` and `BlueprintPlaybackEdge` primitives in
+  `@agent-runtime-map/react`.
+- A detailed continuation guide for maintainers and coding agents.
+
 ## 0.1.2 - 2026-08-22
 
 ### Added

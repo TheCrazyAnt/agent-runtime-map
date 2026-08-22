@@ -18,6 +18,9 @@ Agent Runtime Map 会读取 TypeScript / JavaScript 项目，同时理解 README
 - **链路检查：** 已确认步骤变绿；不确定推断变黄；确定性断链变红，并在出错步骤停止。
 - **源码证据：** 每个节点和诊断都保留文件、行号、置信度、识别方法与修复建议。
 - **语义缩放：** 滚轮缩放会在全局、Agent 逻辑和源码证据三层间连续渐变，不删除图里的事实，也不会在层级边界来回闪烁。
+- **可展开的代码细节：** 双击逻辑节点会在它附近展开真实的 Agent、函数、工具与调用关系，不重新打乱全局图。
+- **源码联动：** 点击节点或搜索结果即可读取本地、带行号高亮的源码证据；Viewer 只允许读取已分析图中出现过的文件。
+- **平滑导航：** 搜索会飞到命中节点；播放可跟随当前步骤，用户拖动画布后立即让出控制；拖动节点的位置会按项目记忆，并支持撤销和重置。
 - **自动中英文：** 中文系统和浏览器默认显示中文，海外环境默认显示英文，也可以手动切换。
 
 ## 项目理解能力
@@ -72,7 +75,7 @@ npx agent-runtime-map@latest .
 同一个已经通过发布校验的 CLI 包：
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.1.2/agent-runtime-map-0.1.2.tgz
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.2.0/agent-runtime-map-0.2.0.tgz
 npx agent-runtime-map .
 ```
 
@@ -138,6 +141,6 @@ npm run build
 npm run release:check
 ```
 
-架构、协议和 UI 组件详见 [Architecture](docs/ARCHITECTURE.md)、[Graph Schema](docs/GRAPH_SCHEMA.md)、[Visual Components](docs/VISUAL_COMPONENTS.md) 与 [Roadmap](docs/ROADMAP.md)。
+架构、协议和 UI 组件详见 [Architecture](docs/ARCHITECTURE.md)、[Graph Schema](docs/GRAPH_SCHEMA.md)、[Visual Components](docs/VISUAL_COMPONENTS.md) 与 [Roadmap](docs/ROADMAP.md)。给 CC 继续开发用的详细交接文档见 [CC Handoff](docs/CC_HANDOFF.md)。
 
 MIT License。
