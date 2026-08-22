@@ -8,8 +8,18 @@ import {
   type FeatureSimulationStep,
   type LogicEdge,
   type LogicNode,
+  type LogicNodeType,
   type ProjectCapabilityHint,
 } from "@agent-runtime-map/schema";
+
+/**
+ * Types a step depends on rather than continues into. The model it requests, the
+ * prompt it sends, the table it writes, and the API it calls are all attributes of
+ * that step: they join every variant that reaches them, and none of them opens a
+ * branch. Treating a model as a route step would turn one endpoint into as many
+ * "branch variants" as it has leaves, none of which is a decision.
+ */
+const SIDE_DEPENDENCY_TYPES = new Set<LogicNodeType>(["data", "external_system", "model"]);
 
 const MAX_FEATURE_NODES = 120;
 const MAX_PATHS = 12;
@@ -395,7 +405,7 @@ function enumerateMainPaths(
   let truncated = false;
   const mainEdges = edges.filter((edge) => {
     const target = nodeById.get(edge.target);
-    return target && !["data", "external_system"].includes(target.type);
+    return target && !SIDE_DEPENDENCY_TYPES.has(target.type);
   });
   const outgoing = adjacency(mainEdges);
 
@@ -421,7 +431,7 @@ function includeSideDependencies(pathNodeIds: string[], edges: LogicEdge[], node
   const selected = new Set(pathNodeIds);
   for (const edge of edges) {
     const target = nodeById.get(edge.target);
-    if (selected.has(edge.source) && target && ["data", "external_system"].includes(target.type)) selected.add(target.id);
+    if (selected.has(edge.source) && target && SIDE_DEPENDENCY_TYPES.has(target.type)) selected.add(target.id);
   }
   return [...selected];
 }

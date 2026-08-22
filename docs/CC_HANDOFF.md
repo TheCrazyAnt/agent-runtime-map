@@ -262,9 +262,13 @@ Work in this order unless product direction changes:
    `tests/analyzer.test.ts`. Still open: class instances stored on other objects,
    callables reached only through a generic registry, and per-framework call
    conventions.
-2. **First-class framework adapters.** Deepen Next.js/Express/Hono conventions,
-   then add LangGraph/OpenAI Agents SDK/CrewAI-compatible adapters only with
-   clear factual evidence models.
+2. **First-class framework adapters.** Express/Hono routers, mount prefixes,
+   chained and inline registration, LangGraph inline graph nodes with `START`/
+   `END` constants, and the shared model/prompt/tools options object of the
+   Vercel AI SDK, OpenAI SDK, and Anthropic SDK are covered. Still open: NestJS
+   decorators, Next.js server actions and `middleware.ts`, CrewAI task/crew
+   wiring, and Mastra registries. Add each only with a clear factual evidence
+   model.
 3. **Product-logic confidence UX.** Show which product conclusions came from
    docs/prompts versus source. Add user-provided product description as an
    explicit, labeled evidence input.

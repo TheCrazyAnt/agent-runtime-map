@@ -24,6 +24,9 @@ describe("TypeScript analyzer", () => {
     expect(raw.nodes.some((node) => node.kind === "database" && node.name === "generation data")).toBe(true);
     expect(raw.edges.filter((edge) => edge.kind === "data_flow").length).toBeGreaterThanOrEqual(5);
     expect(raw.nodes.every((node) => node.evidence.length > 0)).toBe(true);
+    // Every agent in the fixture names a model; none of them used to reach the graph.
+    expect(raw.nodes.filter((node) => node.kind === "model").map((node) => node.name).sort())
+      .toEqual(["gpt-5", "text-embedding-3-small"]);
   });
 
   it("compiles a smaller evidence-backed logic graph", async () => {
@@ -419,6 +422,166 @@ describe("TypeScript analyzer", () => {
     // A named step array lists what a runner will invoke.
     expect(flows).toContain("draftPipeline -> summarize");
     expect(flows).toContain("draftPipeline -> expand");
+  });
+
+  it("registers routes on a router the framework built, under the path it is mounted at", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-router-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "router-fixture", dependencies: { express: "latest" } }));
+    await writeFile(path.join(root, "src", "steps.ts"), "export function listOrders() { return []; }\nexport function createOrder(id: string) { return id; }\n");
+    await writeFile(path.join(root, "src", "orders.ts"), [
+      "import { listOrders } from './steps.js';",
+      "const Router = () => ({ get(_p: string, _h: unknown) { return this; }, post(_p: string, _h: unknown) { return this; } });",
+      "export const orderBook = Router();",
+      "orderBook.get('/', listOrders);",
+      "orderBook.get('/:id', listOrders);",
+    ].join("\n"));
+    await writeFile(path.join(root, "src", "server.ts"), [
+      "import { orderBook } from './orders.js';",
+      "const Router = () => ({ use(_p: string, _h: unknown) { return this; } });",
+      "const app = Router();",
+      "app.use('/api/orders', orderBook);",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const routes = raw.nodes.filter((node) => node.kind === "route").map((node) => node.name);
+
+    // `orderBook` is named like neither `app` nor `router`; the factory is the evidence.
+    expect(routes).toContain("GET /api/orders");
+    expect(routes).toContain("GET /api/orders/:id");
+    // The path a router registers is not the path the system serves.
+    expect(routes).not.toContain("GET /");
+    // A mount declares a prefix; it is not an endpoint of its own.
+    expect(routes.some((name) => name.startsWith("USE"))).toBe(false);
+  });
+
+  it("reads an inline route handler as the route itself", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-inline-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "inline-fixture", dependencies: { hono: "latest" } }));
+    await writeFile(path.join(root, "src", "steps.ts"), "export function chargeCard(id: string) { return id; }\nexport function auditPayment(id: string) { return id; }\n");
+    await writeFile(path.join(root, "src", "server.ts"), [
+      "import { auditPayment, chargeCard } from './steps.js';",
+      "const app = { get(_p: string, _h: unknown) { return this; }, post(_p: string, _h: unknown) { return this; } };",
+      "app.get('/health', () => 'ok').post('/pay', (c: { id: string }) => auditPayment(chargeCard(c.id)));",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    const flows = raw.edges.filter((edge) => edge.kind === "calls").map((edge) => `${names.get(edge.source)} -> ${names.get(edge.target)}`);
+
+    // A chained registration is still a registration.
+    expect(raw.nodes.some((node) => node.kind === "route" && node.name === "POST /pay")).toBe(true);
+    // An inline handler has no name to link to, so its body belongs to the route.
+    // Regression: these calls used to have no enclosing declaration at all.
+    expect(flows).toContain("POST /pay -> chargeCard");
+    expect(flows).toContain("POST /pay -> auditPayment");
+    // One node per endpoint, not a route plus a nameless handler beside it.
+    expect(raw.nodes.filter((node) => node.name.includes("/pay")).length).toBe(1);
+  });
+
+  it("reports weaker confidence for a router recognized only by its name", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-owner-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src", "built.ts"), [
+      "const Hono = class { get(_p: string, _h: unknown) { return this; } };",
+      "const shop = new Hono();",
+      "shop.get('/built', () => 'ok');",
+    ].join("\n"));
+    await writeFile(path.join(root, "src", "named.ts"), [
+      "declare const legacyRouter: { get(path: string, handler: unknown): void };",
+      "legacyRouter.get('/named', () => 'ok');",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const confidence = (name: string) => raw.nodes.find((node) => node.name === name)?.evidence[0]?.confidence ?? 0;
+    const method = (name: string) => raw.nodes.find((node) => node.name === name)?.evidence[0]?.method;
+
+    // A known constructor is a framework fact; a name ending in `Router` is a convention.
+    expect(confidence("GET /built")).toBeGreaterThan(confidence("GET /named"));
+    expect(method("GET /built")).toBe("framework_convention");
+    expect(method("GET /named")).toBe("name_heuristic");
+  });
+
+  it("reads a declarative graph node written inline, and its start and end constants", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-graph-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "graph-fixture", dependencies: { "@langchain/langgraph": "latest" } }));
+    await writeFile(path.join(root, "src", "tools.ts"), "export function searchWeb(q: string) { return [q]; }\nexport function saveNote(n: string) { return n; }\n");
+    await writeFile(path.join(root, "src", "graph.ts"), [
+      "import { saveNote, searchWeb } from './tools.js';",
+      "declare const START: string, END: string;",
+      "declare class StateGraph { addNode(n: string, h: unknown): this; addEdge(a: string, b: string): this; }",
+      "export const researchGraph = new StateGraph();",
+      "researchGraph.addNode('research', (state: { q: string }) => searchWeb(state.q));",
+      "researchGraph.addNode('archive', (state: { q: string }) => saveNote(state.q));",
+      "researchGraph.addEdge(START, 'research');",
+      "researchGraph.addEdge('research', 'archive');",
+      "researchGraph.addEdge('archive', END);",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    const flows = raw.edges.filter((edge) => edge.kind === "calls").map((edge) => `${names.get(edge.source)} -> ${names.get(edge.target)}`);
+
+    expect(flows).toContain("research -> archive");
+    // START and END arrive as imported constants, not string literals.
+    expect(flows).toContain("researchGraph -> research");
+    expect(raw.nodes.find((node) => node.name === "archive")?.metadata?.terminal).toBe(true);
+    // Regression: an inline node body had no enclosing declaration, so its work vanished.
+    expect(flows).toContain("research -> searchWeb");
+    expect(flows).toContain("archive -> saveNote");
+  });
+
+  it("reads the model, prompt, and tools a request configures", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-model-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "ai-fixture", dependencies: { ai: "latest" } }));
+    await writeFile(path.join(root, "src", "tools.ts"), "export function searchWeb(q: string) { return [q]; }\n");
+    await writeFile(path.join(root, "src", "answer.ts"), [
+      "import { searchWeb } from './tools.js';",
+      "declare function generateText(opts: Record<string, unknown>): Promise<{ text: string }>;",
+      "declare function openai(model: string): unknown;",
+      "const supportPrompt = 'You are a careful support agent. Answer using the given context only.';",
+      "export async function answerQuestion(question: string) {",
+      "  const result = await generateText({ model: openai('gpt-4o'), system: supportPrompt, prompt: question, tools: { searchWeb } });",
+      "  return result.text;",
+      "}",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const names = new Map(raw.nodes.map((node) => [node.id, node.name]));
+    const flow = (kind: string, source: string, target: string) =>
+      raw.edges.find((edge) => edge.kind === kind && names.get(edge.source) === source && names.get(edge.target) === target);
+
+    const model = raw.nodes.find((node) => node.kind === "model");
+    expect(model?.name).toBe("gpt-4o");
+    expect(model?.metadata?.provider).toBe("openai");
+    expect(flow("requests", "answerQuestion", "gpt-4o")).toBeDefined();
+    // The prompt reaches the request; it is data, not a step.
+    expect(flow("data_flow", "supportPrompt", "answerQuestion")).toBeDefined();
+    // A tool is offered to the model, which decides whether to call it.
+    expect(flow("calls", "answerQuestion", "searchWeb")?.control).toBe("conditional");
+  });
+
+  it("keeps a model out of the branch count, because requesting one is not a decision", async () => {
+    const raw = await analyzeTypeScriptProject(fixture);
+    const graph = compileLogicGraph(raw, { maxNodes: 40 });
+    const labels = graph.nodes.map((node) => node.label);
+
+    // The model a step uses is visible on the map...
+    expect(labels).toContain("Gpt 5");
+    // ...but a step that requests one has not branched.
+    expect(graph.features.find((feature) => feature.label === "POST /api/generate")?.variants).toHaveLength(1);
+    const review = graph.features.find((feature) => feature.label === "POST /api/review");
+    expect(review?.variants.length).toBeGreaterThan(1);
+    // Every variant that reaches a step still carries that step's model.
+    expect(review?.variants.every((variant) => variant.nodeIds.length > 0)).toBe(true);
   });
 
   it("does not let a route handler be claimed twice", async () => {
