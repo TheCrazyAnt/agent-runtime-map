@@ -59,6 +59,15 @@ const EXCLUDED_FILE_PATTERN = /(\.(test|spec)\.[cm]?[jt]sx?|\.d\.[cm]?ts)$/i;
 const SUPPORTING_PATH_PATTERN = /(^|\/)(scripts?|tools?\/dev|examples?|fixtures?|benchmarks?)(\/|$)/i;
 /** Alias, destructuring, and re-export hops to follow before giving up. */
 const MAX_ALIAS_HOPS = 3;
+const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "use", "all", "options", "head"]);
+/** Constructors whose result is an HTTP application or router, by framework. */
+const ROUTE_APP_FACTORIES: ReadonlyArray<{ pattern: RegExp; name: string }> = [
+  { pattern: /^(express\.Router|Router|express)$/, name: "express" },
+  { pattern: /^Hono$/, name: "hono" },
+  { pattern: /^Elysia$/, name: "elysia" },
+  { pattern: /^(fastify|Fastify)$/, name: "fastify" },
+  { pattern: /^Koa$/, name: "koa" },
+];
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]);
 const DB_OPERATIONS = new Set([
   "create",
@@ -90,7 +99,9 @@ type CallableDeclaration =
   | MethodDeclaration
   | VariableDeclaration
   | PropertyAssignment
-  | ExportAssignment;
+  | ExportAssignment
+  | ArrowFunction
+  | FunctionExpression;
 
 interface DeclarationRecord {
   node: RawCodeNode;
@@ -191,12 +202,19 @@ export async function analyzeTypeScriptProject(
     if (fileId) collectIndirectCallables(sourceFile, root, fileId, nodes, edges, declarations, invokedNames);
   }
 
+  // Routes are registered before the call passes for the same reason: an inline
+  // handler is the route, so its body needs the route node to attribute calls to.
+  const mounts = collectRouterMounts(sourceFiles, declarations);
+  for (const sourceFile of sourceFiles) {
+    collectFrameworkRoutes(sourceFile, root, declarations, nodes, edges, mounts);
+    collectDeclarativeWorkflow(sourceFile, root, declarations, nodes, edges);
+  }
+
   for (const sourceFile of sourceFiles) {
     collectImports(sourceFile, root, fileNodeIds, edges);
     collectCalls(sourceFile, root, declarations, nodes, edges);
-    collectFrameworkRoutes(sourceFile, root, declarations, nodes, edges);
     collectSemanticRelations(sourceFile, root, declarations, nodes, edges);
-    collectDeclarativeWorkflow(sourceFile, root, declarations, nodes, edges);
+    collectModelCalls(sourceFile, root, declarations, nodes, edges);
   }
 
   const frameworks = await detectFrameworks(root, sourceFiles.map((item) => relativePath(root, item.getFilePath())));
@@ -330,6 +348,7 @@ function collectDeclarations(
 function callableOf(
   declaration: CallableDeclaration,
 ): ArrowFunction | FunctionExpression | FunctionDeclaration | MethodDeclaration | undefined {
+  if (Node.isArrowFunction(declaration) || Node.isFunctionExpression(declaration)) return declaration;
   if (Node.isFunctionDeclaration(declaration) || Node.isMethodDeclaration(declaration)) return declaration;
   const value = Node.isExportAssignment(declaration) ? declaration.getExpression() : declaration.getInitializer();
   if (!value) return undefined;
@@ -561,7 +580,7 @@ function collectSemanticRelations(
     if (Node.isArrayLiteralExpression(initializer)) {
       for (const element of initializer.getElements()) {
         if (!Node.isIdentifier(element) && !Node.isPropertyAccessExpression(element)) continue;
-        const target = resolveSymbolTarget(element.getSymbol(), declarations);
+        const target = resolveReference(element, declarations);
         if (!target || target.node.id === source.node.id || !CALLABLE_NODE_KINDS.has(target.node.kind)) continue;
         const stepEvidence = [evidence(
           relativeFile,
@@ -585,7 +604,7 @@ function collectSemanticRelations(
       if (!value) continue;
       const identifiers = Node.isIdentifier(value) ? [value] : value.getDescendantsOfKind(SyntaxKind.Identifier);
       for (const identifier of identifiers) {
-        const target = resolveSymbolTarget(identifier.getSymbol(), declarations);
+        const target = resolveReference(identifier, declarations);
         if (!target || target.node.id === source.node.id) continue;
         const kind: RawCodeEdge["kind"] = target.node.kind === "model"
           ? "requests"
@@ -632,6 +651,10 @@ function collectDeclarativeWorkflow(
     const itemEvidence = [evidence(relativeFile, call.getStartLineNumber(), "framework_convention", `Registers workflow node ${frameworkName}`, 0.98, frameworkName)];
     const member = handler?.node ?? createFrameworkMember(frameworkName, relativeFile, call.getStartLineNumber(), itemEvidence);
     if (!handler) nodes.push(member);
+    // An inline node body has no name of its own; it is what the graph node does.
+    if (!handler && handlerArgument && (Node.isArrowFunction(handlerArgument) || Node.isFunctionExpression(handlerArgument))) {
+      declarations.set(declarationKey(handlerArgument), { node: member, declaration: handlerArgument });
+    }
     member.metadata = { ...member.metadata, frameworkNodeName: frameworkName };
     namedMembers.set(frameworkName, member);
     const owner = resolveSymbolTarget(expression.getExpression().getSymbol(), declarations);
@@ -647,14 +670,15 @@ function collectDeclarativeWorkflow(
     if (!["addEdge", "addConditionalEdges"].includes(method)) continue;
     const owner = resolveSymbolTarget(expression.getExpression().getSymbol(), declarations);
     const [sourceArgument, targetArgument, pathMapArgument] = call.getArguments();
-    if (!sourceArgument || !Node.isStringLiteral(sourceArgument)) continue;
-    const sourceName = sourceArgument.getLiteralValue();
+    const sourceName = graphEndpointName(sourceArgument);
+    if (!sourceName) continue;
     const sourceNode = isFrameworkStart(sourceName) ? owner?.node : namedMembers.get(sourceName);
     if (!sourceNode) continue;
+    const targetName = graphEndpointName(targetArgument);
     const targetNames = method === "addConditionalEdges"
       ? conditionalTargets(pathMapArgument)
-      : targetArgument && Node.isStringLiteral(targetArgument)
-        ? [targetArgument.getLiteralValue()]
+      : targetName
+        ? [targetName]
         : [];
     for (const targetName of targetNames) {
       if (isFrameworkEnd(targetName)) {
@@ -693,6 +717,16 @@ function conditionalTargets(node: Node | undefined): string[] {
     const initializer = property.getInitializer();
     return initializer && Node.isStringLiteral(initializer) ? [initializer.getLiteralValue()] : [];
   });
+}
+
+/**
+ * A graph endpoint is written either as a literal node name or as the framework's
+ * exported `START`/`END` constant, which reaches the AST as a plain identifier.
+ */
+function graphEndpointName(node: Node | undefined): string | undefined {
+  if (!node) return undefined;
+  if (Node.isStringLiteral(node)) return node.getLiteralValue();
+  return Node.isIdentifier(node) ? node.getText() : undefined;
 }
 
 function isFrameworkStart(value: string): boolean {
@@ -815,28 +849,48 @@ function collectFrameworkRoutes(
   declarations: Map<string, DeclarationRecord>,
   nodes: RawCodeNode[],
   edges: RawCodeEdge[],
+  mounts: Map<string, string>,
 ): void {
   const relativeFile = relativePath(root, sourceFile.getFilePath());
   for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    const registration = routeRegistration(call);
+    const registration = routeRegistration(call, declarations);
     if (!registration) continue;
-    const { method, owner } = registration;
+    const { method, owner, ownerKey, framework, confidence, evidenceMethod, detail } = registration;
     const routeArgument = call.getArguments()[0];
     if (!routeArgument || !Node.isStringLiteral(routeArgument)) continue;
-    const routePath = routeArgument.getLiteralValue();
+    const handlerArgument = call.getArguments().at(-1);
+    // A mount is a prefix declaration, not an endpoint of its own.
+    if (method === "use" && handlerArgument && Node.isIdentifier(handlerArgument)) continue;
+
+    const prefix = ownerKey ? mounts.get(ownerKey) : undefined;
+    const routePath = prefix ? joinRoutePath(prefix, routeArgument.getLiteralValue()) : routeArgument.getLiteralValue();
     const id = stableId("route", `${method}:${routePath}:${relativeFile}`);
-    const routeEvidence = [evidence(relativeFile, call.getStartLineNumber(), "framework_convention", `Recognized ${owner}.${method} route registration`, 0.94)];
-    nodes.push({
+    const routeEvidence = [evidence(
+      relativeFile,
+      call.getStartLineNumber(),
+      evidenceMethod,
+      prefix ? `${detail}, mounted under ${prefix}` : detail,
+      confidence,
+    )];
+    const routeNode: RawCodeNode = {
       id,
       kind: "route",
       name: `${method.toUpperCase()} ${routePath}`,
       qualifiedName: `${method}:${routePath}`,
       language: languageForFile(relativeFile),
-      metadata: { method: method.toUpperCase(), path: routePath, framework: owner === "router" ? "express" : "hono_or_express" },
+      metadata: { method: method.toUpperCase(), path: routePath, framework, owner, mountedUnder: prefix },
       evidence: routeEvidence,
-    });
-    const handlerArgument = call.getArguments().at(-1);
-    if (handlerArgument && Node.isIdentifier(handlerArgument)) {
+    };
+    nodes.push(routeNode);
+
+    if (!handlerArgument) continue;
+    // An inline handler has no name to link to, and it is the route: attributing its
+    // body to the route node keeps one node per endpoint instead of two.
+    if (Node.isArrowFunction(handlerArgument) || Node.isFunctionExpression(handlerArgument)) {
+      declarations.set(declarationKey(handlerArgument), { node: routeNode, declaration: handlerArgument });
+      continue;
+    }
+    if (Node.isIdentifier(handlerArgument) || Node.isPropertyAccessExpression(handlerArgument)) {
       const handler = resolveSymbolTarget(handlerArgument.getSymbol(), declarations);
       if (handler) edges.push(makeEdge(id, handler.node.id, "handles", routeEvidence));
     }
@@ -848,14 +902,147 @@ function collectFrameworkRoutes(
  * the handler link. Both this pass and the callback pass would otherwise claim the
  * same handler, so the predicate is shared rather than duplicated.
  */
-function routeRegistration(call: CallExpression): { method: string; owner: string } | undefined {
+function routeRegistration(
+  call: CallExpression,
+  declarations: Map<string, DeclarationRecord>,
+): RouteOwner & { method: string } | undefined {
   const expression = call.getExpression();
   if (!Node.isPropertyAccessExpression(expression)) return undefined;
   const method = expression.getName().toLowerCase();
-  if (!["get", "post", "put", "patch", "delete", "use"].includes(method)) return undefined;
-  const owner = expression.getExpression().getText();
-  if (!/^(app|router|server|api)$/.test(owner)) return undefined;
-  return { method, owner };
+  if (!ROUTE_METHODS.has(method)) return undefined;
+  // A registered path is a string starting with `/`. Requiring it before resolving
+  // the receiver keeps `map.get(key)` — which shares the method name — from paying
+  // for a symbol lookup on every call in the project.
+  const first = call.getArguments()[0];
+  if (!first || !Node.isStringLiteral(first) || !first.getLiteralValue().startsWith("/")) return undefined;
+  const owner = routeOwner(expression.getExpression(), declarations);
+  return owner ? { ...owner, method } : undefined;
+}
+
+interface RouteOwner {
+  readonly owner: string;
+  readonly ownerKey?: string;
+  readonly framework: string;
+  readonly confidence: number;
+  readonly evidenceMethod: Evidence["method"];
+  readonly detail: string;
+}
+
+/**
+ * Which value a route is being registered on. A router built by a known factory is
+ * a framework fact; a name ending in `Router` is only a convention, and says so.
+ * `app.get(...).post(...)` chains, so the receiver may itself be a registration.
+ */
+function routeOwner(node: Expression, declarations: Map<string, DeclarationRecord>): RouteOwner | undefined {
+  if (Node.isCallExpression(node)) {
+    const inner = node.getExpression();
+    return Node.isPropertyAccessExpression(inner) ? routeOwner(inner.getExpression(), declarations) : undefined;
+  }
+  if (!Node.isIdentifier(node)) return undefined;
+  const owner = node.getText();
+  if (!/^(app|router|server|api)$/i.test(owner) && !/(router|app|server|routes)$/i.test(owner)) {
+    return routeOwnerFromFactory(node, owner);
+  }
+  const declaration = routerDeclaration(node);
+  if (declaration) {
+    const initializer = declaration.getInitializer();
+    const factory = initializer && (Node.isCallExpression(initializer) || Node.isNewExpression(initializer))
+      ? initializer.getExpression().getText()
+      : undefined;
+    const framework = factory ? ROUTE_APP_FACTORIES.find((entry) => entry.pattern.test(factory)) : undefined;
+    if (framework && factory) {
+      return {
+        owner,
+        ownerKey: declarationKey(declaration),
+        framework: framework.name,
+        confidence: 0.96,
+        evidenceMethod: "framework_convention",
+        detail: `Route registered on a ${framework.name} instance built by ${factory}`,
+      };
+    }
+  }
+  const ownerKey = declaration ? declarationKey(declaration) : undefined;
+  void declarations;
+  if (/^(app|router|server|api)$/i.test(owner)) {
+    return { owner, ownerKey, framework: "hono_or_express", confidence: 0.94, evidenceMethod: "framework_convention", detail: `Recognized ${owner}.* route registration` };
+  }
+  return { owner, ownerKey, framework: "hono_or_express", confidence: 0.78, evidenceMethod: "name_heuristic", detail: `Route registered on ${owner}, named as a router` };
+}
+
+/**
+ * `{ searchWeb }` names a value, but the identifier's own symbol is the property it
+ * declares, not the function it refers to. Shorthand is the normal way tool maps are
+ * written, so every reference lookup goes through here.
+ */
+function resolveReference(
+  node: Identifier | PropertyAccessExpression,
+  declarations: Map<string, DeclarationRecord>,
+): DeclarationRecord | undefined {
+  const parent = node.getParent();
+  if (Node.isShorthandPropertyAssignment(parent)) {
+    const found = resolveSymbolTarget(parent.getValueSymbol(), declarations);
+    if (found) return found;
+  }
+  return resolveSymbolTarget(node.getSymbol(), declarations);
+}
+
+/** A receiver whose name says nothing still counts if a known factory produced it. */
+function routeOwnerFromFactory(node: Identifier, owner: string): RouteOwner | undefined {
+  const declaration = routerDeclaration(node);
+  const initializer = declaration?.getInitializer();
+  if (!initializer || (!Node.isCallExpression(initializer) && !Node.isNewExpression(initializer))) return undefined;
+  const factory = initializer.getExpression().getText();
+  const framework = ROUTE_APP_FACTORIES.find((entry) => entry.pattern.test(factory));
+  if (!framework || !declaration) return undefined;
+  return {
+    owner,
+    ownerKey: declarationKey(declaration),
+    framework: framework.name,
+    confidence: 0.96,
+    evidenceMethod: "framework_convention",
+    detail: `Route registered on a ${framework.name} instance built by ${factory}`,
+  };
+}
+
+/** The variable a router identifier was declared as, following import aliases. */
+function routerDeclaration(node: Identifier): VariableDeclaration | undefined {
+  const symbol = node.getSymbol();
+  for (const candidate of [symbol, symbol?.getAliasedSymbol()].filter((item) => item !== undefined)) {
+    for (const declaration of candidate.getDeclarations()) {
+      if (Node.isVariableDeclaration(declaration)) return declaration;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * `app.use('/api/orders', orderRouter)` mounts a router under a prefix, so the paths
+ * that router registers are not the paths the system actually serves. Mounts are
+ * gathered across the whole project first, because the mount and the routes it
+ * renames are usually written in different files.
+ */
+function collectRouterMounts(
+  sourceFiles: SourceFile[],
+  declarations: Map<string, DeclarationRecord>,
+): Map<string, string> {
+  const mounts = new Map<string, string>();
+  for (const sourceFile of sourceFiles) {
+    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const registration = routeRegistration(call, declarations);
+      if (!registration || registration.method !== "use") continue;
+      const [pathArgument, mounted] = call.getArguments();
+      if (!pathArgument || !Node.isStringLiteral(pathArgument) || !mounted || !Node.isIdentifier(mounted)) continue;
+      const declaration = routerDeclaration(mounted);
+      if (declaration) mounts.set(declarationKey(declaration), pathArgument.getLiteralValue());
+    }
+  }
+  return mounts;
+}
+
+/** Joins a mount prefix with a registered path without doubling or dropping slashes. */
+function joinRoutePath(prefix: string, routePath: string): string {
+  const joined = `${prefix.replace(/\/+$/, "")}/${routePath.replace(/^\/+/, "")}`.replace(/\/{2,}/g, "/");
+  return joined.length > 1 ? joined.replace(/\/$/, "") : "/";
 }
 
 /**
@@ -986,10 +1173,10 @@ function collectCallbackHandoffs(
   control: ControlFlowKind,
   edges: RawCodeEdge[],
 ): void {
-  if (routeRegistration(call)) return;
+  if (routeRegistration(call, declarations)) return;
   const expressionText = call.getExpression().getText();
   for (const argument of referenceArguments(call)) {
-    const resolved = resolveSymbolTarget(argument.getSymbol(), declarations);
+    const resolved = resolveReference(argument, declarations);
     if (!resolved || resolved.node.id === caller.node.id || resolved.node.id === directTarget?.node.id) continue;
     const line = argument.getStartLineNumber();
     if (CALLABLE_NODE_KINDS.has(resolved.node.kind)) {
@@ -1010,6 +1197,89 @@ function collectCallbackHandoffs(
       edges.push(makeEdge(resolved.node.id, caller.node.id, "data_flow", itemEvidence, { label: resolved.node.kind }));
     }
   }
+}
+
+/**
+ * Calls whose options object configures a model request. The Vercel AI SDK, the
+ * OpenAI SDK, and the Anthropic SDK all take the model, the instructions, and the
+ * available tools as named properties of a single argument, so one rule reads all
+ * three without guessing at a provider.
+ */
+const MODEL_CALL_PATTERN = /^(generateText|streamText|generateObject|streamObject|embed|embedMany|create|complete|invoke)$/;
+
+function collectModelCalls(
+  sourceFile: SourceFile,
+  root: string,
+  declarations: Map<string, DeclarationRecord>,
+  nodes: RawCodeNode[],
+  edges: RawCodeEdge[],
+): void {
+  const relativeFile = relativePath(root, sourceFile.getFilePath());
+  for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const expressionText = call.getExpression().getText();
+    if (!MODEL_CALL_PATTERN.test(expressionText.split(".").at(-1) ?? "")) continue;
+    const options = call.getArguments().find(Node.isObjectLiteralExpression);
+    if (!options || !options.getProperty("model")) continue;
+    const caller = findEnclosingDeclaration(call, declarations);
+    if (!caller) continue;
+    const line = call.getStartLineNumber();
+
+    const model = modelIdentifier(options.getProperty("model"));
+    if (model) {
+      const modelId = stableId("model", model.name);
+      const modelEvidence = [evidence(relativeFile, line, "framework_convention", `${expressionText} requests model ${model.name}`, 0.96, caller.node.name)];
+      nodes.push({
+        id: modelId,
+        kind: "model",
+        name: model.name,
+        qualifiedName: `model:${model.name}`,
+        language: languageForFile(relativeFile),
+        metadata: { model: model.name, provider: model.provider },
+        evidence: modelEvidence,
+      });
+      edges.push(makeEdge(caller.node.id, modelId, "requests", modelEvidence, { label: "model" }));
+    }
+
+    for (const propertyName of ["system", "prompt", "instructions", "messages"]) {
+      const property = options.getProperty(propertyName);
+      if (!property || !Node.isPropertyAssignment(property)) continue;
+      const value = property.getInitializer();
+      if (!value) continue;
+      for (const identifier of Node.isIdentifier(value) ? [value] : value.getDescendantsOfKind(SyntaxKind.Identifier)) {
+        const target = resolveReference(identifier, declarations);
+        if (target?.node.kind !== "prompt") continue;
+        const promptEvidence = [evidence(relativeFile, property.getStartLineNumber(), "framework_convention", `${caller.node.name} sends ${target.node.name} as ${propertyName}`, 0.96, caller.node.name)];
+        edges.push(makeEdge(target.node.id, caller.node.id, "data_flow", promptEvidence, { label: propertyName }));
+      }
+    }
+
+    const toolsProperty = options.getProperty("tools");
+    if (!toolsProperty || !Node.isPropertyAssignment(toolsProperty)) continue;
+    const toolsValue = toolsProperty.getInitializer();
+    if (!toolsValue) continue;
+    for (const identifier of toolsValue.getDescendantsOfKind(SyntaxKind.Identifier)) {
+      const target = resolveReference(identifier, declarations);
+      if (!target || target.node.id === caller.node.id || !CALLABLE_NODE_KINDS.has(target.node.kind)) continue;
+      // A tool is offered to the model, which decides whether to call it.
+      const toolEvidence = [evidence(relativeFile, toolsProperty.getStartLineNumber(), "framework_convention", `${caller.node.name} offers ${target.node.name} as a tool to the model`, 0.94, caller.node.name)];
+      edges.push(makeEdge(caller.node.id, target.node.id, "calls", toolEvidence, { label: "tool", control: "conditional" }));
+    }
+  }
+}
+
+/** The model a request names, and the provider helper that produced it. */
+function modelIdentifier(property: Node | undefined): { name: string; provider?: string } | undefined {
+  if (!property || !Node.isPropertyAssignment(property)) return undefined;
+  const value = property.getInitializer();
+  if (!value) return undefined;
+  if (Node.isStringLiteral(value) || Node.isNoSubstitutionTemplateLiteral(value)) return { name: value.getLiteralText() };
+  if (Node.isCallExpression(value)) {
+    const provider = value.getExpression().getText();
+    const argument = value.getArguments()[0];
+    if (argument && Node.isStringLiteral(argument)) return { name: argument.getLiteralValue(), provider };
+    return { name: value.getText(), provider };
+  }
+  return undefined;
 }
 
 /** Arguments that name an existing declaration, including the members of a step array. */
@@ -1042,7 +1312,9 @@ function findEnclosingDeclaration(call: CallExpression, declarations: Map<string
       Node.isMethodDeclaration(current) ||
       Node.isVariableDeclaration(current) ||
       Node.isPropertyAssignment(current) ||
-      Node.isExportAssignment(current)
+      Node.isExportAssignment(current) ||
+      Node.isArrowFunction(current) ||
+      Node.isFunctionExpression(current)
     ) {
       const found = declarations.get(declarationKey(current));
       if (found) return found;

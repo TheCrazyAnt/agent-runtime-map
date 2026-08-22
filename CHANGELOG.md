@@ -19,6 +19,29 @@ All notable changes are documented here.
   object properties that hold a reference rather than a body, bounded to three hops.
 - A named step array (`const pipeline = [classify, draft, send]`) links to the
   steps it lists.
+- Routes are recognized on any router a known framework built, not only on a
+  receiver literally named `app` or `router`, and a route registered on a mounted
+  router reports the path the system actually serves rather than the path written
+  at the registration site. Chained registration (`app.get(...).post(...)`) is read
+  as two registrations.
+- An inline route handler and an inline declarative graph node are read as the
+  route and the graph node they implement, so their bodies appear on the map
+  instead of being discarded. This keeps one node per endpoint rather than adding
+  a nameless handler beside it.
+- The model, prompt, and tools a request configures are read from the options
+  object shared by the Vercel AI SDK, the OpenAI SDK, and the Anthropic SDK. A
+  tool is recorded as a conditional call, because the model decides whether to
+  use it.
+- `START` and `END` are recognized when a declarative graph imports them as
+  constants rather than writing them as string literals.
+- Shorthand properties (`tools: { searchWeb }`) resolve to the value they name.
+
+### Changed
+
+- The Logic Compiler treats a model as a side dependency of the step that
+  requests it, alongside prompts, tables, and external systems. Requesting a
+  model is not a decision, so it no longer multiplies a feature's branch
+  variants.
 
 ## 0.2.0 - 2026-08-22
 
