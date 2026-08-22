@@ -12,7 +12,9 @@ import {
 import {
   BlueprintGroupNode,
   BlueprintLogicNode,
+  blueprintDetailLevelForZoom,
   blueprintEdgeAppearance,
+  type BlueprintDetailLevel,
   type BlueprintEdgeState,
   type BlueprintLogicNodeData,
 } from "@agent-runtime-map/react";
@@ -82,6 +84,7 @@ function LogicMapViewer() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string>();
   const [locale, setLocale] = useState<UiLocale>(detectViewerLocale);
+  const [detailLevel, setDetailLevel] = useState<BlueprintDetailLevel>("logic");
   const { fitView } = useReactFlow();
   const text = messages(locale);
 
@@ -185,8 +188,9 @@ function LogicMapViewer() {
 
   const visibleLogicNodes = useMemo(() => nodes.map((node) => ({
     ...node,
+    data: { ...node.data, detailLevel },
     className: nodeClassName(node.id, matchingIds, selectedFeature, selectedVariant, frame),
-  })), [frame, matchingIds, nodes, selectedFeature, selectedVariant]);
+  })), [detailLevel, frame, matchingIds, nodes, selectedFeature, selectedVariant]);
 
   const visibleNodes = useMemo(() => {
     if (!graph) return visibleLogicNodes;
@@ -318,11 +322,16 @@ function LogicMapViewer() {
         <div className="sidebar__footer"><Braces size={14} /> {text.staticAnalysis}</div>
       </aside>
 
-      <section className="canvas" aria-label={text.logicGraph}>
+      <section className="canvas" aria-label={text.logicGraph} data-detail-level={detailLevel}>
         <div className="canvas-caption">
           <span className="canvas-caption__mark" />
           <strong>{selectedFeature ? localizeFeatureLabel(selectedFeature, graph, locale) : text.wholeSystem}</strong>
           <small>{selectedVariant ? localizeVariantLabel(selectedVariant, graph, locale) : text.globalView}</small>
+        </div>
+        <div className="semantic-zoom" aria-live="polite">
+          <span>{text.zoomLevel}</span>
+          <strong>{semanticZoomLabel(detailLevel, locale)}</strong>
+          <small>{text.semanticZoomHint}</small>
         </div>
         <ReactFlow
           nodes={visibleNodes}
@@ -330,11 +339,15 @@ function LogicMapViewer() {
           nodeTypes={nodeTypes}
           onNodeClick={selectNode}
           onPaneClick={() => setSelectedId(undefined)}
+          onMove={(_event, viewport) => {
+            const nextLevel = blueprintDetailLevelForZoom(viewport.zoom);
+            setDetailLevel((current) => current === nextLevel ? current : nextLevel);
+          }}
           nodesDraggable
           nodesConnectable={false}
           elementsSelectable
           minZoom={0.2}
-          maxZoom={1.8}
+          maxZoom={2.2}
           fitView
           proOptions={{ hideAttribution: true }}
         >
@@ -451,6 +464,7 @@ function nodeClassName(
 
 function toFlowNode(node: LogicGraphNode, locale: UiLocale): Node<BlueprintLogicNodeData> {
   const localized = localizeNode(node, locale);
+  const primarySource = node.sources[0];
   return {
     id: node.id,
     type: "logic",
@@ -462,8 +476,17 @@ function toFlowNode(node: LogicGraphNode, locale: UiLocale): Node<BlueprintLogic
       typeLabel: nodeTypeLabel(node.type, locale),
       confidence: node.confidence,
       sourceText: sourceCountText(node.sources.length, locale),
+      sourceDetail: primarySource
+        ? `${primarySource.file}:${primarySource.startLine}${primarySource.symbol ? ` · ${primarySource.symbol}` : ""}`
+        : undefined,
+      inferenceText: inferenceMethodLabel(node.inference.method, locale),
     },
   };
+}
+
+function semanticZoomLabel(level: BlueprintDetailLevel, locale: UiLocale): string {
+  if (locale === "zh-CN") return { overview: "全局层", logic: "逻辑层", evidence: "证据层" }[level];
+  return { overview: "Overview", logic: "Logic", evidence: "Evidence" }[level];
 }
 
 type EdgeVisualState = BlueprintEdgeState;

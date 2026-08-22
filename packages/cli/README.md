@@ -9,7 +9,7 @@ npx agent-runtime-map@latest .
 GitHub Release fallback:
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.1.0/agent-runtime-map-0.1.0.tgz
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.1.1/agent-runtime-map-0.1.1.tgz
 npx agent-runtime-map .
 ```
 

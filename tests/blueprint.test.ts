@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Node } from "@xyflow/react";
 import {
+  BLUEPRINT_SEMANTIC_ZOOM,
   blueprintEdgeAppearance,
+  blueprintDetailLevelForZoom,
   measureBlueprintBounds,
   type BlueprintLogicNodeData,
 } from "@agent-runtime-map/react";
@@ -9,6 +11,14 @@ import type { LogicGraph, LogicNodeType } from "@agent-runtime-map/schema";
 import { buildBlueprintGroupNodes } from "../apps/viewer/src/blueprintGroups.js";
 
 describe("blueprint visual primitives", () => {
+  it("maps wheel zoom to stable semantic detail levels", () => {
+    expect(blueprintDetailLevelForZoom(0.2)).toBe("overview");
+    expect(blueprintDetailLevelForZoom(BLUEPRINT_SEMANTIC_ZOOM.overviewMax)).toBe("logic");
+    expect(blueprintDetailLevelForZoom(1)).toBe("logic");
+    expect(blueprintDetailLevelForZoom(BLUEPRINT_SEMANTIC_ZOOM.evidenceMin)).toBe("evidence");
+    expect(blueprintDetailLevelForZoom(Number.NaN)).toBe("overview");
+  });
+
   it("measures a padded frame around positioned logic nodes", () => {
     expect(measureBlueprintBounds([
       { position: { x: 100, y: 50 } },

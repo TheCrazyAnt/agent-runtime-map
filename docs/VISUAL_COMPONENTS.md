@@ -14,6 +14,8 @@ The default theme is an engineering blueprint rather than a generic dashboard:
 - blue orthogonal links are the primary execution path;
 - gray dashed links are auxiliary data movement;
 - green, amber, and red are reserved for verified, uncertain, and failed checks.
+- semantic zoom preserves the full graph while changing presentation fidelity:
+  overview, logic, and exact source evidence.
 
 Technology logos are deliberately not required. The default Lucide icons encode
 the node role, which keeps generated maps consistent and avoids making a
@@ -30,6 +32,7 @@ import { ReactFlow } from "@xyflow/react";
 import {
   BlueprintGroupNode,
   BlueprintLogicNode,
+  blueprintDetailLevelForZoom,
   blueprintEdgeAppearance,
 } from "@agent-runtime-map/react";
 import "@xyflow/react/dist/style.css";
@@ -42,10 +45,15 @@ const nodeTypes = {
 
 const activeEdge = blueprintEdgeAppearance("current");
 
-export function EmbeddedAgentMap({ nodes, edges }) {
+export function EmbeddedAgentMap({ nodes, edges, zoom }) {
+  const detailLevel = blueprintDetailLevelForZoom(zoom);
+  const semanticNodes = nodes.map((node) => ({
+    ...node,
+    data: { ...node.data, detailLevel },
+  }));
   return (
     <ReactFlow
-      nodes={nodes}
+      nodes={semanticNodes}
       edges={edges}
       nodeTypes={nodeTypes}
       fitView
@@ -56,9 +64,16 @@ export function EmbeddedAgentMap({ nodes, edges }) {
 ```
 
 `BlueprintLogicNode` accepts a label, description, semantic node type, localized
-type label, confidence, and evidence-count text. `BlueprintGroupNode` accepts a
-label, optional detail text, one of four tones, and an optional dashed style.
+type label, confidence, evidence-count text, optional exact source detail, and an
+`overview | logic | evidence` detail level. `BlueprintGroupNode` accepts a label,
+optional detail text, one of four tones, and an optional dashed style.
 `measureBlueprintBounds()` creates a padded boundary around laid-out nodes.
+
+`blueprintDetailLevelForZoom()` provides stable default thresholds: below `0.55`
+the node uses the overview treatment, from `0.55` to `1.15` it shows normal logic
+semantics, and at `1.15` or above it reveals exact source evidence. Consumers can
+pass the returned level into each node without rebuilding layout or discarding
+any graph data.
 
 `blueprintEdgeAppearance()` returns deterministic color, width, opacity, dash,
 and animation values for these states:

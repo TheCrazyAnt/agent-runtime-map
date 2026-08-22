@@ -61,6 +61,8 @@ const EN = {
   recommendation: "Suggested fix",
   selectFeature: "Select a feature to inspect its execution route.",
   globalView: "All nodes and dependencies",
+  zoomLevel: "VIEW LEVEL",
+  semanticZoomHint: "Scroll to move between overview, logic, and source evidence.",
 } as const;
 
 const ZH: Record<keyof typeof EN, string> = {
@@ -112,6 +114,8 @@ const ZH: Record<keyof typeof EN, string> = {
   recommendation: "修复建议",
   selectFeature: "请选择一个功能，检查它的执行路线。",
   globalView: "显示全部节点与依赖",
+  zoomLevel: "查看层级",
+  semanticZoomHint: "滚轮缩放可切换全局、逻辑与源码证据。",
 };
 
 const TYPE_LABELS: Record<UiLocale, Record<LogicNodeType, string>> = {

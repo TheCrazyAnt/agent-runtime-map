@@ -134,6 +134,16 @@ button { color: inherit; }
 .canvas-caption__mark { width: 8px; height: 8px; border: 2px solid #1c95d6; border-radius: 50%; box-shadow: 0 0 0 3px rgba(28,149,214,.1); }
 .canvas-caption strong { font-size: 9px; letter-spacing: .03em; }
 .canvas-caption small { padding-left: 8px; border-left: 1px solid #e0e5ea; color: #9099a3; font: 7px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.semantic-zoom { position: absolute; top: 16px; right: 18px; z-index: 7; display: grid; grid-template-columns: auto auto; align-items: center; gap: 2px 8px; min-width: 190px; padding: 8px 11px; border: 1px solid rgba(206,214,222,.9); border-radius: 8px; color: #7d8792; background: rgba(255,255,255,.88); box-shadow: 0 6px 18px rgba(47,59,72,.06); backdrop-filter: blur(12px); }
+.semantic-zoom > span { font: 700 7px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; }
+.semantic-zoom strong { justify-self: end; color: #157db8; font-size: 9px; }
+.semantic-zoom small { grid-column: 1 / -1; color: #9aa2ab; font-size: 7px; line-height: 1.3; }
+.canvas[data-detail-level="overview"] .semantic-zoom strong { color: #667383; }
+.canvas[data-detail-level="evidence"] .semantic-zoom strong { color: #7651c8; }
+.canvas[data-detail-level="overview"] .react-flow__edge-text,
+.canvas[data-detail-level="overview"] .react-flow__edge-textbg { opacity: 0; }
+.canvas[data-detail-level="overview"] .blueprint-group__label { font-size: 10px; }
+.canvas[data-detail-level="evidence"] .react-flow__edge-text { font-weight: 700; }
 .react-flow { z-index: 2; }
 .react-flow__pane { cursor: grab; }
 .react-flow__controls { overflow: hidden; border: 1px solid #d7dde4; border-radius: 8px; box-shadow: 0 8px 22px rgba(46,56,68,.1); }
@@ -198,5 +208,7 @@ button { color: inherit; }
   .topbar__actions { margin-left: auto; }
   .canvas { grid-column: 1; }
   .canvas-caption { top: 12px; left: 12px; }
+  .semantic-zoom { top: 12px; right: 12px; min-width: 0; }
+  .semantic-zoom small { display: none; }
   .evidence-panel { top: 52px; width: min(344px, 90vw); }
 }

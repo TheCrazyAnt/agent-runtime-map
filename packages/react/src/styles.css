@@ -37,6 +37,16 @@
 .blueprint-node h3 { width: 100%; margin: 7px 0 2px; overflow: hidden; color: #202328; font-size: 14px; line-height: 1.18; font-weight: 650; letter-spacing: -.015em; text-overflow: ellipsis; white-space: nowrap; }
 .blueprint-node p { width: 100%; margin: 0; overflow: hidden; color: #707782; font: 9px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .blueprint-node small { margin-top: 3px; color: #9aa1aa; font: 7px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.blueprint-node__evidence { position: absolute; top: 158px; display: grid; width: 184px; gap: 3px; padding: 6px 8px; border: 1px solid color-mix(in srgb, var(--node-accent) 20%, #dfe4e9); border-radius: 6px; background: rgba(255,255,255,.94); box-shadow: 0 5px 14px rgba(38,48,60,.06); opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity .16s ease, transform .16s ease; }
+.blueprint-node__evidence code { overflow: hidden; color: color-mix(in srgb, var(--node-accent) 76%, #596474); font: 7px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.blueprint-node__evidence span { color: #929aa4; font: 6.5px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.blueprint-node--detail-overview .blueprint-node__type,
+.blueprint-node--detail-overview .blueprint-node__confidence,
+.blueprint-node--detail-overview p,
+.blueprint-node--detail-overview small { opacity: 0; }
+.blueprint-node--detail-overview .blueprint-node__tile { width: 78px; height: 78px; margin-top: 5px; }
+.blueprint-node--detail-overview h3 { margin-top: 10px; font-size: 15px; }
+.blueprint-node--detail-evidence .blueprint-node__evidence { opacity: 1; transform: translateY(0); }
 .blueprint-node:hover .blueprint-node__tile, .blueprint-node.is-selected .blueprint-node__tile { border-color: var(--node-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-accent) 12%, transparent), 0 12px 30px rgba(31, 42, 55, .1); }
 .blueprint-node--user_action { --node-accent: #3f4a5c; }
 .blueprint-node--entrypoint { --node-accent: #148acb; }

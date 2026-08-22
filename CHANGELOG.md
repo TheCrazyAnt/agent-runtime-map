@@ -2,6 +2,18 @@
 
 All notable changes are documented here.
 
+## 0.1.1 - 2026-08-22
+
+### Added
+
+- Three-level semantic zoom driven by the normal graph wheel gesture: overview,
+  Agent logic, and exact source evidence.
+- Evidence-level node details with source file, line, symbol, and inference
+  method while preserving the same layout and graph identity across zoom levels.
+- Reusable `blueprintDetailLevelForZoom()` thresholds and semantic-zoom node
+  contract in `@agent-runtime-map/react`.
+- Bilingual view-level indicator and scroll guidance in the bundled Viewer.
+
 ## 0.1.0 - 2026-08-21
 
 ### Added
