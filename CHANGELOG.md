@@ -2,6 +2,15 @@
 
 All notable changes are documented here.
 
+## 0.3.1 - 2026-08-23
+
+### Fixed
+
+- `<LogicMap />` highlighted a framed feature route on its edges but left every
+  node on that route unmarked. The highlight patch runs against an array a second
+  effect populates, so the first pass hit an empty array and never ran again. Found
+  by the browser verification that 0.3.0 shipped without.
+
 ## 0.3.0 - 2026-08-22
 
 ### Added

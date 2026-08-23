@@ -154,7 +154,11 @@ function LogicMapCanvas({
           .join(" "),
       }
       : node)));
-  }, [frame, overlay, selectedNodeId, variant]);
+    // `positioned` is a dependency because this effect patches an array another
+    // effect populates. Without it the first patch runs against an empty array and
+    // never runs again, so edges highlighted the framed route while every node on
+    // it stayed unmarked. `positioned` is not set here, so this cannot loop.
+  }, [frame, overlay, positioned, selectedNodeId, variant]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setFlowNodes((current) => applyNodeChanges(changes, current));
