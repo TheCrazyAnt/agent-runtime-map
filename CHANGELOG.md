@@ -2,6 +2,23 @@
 
 All notable changes are documented here.
 
+## 0.3.2 - 2026-08-23
+
+### Changed
+
+- A step now says what it does instead of restating its own name. Every generated
+  description was a tautology — "An AI workflow performs generate ideas" for a node
+  labelled Generate Ideas — while the facts worth reading were already in the graph
+  and unused. `LogicNode.behavior` carries them as node ids, and each language
+  phrases them itself, so "Execute Review" now reads *calls Score Draft and Approve
+  Draft, and branches to Revise Draft*. A description written by a person still
+  wins: it says why, and this can only say what.
+- Expanding a step shows what it is made of, not what it sits in. Following raw
+  edges in both directions pulled in the file containing the step and the route
+  calling it, and listed them beside its actual internals as peers — expanding
+  "Execute Review" answered with six boxes, three of which were its own function's
+  file, its caller, and itself.
+
 ## 0.3.1 - 2026-08-23
 
 ### Fixed

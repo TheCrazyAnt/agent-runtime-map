@@ -7,6 +7,7 @@ import {
   type LogicGraph,
   type LogicNode,
   type LogicNodeType,
+  type LogicBehavior,
   type ProductEvidence,
   type ProductMatchKind,
   type ProjectCapabilityHint,
@@ -48,6 +49,7 @@ export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {
   const logicNodeIds = new Map(logicNodes.map((node) => [node.rawNodeIds[0], node.id]));
   const logicEdges = removeRedundantFlowEdges(projectFlowEdges(raw, keptIds, logicNodeIds), logicNodes);
   markResultNodes(logicNodes, logicEdges);
+  describeBehavior(logicNodes, logicEdges);
   const features = compileFeatureScenarios(logicNodes, logicEdges, raw.context?.capabilityHints ?? []);
 
   const graphType = options.graphType ?? "runtime_logic";
@@ -196,6 +198,63 @@ function logicLabel(node: RawCodeNode): string {
   }
   if (node.kind === "external_api") return node.name;
   return titleCase(humanize(node.name).replace(/\b(agent|service|handler|controller|workflow|orchestrator)\b/gi, "").trim() || humanize(node.name));
+}
+
+/** At most this many names before a list stops being readable and starts being a dump. */
+const MAX_BEHAVIOR_ITEMS = 4;
+
+/**
+ * Replaces a generated description that only restated its own label with what the
+ * step actually does. A description written by a person — a docstring, an Agent's
+ * configured `description` — always wins: it says why, and this can only say what.
+ */
+function describeBehavior(nodes: LogicNode[], edges: LogicEdge[]): void {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  for (const node of nodes) {
+    const behavior: LogicBehavior = { calls: [], branches: [], requests: [], data: [], feeds: [] };
+    for (const edge of edges) {
+      if (edge.source !== node.id) continue;
+      const target = byId.get(edge.target);
+      if (!target) continue;
+      if (target.type === "model" || target.type === "external_system") push(behavior.requests, target.id);
+      else if (target.type === "data") push(behavior.data, target.id);
+      else if (edge.control === "conditional" || edge.control === "fallback") push(behavior.branches, target.id);
+      else if (edge.type === "data_flow") push(behavior.feeds, target.id);
+      else push(behavior.calls, target.id);
+    }
+    node.behavior = behavior;
+    if (node.metadata?.generatedDescription !== true) continue;
+    const described = describeInEnglish(behavior, (id) => byId.get(id)?.label ?? id);
+    if (described) node.description = described;
+  }
+}
+
+function push(items: string[], label: string): void {
+  if (!items.includes(label)) items.push(label);
+}
+
+function describeInEnglish(behavior: LogicBehavior, label: (id: string) => string): string | undefined {
+  const named = (ids: string[], conjunction: string) => joinLabels(ids.map(label), conjunction);
+  const parts = [
+    behavior.calls.length ? `calls ${named(behavior.calls, "and")}` : undefined,
+    behavior.branches.length ? `branches to ${named(behavior.branches, "or")}` : undefined,
+    behavior.requests.length ? `requests ${named(behavior.requests, "and")}` : undefined,
+    behavior.data.length ? `reads or writes ${named(behavior.data, "and")}` : undefined,
+    behavior.feeds.length ? `passes its result to ${named(behavior.feeds, "and")}` : undefined,
+  ].filter((part): part is string => Boolean(part));
+  if (!parts.length) return undefined;
+  const [first, ...rest] = parts;
+  const opening = first!.charAt(0).toUpperCase() + first!.slice(1);
+  if (!rest.length) return `${opening}.`;
+  return `${[opening, ...rest.slice(0, -1)].join(", ")}, and ${rest.at(-1)}.`;
+}
+
+function joinLabels(labels: string[], conjunction: string): string {
+  const shown = labels.slice(0, MAX_BEHAVIOR_ITEMS);
+  const suffix = labels.length > shown.length ? ` and ${labels.length - shown.length} more` : "";
+  if (shown.length === 1) return `${shown[0]}${suffix}`;
+  if (shown.length === 2 && !suffix) return `${shown[0]} ${conjunction} ${shown[1]}`;
+  return `${shown.slice(0, -1).join(", ")}, ${conjunction} ${shown.at(-1)}${suffix}`;
 }
 
 function logicDescription(node: RawCodeNode, type: LogicNodeType): string {

@@ -165,6 +165,11 @@ detail:<logic-node-id>:<raw-node-id>
 It includes direct raw IDs first, then one-hop raw neighbors, capped at nine
 nodes. This protects map readability and React Flow performance.
 
+Only **outgoing** raw edges count as internals, and files and entrypoints never do.
+Following edges in both directions answers "what is this made of" with the file that
+contains the step and the route that calls it, listed beside its real internals as
+though they were peers.
+
 A reader can open one further level from a child they chose, capped by
 `MAX_DETAIL_DEPTH`. Never lift that cap: an unbounded drill-down redraws the whole
 call graph under a single node, which is the readability the Logic Compiler exists

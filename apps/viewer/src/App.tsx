@@ -124,7 +124,7 @@ function LogicMapViewer() {
   }, []);
   useEffect(() => {
     if (!graph) return;
-    const flowNodes = graph.nodes.map((node) => toFlowNode(node, locale));
+    const flowNodes = graph.nodes.map((node) => toFlowNode(node, locale, new Map(graph.nodes.map((item) => [item.id, item]))));
     const flowEdges = graph.edges.map((edge) => toFlowEdge(edge, "global", graph, locale));
     void layoutGraph(flowNodes, flowEdges).then((layouted) => {
       const baseLayout = captureLayout(layouted);
@@ -189,7 +189,7 @@ function LogicMapViewer() {
     if (!query.trim() || !graph) return new Set(graph?.nodes.map((node) => node.id) ?? []);
     const normalized = query.trim().toLowerCase();
     return new Set(graph.nodes.filter((node) => {
-      const localized = localizeNode(node, locale);
+      const localized = localizeNode(node, locale, nodesById);
       return `${localized.label} ${localized.description} ${node.label} ${node.sources.map((source) => source.file).join(" ")}`.toLowerCase().includes(normalized);
     }).map((node) => node.id));
   }, [graph, locale, query]);
@@ -269,6 +269,7 @@ function LogicMapViewer() {
     });
   }, [persistLayout, updatePins]);
 
+  const nodesById = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node])), [graph]);
   const selected = graph?.nodes.find((node) => node.id === selectedId);
   const selectedRawNode = useMemo(
     () => (selectedRaw ? rawGraph?.nodes.find((node) => node.id === selectedRaw.rawId) : undefined),
@@ -355,7 +356,7 @@ function LogicMapViewer() {
     </section>
     {selectedRawNode
       ? <RawEvidencePanel rawNode={selectedRawNode} parent={selected} locale={locale} onParent={() => setSelectedRaw(undefined)} onClose={() => { setSelectedRaw(undefined); setSelectedId(undefined); }} />
-      : selected && <EvidencePanel node={selected} locale={locale} onClose={() => setSelectedId(undefined)} />}
+      : selected && <EvidencePanel node={selected} locale={locale} nodesById={nodesById} onClose={() => setSelectedId(undefined)} />}
   </main>;
 }
 
@@ -389,7 +390,7 @@ function ProductContext({ product, locale }: { product?: ProductEvidence; locale
   </div>;
 }
 
-function toFlowNode(node: LogicGraphNode, locale: UiLocale): Node<BlueprintLogicNodeData> { const localized = localizeNode(node, locale); const primarySource = node.sources[0]; return { id: node.id, type: "logic", position: { x: 0, y: 0 }, data: { label: localized.label, description: localized.description, nodeType: node.type, typeLabel: nodeTypeLabel(node.type, locale), confidence: node.confidence, sourceText: sourceCountText(node.sources.length, locale), sourceDetail: primarySource ? `${primarySource.file}:${primarySource.startLine}${primarySource.symbol ? ` · ${primarySource.symbol}` : ""}` : undefined, inferenceText: inferenceMethodLabel(node.inference.method, locale) } }; }
+function toFlowNode(node: LogicGraphNode, locale: UiLocale, nodesById?: ReadonlyMap<string, LogicGraphNode>): Node<BlueprintLogicNodeData> { const localized = localizeNode(node, locale, nodesById); const primarySource = node.sources[0]; return { id: node.id, type: "logic", position: { x: 0, y: 0 }, data: { label: localized.label, description: localized.description, nodeType: node.type, typeLabel: nodeTypeLabel(node.type, locale), confidence: node.confidence, sourceText: sourceCountText(node.sources.length, locale), sourceDetail: primarySource ? `${primarySource.file}:${primarySource.startLine}${primarySource.symbol ? ` · ${primarySource.symbol}` : ""}` : undefined, inferenceText: inferenceMethodLabel(node.inference.method, locale) } }; }
 function semanticZoomLabel(level: BlueprintDetailLevel, locale: UiLocale): string { return locale === "zh-CN" ? { overview: "全局层", logic: "逻辑层", evidence: "证据层" }[level] : { overview: "Overview", logic: "Logic", evidence: "Evidence" }[level]; }
 type EdgeVisualState = BlueprintEdgeState;
 function toFlowEdge(edge: LogicGraph["edges"][number], state: EdgeVisualState, graph: LogicGraph, locale: UiLocale, branchClass?: string, showToken = false, speed = 1): Edge { const dataFlow = edge.type === "data_flow"; const appearance = blueprintEdgeAppearance(state, dataFlow); return { id: edge.id, source: edge.source, target: edge.target, type: "playback", animated: false, label: edge.label ?? edgeFlowLabel(edge, graph, locale), className: `chain-edge chain-edge--${state}${branchClass ? ` ${branchClass}` : ""}`, markerEnd: { type: MarkerType.ArrowClosed, width: 17, height: 17, color: appearance.color }, style: { stroke: appearance.color, strokeWidth: appearance.width, opacity: appearance.opacity, strokeDasharray: appearance.dash }, data: { showToken, tokenColor: appearance.color, tokenDuration: 0.9 / speed } }; }
@@ -428,8 +429,8 @@ function SourceEvidence({ sources, locale, heading }: { sources: SourceLocation[
   </>;
 }
 
-function EvidencePanel({ node, locale, onClose }: { node: LogicGraphNode; locale: UiLocale; onClose: () => void }) {
-  const text = messages(locale); const localized = localizeNode(node, locale);
+function EvidencePanel({ node, locale, nodesById, onClose }: { node: LogicGraphNode; locale: UiLocale; nodesById: ReadonlyMap<string, LogicGraphNode>; onClose: () => void }) {
+  const text = messages(locale); const localized = localizeNode(node, locale, nodesById);
   return <aside className="evidence-panel"><div className="evidence-panel__header"><div><span className="eyebrow">{text.selectedLogic}</span><h2>{localized.label}</h2></div><button onClick={onClose} aria-label={text.closeEvidence}><PanelRightClose size={19} /></button></div><p className="evidence-panel__description">{localized.description}</p><div className="confidence-card"><div><span>{text.confidence}</span><strong>{Math.round(node.confidence * 100)}%</strong></div><div className="confidence-track"><i style={{ width: `${node.confidence * 100}%` }} /></div><small>{inferenceMethodLabel(node.inference.method, locale)} · {node.inference.explanation}</small></div><ProductContext product={node.product} locale={locale} /><SourceEvidence sources={node.sources} locale={locale} heading={text.sourceEvidence} /><div className="raw-reference"><span>{text.rawReferences}</span><code>{node.rawNodeIds.join("\n")}</code></div></aside>;
 }
 
