@@ -20,6 +20,7 @@ import {
   blueprintEdgeAppearance,
   blueprintSemanticZoomProgress,
   buildBlueprintGroupNodes,
+  measureBlueprintBounds,
   buildSimulationFrame,
   layoutGraph,
   nextSimulationStep,
@@ -36,7 +37,7 @@ import type {
   ChainHealth, FeaturePathVariant, FeatureScenario, LogicGraph, LogicNode as LogicGraphNode,
   ProductEvidence, RawCodeGraph, RawCodeNode, SourceLocation,
 } from "@agent-runtime-map/schema";
-import { applyLayoutPositions, buildCodeDetailExpansion, captureLayout, compareVariants, parseDetailNodeId, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
+import { applyLayoutPositions, buildCodeDetailExpansion, canFocusNode, captureLayout, collectFocusIds, compareVariants, parseDetailNodeId, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
 import {
   chainHealthLabel, detectViewerLocale, groupLabels, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
   productMatchText, productOriginLabel,
@@ -64,6 +65,8 @@ function LogicMapViewer() {
   const [expandedLogicIds, setExpandedLogicIds] = useState<Set<string>>(new Set());
   const [expandedRawIds, setExpandedRawIds] = useState<Set<string>>(new Set());
   const [selectedRaw, setSelectedRaw] = useState<{ logicId: string; rawId: string }>();
+  const [focusedId, setFocusedId] = useState<string>();
+  const featureBeforeFocusRef = useRef<string | null>(null);
   const toggleRawDetail = useCallback((rawId: string) => {
     setExpandedRawIds((current) => { const next = new Set(current); if (next.has(rawId)) next.delete(rawId); else next.add(rawId); return next; });
   }, []);
@@ -124,7 +127,8 @@ function LogicMapViewer() {
   }, []);
   useEffect(() => {
     if (!graph) return;
-    const flowNodes = graph.nodes.map((node) => toFlowNode(node, locale, new Map(graph.nodes.map((item) => [item.id, item]))));
+    const byId = new Map(graph.nodes.map((item) => [item.id, item]));
+    const flowNodes = graph.nodes.map((node) => toFlowNode(node, locale, byId));
     const flowEdges = graph.edges.map((edge) => toFlowEdge(edge, "global", graph, locale));
     void layoutGraph(flowNodes, flowEdges).then((layouted) => {
       const baseLayout = captureLayout(layouted);
@@ -157,7 +161,7 @@ function LogicMapViewer() {
     if (!focusNodes.length) return;
     const timer = window.setTimeout(() => fitView({ nodes: focusNodes, padding: 0.22, duration: reduceMotion ? 0 : 620, minZoom: 0.63, maxZoom: 1.08 }), 30);
     return () => window.clearTimeout(timer);
-  }, [fitView, layoutRevision, reduceMotion, selectedFeature?.id, selectedVariant?.id]);
+  }, [fitView, focusedId, layoutRevision, reduceMotion, selectedFeature?.id, selectedVariant?.id]);
 
   const focusNode = useCallback((id: string, zoom = 1.12) => {
     const node = getNode(id);
@@ -220,13 +224,50 @@ function LogicMapViewer() {
       }];
     }).reduce((all, current) => ({ nodes: [...all.nodes, ...current.nodes], edges: [...all.edges, ...current.edges] }), { nodes: [] as Node[], edges: [] as Edge[] });
   }, [expandedLogicIds, expandedRawIds, graph, nodes, rawGraph, text, toggleRawDetail]);
-  const visibleLogicNodes = useMemo(() => nodes.map((node) => ({ ...node, className: nodeClassName(node.id, matchingIds, selectedFeature, selectedVariant, frame, transition, spotlightId, pinnedIds, expandedLogicIds) })), [expandedLogicIds, frame, matchingIds, nodes, pinnedIds, selectedFeature, selectedVariant, spotlightId, transition]);
+  const enterFocus = useCallback((nodeId: string) => {
+    // Remember where the reader was, so leaving focus returns them to it rather
+    // than to a blank global view they did not ask for.
+    featureBeforeFocusRef.current = selectedFeatureId ?? null;
+    setSelectedFeatureId(null);
+    setExpandedLogicIds(new Set());
+    setExpandedRawIds(new Set());
+    setSelectedRaw(undefined);
+    setFocusedId(nodeId);
+  }, [selectedFeatureId]);
+  const exitFocus = useCallback(() => {
+    const restoring = featureBeforeFocusRef.current;
+    setFocusedId(undefined);
+    setSelectedFeatureId(restoring);
+    featureBeforeFocusRef.current = null;
+    // Restoring a feature reframes through the effect above; returning to the whole
+    // system has nothing to trigger it, so the camera is pulled back here.
+    if (!restoring) window.setTimeout(() => fitView({ padding: 0.2, duration: reduceMotion ? 0 : 620 }), 60);
+  }, [fitView, reduceMotion]);
+  const focusedIds = useMemo(
+    () => (focusedId && graph ? collectFocusIds(graph.edges, focusedId) : undefined),
+    [focusedId, graph],
+  );
+  const visibleLogicNodes = useMemo(() => nodes.map((node) => ({
+    ...node,
+    className: nodeClassName(node.id, matchingIds, selectedFeature, selectedVariant, frame, transition, spotlightId, pinnedIds, expandedLogicIds),
+    data: {
+      ...node.data,
+      // Offered only where narrowing would actually show something.
+      onFocus: !focusedId && graph && canFocusNode(graph.edges, node.id) ? () => enterFocus(node.id) : undefined,
+      focusLabel: text.focusStep,
+    },
+  })), [enterFocus, expandedLogicIds, focusedId, frame, graph, matchingIds, nodes, pinnedIds, selectedFeature, selectedVariant, spotlightId, text.focusStep, transition]);
   const visibleNodes = useMemo(() => {
     if (!graph) return [...visibleLogicNodes, ...detailExpansion.nodes];
-    const activeNodeIds = selectedVariant ? new Set(selectedVariant.nodeIds) : undefined;
-    const groups = buildBlueprintGroupNodes(nodes, graph, activeNodeIds, groupLabels(locale));
-    return [...groups, ...visibleLogicNodes, ...detailExpansion.nodes];
-  }, [detailExpansion.nodes, graph, locale, nodes, selectedVariant, visibleLogicNodes]);
+    const activeNodeIds = focusedIds ?? (selectedVariant ? new Set(selectedVariant.nodeIds) : undefined);
+    // Hidden rather than removed. Taking a node out of the flow drops React Flow's
+    // measurement of it, and a fitView over unmeasured nodes computes no bounds at
+    // all — the camera snapped to the origin and the map looked empty.
+    const framed = focusedIds ? nodes.filter((node) => focusedIds.has(node.id)) : nodes;
+    const groups = buildBlueprintGroupNodes(framed, graph, activeNodeIds, groupLabels(locale));
+    const logic = visibleLogicNodes.map((node) => (focusedIds && !focusedIds.has(node.id) ? { ...node, hidden: true } : node));
+    return [...groups, ...logic, ...detailExpansion.nodes];
+  }, [detailExpansion.nodes, focusedIds, graph, locale, nodes, selectedVariant, visibleLogicNodes]);
   const visibleEdges = useMemo(() => {
     const graphEdges = graph?.edges.map((edge) => {
       let state: EdgeVisualState = "global";
@@ -240,8 +281,33 @@ function LogicMapViewer() {
       const branchClass = !transition ? undefined : transition.enteringEdgeIds.has(edge.id) ? "is-branch-entering" : transition.exitingEdgeIds.has(edge.id) ? "is-branch-exiting" : transition.sharedEdgeIds.has(edge.id) ? "is-branch-shared" : undefined;
       return toFlowEdge(edge, state, graph!, locale, branchClass, !reduceMotion && state === "current", speed);
     }) ?? [];
-    return [...graphEdges, ...detailExpansion.edges];
-  }, [detailExpansion.edges, frame, graph, locale, reduceMotion, selectedVariant, speed, transition]);
+    const focused = focusedIds
+      ? graphEdges.map((edge) => (focusedIds.has(edge.source) && focusedIds.has(edge.target) ? edge : { ...edge, hidden: true }))
+      : graphEdges;
+    return [...focused, ...detailExpansion.edges];
+  }, [detailExpansion.edges, focusedIds, frame, graph, locale, reduceMotion, selectedVariant, speed, transition]);
+
+  useEffect(() => {
+    // The feature fit above bails without a variant, and focus deliberately has no
+    // feature selected, so narrowing needs its own reframe or the map stays parked
+    // wherever the global view left it.
+    if (!focusedIds || !nodes.length) return;
+    const target = nodes.filter((node) => focusedIds.has(node.id));
+    if (!target.length) return;
+    // `fitView({ nodes })` computes no bounds here and snaps the camera to the
+    // origin, so the frame is derived from the positions this app already knows.
+    const bounds = measureBlueprintBounds(target, 90);
+    const viewport = canvasRef.current?.getBoundingClientRect();
+    // A canvas with no measured size cannot produce a meaningful frame. Leaving the
+    // camera where it is beats sending it somewhere derived from zeros.
+    if (!bounds || !viewport?.width || !viewport.height) return;
+    const zoom = Math.min(1.05, Math.max(0.32, Math.min(viewport.width / bounds.width, viewport.height / bounds.height)));
+    const timer = window.setTimeout(
+      () => setCenter(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { zoom, duration: reduceMotion ? 0 : 620 }),
+      80,
+    );
+    return () => window.clearTimeout(timer);
+  }, [focusedIds, nodes, reduceMotion, setCenter]);
 
   const persistLayout = useCallback((positions: LayoutPositions) => {
     if (typeof window !== "undefined" && layoutStorageKey) window.localStorage.setItem(layoutStorageKey, JSON.stringify(positions));
@@ -348,7 +414,9 @@ function LogicMapViewer() {
       <div className="sidebar__footer"><Braces size={14} /> {text.staticAnalysis}</div>
     </aside>
     <section className="canvas" aria-label={text.logicGraph} data-detail-level={detailLevel} data-navigating={navigating ? "true" : "false"} ref={canvasRef}>
-      <div className="canvas-caption"><span className="canvas-caption__mark" /><strong>{selectedFeature ? localizeFeatureLabel(selectedFeature, graph, locale) : text.wholeSystem}</strong><small>{selectedVariant ? localizeVariantLabel(selectedVariant, graph, locale) : text.globalView}</small></div>
+      {focusedId
+        ? <div className="canvas-caption canvas-caption--focus"><button onClick={exitFocus} title={text.exitFocus}><ChevronLeft size={12} />{text.wholeSystem}</button><strong>{localizeNode(graph.nodes.find((node) => node.id === focusedId)!, locale, nodesById).label}</strong><small>{text.focusHint}</small></div>
+        : <div className="canvas-caption"><span className="canvas-caption__mark" /><strong>{selectedFeature ? localizeFeatureLabel(selectedFeature, graph, locale) : text.wholeSystem}</strong><small>{selectedVariant ? localizeVariantLabel(selectedVariant, graph, locale) : text.globalView}</small></div>}
       <div className="semantic-zoom" aria-live="polite"><span>{text.zoomLevel}</span><strong>{semanticZoomLabel(detailLevel, locale)}</strong><div className="semantic-zoom__levels" aria-hidden="true">{(["overview", "logic", "evidence"] as const).map((level) => <i className={level === detailLevel ? "is-active" : ""} key={level} />)}</div><small>{text.semanticZoomHint}</small></div>
       <div className="canvas-help"><Crosshair size={13} /><span>{text.detailHint}</span></div>
       <div className="layout-toolbar" aria-label={text.layout}><span><Pin size={12} /> {pinnedIds.size} {text.pinnedNodes}</span><button onClick={undoLayout} disabled={!layoutHistory.length} title={text.undoLayout}><Undo2 size={13} /></button><button onClick={resetLayout} title={text.resetLayout}><RotateCcw size={13} /></button></div>
