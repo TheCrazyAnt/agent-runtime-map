@@ -306,10 +306,14 @@ Work in this order unless product direction changes:
    ship from `@agent-runtime-map/react`, both taking an already compiled
    `LogicGraph`. The simulation reducer, ELK layout, and group derivation moved
    into that package so the Viewer and an embedded map share one implementation.
-   Still open: browser smoke-testing the embedded component (its derivation logic
-   is covered by `tests/logic-map.test.ts`, but the rendering path has not been
-   verified in a browser), host-driven raw drill-down, and the Viewer itself
-   consuming `<LogicMap />` rather than composing React Flow directly.
+   The rendering path is browser-verified: both surfaces draw 26 nodes and 28
+   edges, and a framed route marks nodes and edges alike. That pass found a real
+   bug — node highlighting never applied — which pure helper tests could not
+   catch, because it was an effect-ordering fault rather than a logic fault.
+   Still open: a DOM render test so that class of bug has a guard (needs a jsdom
+   environment, which the suite does not have yet), host-driven raw drill-down,
+   and the Viewer itself consuming `<LogicMap />` rather than composing React Flow
+   directly.
 6. **Trace bridge, not an APM platform.** `TraceEvent` and `applyTraceEvents()`
    ship: events name ids the graph already has, raw symbols lift to the step that
    contains them, unmatched events are reported rather than drawn, and a failure is
