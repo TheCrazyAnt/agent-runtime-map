@@ -226,6 +226,14 @@ button { color: inherit; }
 .confidence-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #1689cf, #5bb8df); }
 .confidence-card small { display: block; color: #858f9a; font-size: 9px; line-height: 1.45; }
 
+/* Focus replaces the feature caption rather than sitting beside it: the reader is
+   in one framing or the other, never both, and the way out has to be visible from
+   inside it. */
+.canvas-caption--focus { display: flex; align-items: baseline; gap: 9px; }
+.canvas-caption--focus button { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; color: #3d8fc4; background: none; font: inherit; font-size: 10px; cursor: pointer; }
+.canvas-caption--focus button:hover { text-decoration: underline; }
+.canvas-caption--focus button::after { content: "›"; margin-left: 5px; color: #a7b1bb; }
+
 /* A breadcrumb is the way back out of a drill-down: without it, a reader two levels
    deep can only close the drawer and lose the place they were inspecting. */
 .evidence-breadcrumb { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }

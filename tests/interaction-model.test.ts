@@ -6,6 +6,8 @@ import {
   MAX_DETAIL_DEPTH,
   applyLayoutPositions,
   buildCodeDetailExpansion,
+  canFocusNode,
+  collectFocusIds,
   captureLayout,
   compareVariants,
   parseDetailNodeId,
@@ -77,6 +79,36 @@ describe("viewer interaction model", () => {
     // Raw ids are free to contain colons; only the first two segments are structural.
     expect(parseDetailNodeId("detail:logic_a:model:gpt-5")).toEqual({ logicId: "logic_a", rawId: "model:gpt-5" });
     expect(parseDetailNodeId("logic_a")).toBeUndefined();
+  });
+
+  it("narrows to a step and everything it reaches, without following what reaches it", () => {
+    const edges = [
+      { source: "entry", target: "review" },
+      { source: "review", target: "score" },
+      { source: "review", target: "approve" },
+      { source: "score", target: "model" },
+      { source: "import", target: "parse" },
+    ];
+
+    const focused = collectFocusIds(edges, "review");
+
+    expect([...focused].sort()).toEqual(["approve", "model", "review", "score"]);
+    // The step that calls it is not part of what it is; an unrelated chain is not either.
+    expect(focused.has("entry")).toBe(false);
+    expect(focused.has("import")).toBe(false);
+  });
+
+  it("does not loop on a cycle, and offers no focus where there is nothing below", () => {
+    const cyclic = [
+      { source: "a", target: "b" },
+      { source: "b", target: "c" },
+      { source: "c", target: "a" },
+    ];
+
+    expect([...collectFocusIds(cyclic, "a")].sort()).toEqual(["a", "b", "c"]);
+    expect(canFocusNode(cyclic, "a")).toBe(true);
+    // A terminal step would narrow to itself alone, which is not worth an affordance.
+    expect(canFocusNode(cyclic, "leaf")).toBe(false);
   });
 
   it("keeps shared branches stable while identifying entering and exiting paths", () => {

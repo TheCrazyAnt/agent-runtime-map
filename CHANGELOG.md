@@ -2,6 +2,18 @@
 
 All notable changes are documented here.
 
+## 0.4.0 - 2026-08-23
+
+### Added
+
+- Focus: narrow the map to one step and everything below it, from a control on the
+  node. The rest is hidden rather than dimmed — that is the difference between
+  framing a feature and narrowing to a step — and a breadcrumb leads back to the
+  whole system, restoring whatever feature was selected before. Positions are never
+  recomputed, so the steps that remain sit exactly where they were.
+- Focus is offered only where narrowing would show something. A step with nothing
+  below it would narrow to itself alone, which is not worth an affordance.
+
 ## 0.3.2 - 2026-08-23
 
 ### Changed

@@ -1,7 +1,7 @@
 import type { Edge, Node, XYPosition } from "@xyflow/react";
 import { BLUEPRINT_CODE_NODE_HEIGHT, BLUEPRINT_CODE_NODE_WIDTH } from "@agent-runtime-map/react";
 import type { BlueprintCodeNodeData, BlueprintLogicNodeData } from "@agent-runtime-map/react";
-import type { FeaturePathVariant, LogicNode, RawCodeGraph, RawCodeNode } from "@agent-runtime-map/schema";
+import type { FeaturePathVariant, LogicEdge, LogicNode, RawCodeGraph, RawCodeNode } from "@agent-runtime-map/schema";
 
 export interface CodeDetailExpansion {
   nodes: Node<BlueprintCodeNodeData>[];
@@ -128,6 +128,40 @@ export function buildCodeDetailExpansion(
     style: { stroke: "#4b9dcc", strokeWidth: 1.45, strokeDasharray: "3 4", opacity: 0.78 },
   } satisfies Edge));
   return { nodes, edges: [...anchors, ...internalEdges] };
+}
+
+/**
+ * Everything one step reaches, including itself.
+ *
+ * Focus hides the rest of the map rather than dimming it, which is the difference
+ * between framing a feature and narrowing to a step. Positions are untouched: the
+ * remaining nodes stay exactly where the reader last saw them, because a focus that
+ * rearranged the map would cost the spatial memory it is meant to serve.
+ */
+export function collectFocusIds(edges: Array<Pick<LogicEdge, "source" | "target">>, rootId: string): Set<string> {
+  const outgoing = new Map<string, string[]>();
+  for (const edge of edges) {
+    const targets = outgoing.get(edge.source);
+    if (targets) targets.push(edge.target);
+    else outgoing.set(edge.source, [edge.target]);
+  }
+  const reached = new Set([rootId]);
+  const queue = [rootId];
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const next of outgoing.get(current) ?? []) {
+      // A cycle in the graph must not become a loop here.
+      if (reached.has(next)) continue;
+      reached.add(next);
+      queue.push(next);
+    }
+  }
+  return reached;
+}
+
+/** Whether a step has anything below it worth narrowing to. */
+export function canFocusNode(edges: Array<Pick<LogicEdge, "source" | "target">>, nodeId: string): boolean {
+  return edges.some((edge) => edge.source === nodeId);
 }
 
 export function compareVariants(

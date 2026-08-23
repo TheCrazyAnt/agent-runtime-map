@@ -64,6 +64,8 @@ In the Viewer, a user can:
    as pinned, and can be undone or reset to the ELK layout.
 10. Let playback follow the current step, or pan/zoom the canvas to immediately
     turn following off; the left rail offers “Resume follow”.
+11. Narrow the map to one step and everything below it with the focus control on a
+    node, then return through the breadcrumb to whatever was framed before.
 
 The visual intent is an engineering circuit/map: blue primary flows, gray
 dashed data flows, nested boundaries, a quiet grid, and only one small moving
@@ -154,8 +156,12 @@ enough for the Viewer to save positions in localStorage under:
 agent-runtime-map.layout.v1:<project-root>:<graph-type>
 ```
 
-Never call ELK merely because a node expanded, a branch changed, or playback
-advanced. `buildCodeDetailExpansion()` builds a small raw-node subgraph near the
+Never call ELK merely because a node expanded, a branch changed, playback
+advanced, or a step was focused. Focus hides what falls outside it and reframes the
+camera; it never moves a node, because a narrowing that rearranged the map would
+cost the spatial memory it exists to serve. Hide rather than remove: taking nodes
+out of the flow drops React Flow's measurement of them, and the camera then has no
+bounds to frame. `buildCodeDetailExpansion()` builds a small raw-node subgraph near the
 selected parent using namespaced IDs:
 
 ```text

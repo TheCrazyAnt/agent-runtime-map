@@ -9,6 +9,7 @@ import {
   Globe2,
   MousePointerClick,
   Play,
+  Scan,
   Route,
   UserCheck,
   Workflow,
@@ -43,6 +44,14 @@ export interface BlueprintLogicNodeData extends Record<string, unknown> {
   sourceDetail?: string;
   inferenceText?: string;
   detailLevel?: BlueprintDetailLevel;
+  /**
+   * Narrows the map to this step and everything below it. An explicit control
+   * rather than a gesture: double-click already means "show me the code inside",
+   * and one gesture cannot honestly mean both "show the evidence" and "hide
+   * everything else".
+   */
+  onFocus?: () => void;
+  focusLabel?: string;
 }
 
 const ICONS: Record<BlueprintLogicNodeType, ComponentType<{ size?: number; strokeWidth?: number }>> = {
@@ -83,6 +92,17 @@ export function BlueprintLogicNode({ data, selected }: NodeProps) {
           <code>{value.sourceDetail}</code>
           {value.inferenceText && <span>{value.inferenceText}</span>}
         </div>
+      )}
+      {value.onFocus && (
+        <button
+          type="button"
+          className="blueprint-node__focus"
+          aria-label={value.focusLabel ?? `Focus ${value.label}`}
+          title={value.focusLabel ?? `Focus ${value.label}`}
+          onClick={(event) => { event.stopPropagation(); value.onFocus?.(); }}
+        >
+          <Scan size={13} strokeWidth={2} />
+        </button>
       )}
       <Handle type="source" position={Position.Right} className="blueprint-handle" />
     </article>
