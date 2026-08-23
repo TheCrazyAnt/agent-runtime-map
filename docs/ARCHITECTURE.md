@@ -50,6 +50,8 @@ Product context is carried as its own channel. A logic node or feature records w
 
 The Logic Compiler decides what any of that means for the map. Models join prompts, tables, and external systems as side dependencies: a step reaches them, every variant that touches the step carries them, and none of them opens a branch. Requesting a model is not a decision, and treating it as one would turn a single endpoint into as many variants as it has leaves.
 
+A node's description is derived from the edges the compiler already produced, and kept on the node as `behavior` — node ids rather than labels, because a label is already a rendering choice and a sentence built from an English label would name the same node differently two lines apart. A description a person wrote always wins over a derived one: it says why, and derivation can only say what.
+
 The Logic Compiler owns abstraction. It removes infrastructure noise, keeps business-relevant nodes, projects paths across hidden functions, matches code paths to documented capabilities, discovers each user action or API entry as a feature circuit, enumerates bounded branch variants, and explains every heuristic conclusion.
 
 The optional semantic package may replace labels, descriptions, and the project summary for existing IDs. It cannot introduce topology or evidence. The default pipeline never invokes it. OpenAI mode uses a bounded snapshot, Structured Outputs, and `store: false`; callers must opt in and supply both a model and API key.

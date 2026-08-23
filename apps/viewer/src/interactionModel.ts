@@ -43,7 +43,7 @@ export function buildCodeDetailExpansion(
   const secondLevelLimit = options.secondLevelLimit ?? 5;
   const rawById = new Map(rawGraph.nodes.map((node) => [node.id, node]));
   const seedIds = logicNode.rawNodeIds.filter((id) => rawById.has(id));
-  const neighborIds = neighboursOf(seedIds, rawGraph);
+  const neighborIds = internalsOf(seedIds, rawGraph, rawById);
   const firstLevelIds = unique([...seedIds, ...neighborIds])
     .sort((left, right) => detailRank(rawById.get(left)) - detailRank(rawById.get(right)))
     .slice(0, limit);
@@ -52,7 +52,7 @@ export function buildCodeDetailExpansion(
   // Second level only from children the reader opened, and only from children that
   // are actually on screen, so an expansion can never grow from something hidden.
   const focusIds = [...(options.expandedRawIds ?? [])].filter((id) => firstLevel.has(id));
-  const secondLevelIds = unique(neighboursOf(focusIds, rawGraph))
+  const secondLevelIds = unique(internalsOf(focusIds, rawGraph, rawById))
     .filter((id) => !firstLevel.has(id) && rawById.has(id))
     .sort((left, right) => detailRank(rawById.get(left)) - detailRank(rawById.get(right)))
     .slice(0, secondLevelLimit);
@@ -176,12 +176,21 @@ function compareSets(previous: string[], current: string[], suffix: "NodeIds" | 
   };
 }
 
-function neighboursOf(ids: string[], rawGraph: RawCodeGraph): string[] {
+/**
+ * What a step is made of, which is what it reaches — not what reaches it.
+ *
+ * Following edges in both directions pulled in the file that contains the step and
+ * the route that calls it, and showed them beside its actual internals as if they
+ * were peers. Expanding "Execute Review" then answered with its own function, its
+ * file, its caller, and only then the three agents that do the work.
+ */
+function internalsOf(ids: string[], rawGraph: RawCodeGraph, rawById: Map<string, RawCodeNode>): string[] {
   const seeds = new Set(ids);
   return rawGraph.edges.flatMap((edge) => {
-    if (seeds.has(edge.source)) return [edge.target];
-    if (seeds.has(edge.target)) return [edge.source];
-    return [];
+    if (!seeds.has(edge.source)) return [];
+    const target = rawById.get(edge.target);
+    // A file or a module entrypoint is a container, never an internal.
+    return target && target.kind !== "file" && target.kind !== "entrypoint" ? [edge.target] : [];
   });
 }
 

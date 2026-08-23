@@ -210,7 +210,34 @@ export interface LogicNode {
   };
   rawNodeIds: string[];
   product?: ProductEvidence;
+  behavior?: LogicBehavior;
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * What a step does, read off the edges the compiler already produced.
+ *
+ * A description that restates its own label ("An AI workflow performs generate
+ * ideas") costs a line and says nothing. These are the facts worth saying instead,
+ * kept as data rather than a sentence so each language can phrase them itself, and
+ * every one of them traces back through an edge that carries its `rawEdgeIds`.
+ *
+ * Every field holds **node ids**, not labels. A label is already a rendering choice —
+ * a Chinese reader translates `executeContentWorkflow` to 执行内容工作流, and a
+ * sentence built from the English label "Execute Content" would call the same node
+ * 执行内容 two lines apart. Ids let each surface resolve the one name it uses.
+ */
+export interface LogicBehavior {
+  /** Steps this one hands control to in order. */
+  calls: string[];
+  /** Steps it reaches only under a condition, or as a fallback. */
+  branches: string[];
+  /** Models and external systems it calls out to. */
+  requests: string[];
+  /** Data stores it reads or writes. */
+  data: string[];
+  /** Steps its result flows into. */
+  feeds: string[];
 }
 
 export interface LogicEdge {

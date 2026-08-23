@@ -314,13 +314,30 @@ export function localizeGraphDescription(graph: LogicGraph, locale: UiLocale): s
   return graph.description;
 }
 
-export function localizeNode(node: LogicNode, locale: UiLocale): { label: string; description: string } {
+/**
+ * `nodesById` lets a description name other steps the way those steps name
+ * themselves. Without it a referenced node is named from its English label, and the
+ * same node reads 执行内容 in one sentence and 执行内容工作流 two lines above.
+ */
+export function localizeNode(
+  node: LogicNode,
+  locale: UiLocale,
+  nodesById?: ReadonlyMap<string, LogicNode>,
+): { label: string; description: string } {
   if (locale === "en") return { label: node.label, description: node.description };
   const rawName = typeof node.metadata?.rawName === "string" ? node.metadata.rawName : node.label;
   const rawKind = node.metadata?.rawKind;
   const label = rawKind === "route" || rawKind === "external_api" ? node.label : translateSemanticName(rawName) ?? node.label;
   const generated = node.metadata?.generatedDescription === true;
   if (!generated) return { label, description: node.description };
+  // What the step does beats a sentence that restates its own name. The referenced
+  // steps are translated the same way this node's own label is, so a reader never
+  // sees a Chinese sentence pointing at English names.
+  const described = describeBehaviorInChinese(node.behavior, (id) => {
+    const target = nodesById?.get(id);
+    return target ? localizeNode(target, locale).label : id;
+  });
+  if (described) return { label, description: described };
   const descriptions: Record<LogicNodeType, string> = {
     user_action: `用户发起“${label}”。`,
     entrypoint: `系统通过 ${label} 接收任务。`,
@@ -350,6 +367,30 @@ export function groupLabels(locale: UiLocale): BlueprintGroupLabels {
     systems: "数据与外部服务",
     nodeCount: (count) => `${count} 个节点`,
   };
+}
+
+const MAX_BEHAVIOR_ITEMS = 4;
+
+function describeBehaviorInChinese(
+  behavior: LogicNode["behavior"],
+  label: (id: string) => string,
+): string | undefined {
+  if (!behavior) return undefined;
+  const named = (ids: string[]) => quoteLabels(ids.map(label));
+  const parts = [
+    behavior.calls.length ? `调用${named(behavior.calls)}` : undefined,
+    behavior.branches.length ? `按条件分支到${named(behavior.branches)}` : undefined,
+    behavior.requests.length ? `请求${named(behavior.requests)}` : undefined,
+    behavior.data.length ? `读写${named(behavior.data)}` : undefined,
+    behavior.feeds.length ? `结果流向${named(behavior.feeds)}` : undefined,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length ? `${parts.join("，")}。` : undefined;
+}
+
+function quoteLabels(labels: string[]): string {
+  const shown = labels.slice(0, MAX_BEHAVIOR_ITEMS).map((item) => `“${item}”`);
+  const remaining = labels.length - shown.length;
+  return shown.join("、") + (remaining > 0 ? `等 ${labels.length} 项` : "");
 }
 
 export function inferenceMethodLabel(method: LogicNode["inference"]["method"], locale: UiLocale): string {
