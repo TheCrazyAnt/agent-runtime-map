@@ -18,6 +18,8 @@ import {
   BlueprintPlaybackEdge,
   blueprintDetailLevelForZoom,
   blueprintEdgeAppearance,
+  BLUEPRINT_NODE_HEIGHT,
+  BLUEPRINT_NODE_WIDTH,
   blueprintSemanticZoomProgress,
   buildBlueprintGroupNodes,
   measureBlueprintBounds,
@@ -37,7 +39,7 @@ import type {
   ChainHealth, FeaturePathVariant, FeatureScenario, LogicGraph, LogicNode as LogicGraphNode,
   ProductEvidence, RawCodeGraph, RawCodeNode, SourceLocation,
 } from "@agent-runtime-map/schema";
-import { applyLayoutPositions, buildCodeDetailExpansion, canFocusNode, captureLayout, collectFocusIds, compareVariants, parseDetailNodeId, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
+import { applyLayoutPositions, buildCodeDetailExpansion, canFocusNode, captureLayout, collectFocusIds, compareVariants, matchingNodeIds, parseDetailNodeId, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
 import {
   chainHealthLabel, detectViewerLocale, groupLabels, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
   productMatchText, productOriginLabel,
@@ -86,10 +88,10 @@ function LogicMapViewer() {
   const canvasRef = useRef<HTMLElement>(null);
   const detailLevelRef = useRef<BlueprintDetailLevel>("logic");
   const nodesRef = useRef(nodes);
-  const baseLayoutRef = useRef<LayoutPositions>();
-  const dragStartLayoutRef = useRef<LayoutPositions>();
-  const transitionTimerRef = useRef<number>();
-  const spotlightTimerRef = useRef<number>();
+  const baseLayoutRef = useRef<LayoutPositions | undefined>(undefined);
+  const dragStartLayoutRef = useRef<LayoutPositions | undefined>(undefined);
+  const transitionTimerRef = useRef<number | undefined>(undefined);
+  const spotlightTimerRef = useRef<number | undefined>(undefined);
   const reduceMotion = useMemo(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
   const { fitView, getNode, setCenter } = useReactFlow();
   const text = messages(locale);
@@ -166,8 +168,8 @@ function LogicMapViewer() {
   const focusNode = useCallback((id: string, zoom = 1.12) => {
     const node = getNode(id);
     if (!node) return;
-    const width = node.measured.width ?? node.width ?? 190;
-    const height = node.measured.height ?? node.height ?? 154;
+    const width = node.measured?.width ?? node.width ?? BLUEPRINT_NODE_WIDTH;
+    const height = node.measured?.height ?? node.height ?? BLUEPRINT_NODE_HEIGHT;
     setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom, duration: reduceMotion ? 0 : 420 });
   }, [getNode, reduceMotion, setCenter]);
   useEffect(() => {
@@ -189,14 +191,11 @@ function LogicMapViewer() {
     return () => window.clearTimeout(timer);
   }, [playing, selectedFeature, selectedVariant, speed, stepIndex]);
 
-  const matchingIds = useMemo(() => {
-    if (!query.trim() || !graph) return new Set(graph?.nodes.map((node) => node.id) ?? []);
-    const normalized = query.trim().toLowerCase();
-    return new Set(graph.nodes.filter((node) => {
-      const localized = localizeNode(node, locale, nodesById);
-      return `${localized.label} ${localized.description} ${node.label} ${node.sources.map((source) => source.file).join(" ")}`.toLowerCase().includes(normalized);
-    }).map((node) => node.id));
-  }, [graph, locale, query]);
+  const nodesById = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node])), [graph]);
+  const matchingIds = useMemo(
+    () => matchingNodeIds(graph?.nodes ?? [], query, (node) => localizeNode(node, locale, nodesById)),
+    [graph, locale, nodesById, query],
+  );
   const searchResults = useMemo(() => graph?.nodes.filter((node) => matchingIds.has(node.id)).slice(0, 7) ?? [], [graph, matchingIds]);
   const detailExpansion = useMemo(() => {
     if (!rawGraph || !graph || !expandedLogicIds.size) return { nodes: [] as Node[], edges: [] as Edge[] };
@@ -317,12 +316,15 @@ function LogicMapViewer() {
     if (baseLayout) setPinnedIds(new Set(positionedNodes.filter((node) => movedFromBase(node, baseLayout)).map((node) => node.id)));
   }, []);
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes((current) => applyNodeChanges(changes.filter((change) => current.some((node) => node.id === change.id)), current) as Node<BlueprintLogicNodeData>[]);
+    setNodes((current) => applyNodeChanges(
+      changes.filter((change) => "id" in change && current.some((node) => node.id === change.id)),
+      current,
+    ) as Node<BlueprintLogicNodeData>[]);
   }, []);
-  const onNodeDragStart = useCallback((_event: React.MouseEvent, node: Node) => {
+  const onNodeDragStart = useCallback((_event: MouseEvent | TouchEvent, node: Node) => {
     if (nodesRef.current.some((item) => item.id === node.id)) dragStartLayoutRef.current = captureLayout(nodesRef.current);
   }, []);
-  const onNodeDragStop = useCallback((_event: React.MouseEvent, node: Node) => {
+  const onNodeDragStop = useCallback((_event: MouseEvent | TouchEvent, node: Node) => {
     if (!nodesRef.current.some((item) => item.id === node.id)) return;
     const before = dragStartLayoutRef.current;
     setNodes((current) => {
@@ -335,7 +337,6 @@ function LogicMapViewer() {
     });
   }, [persistLayout, updatePins]);
 
-  const nodesById = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node])), [graph]);
   const selected = graph?.nodes.find((node) => node.id === selectedId);
   const selectedRawNode = useMemo(
     () => (selectedRaw ? rawGraph?.nodes.find((node) => node.id === selectedRaw.rawId) : undefined),

@@ -164,6 +164,27 @@ export function canFocusNode(edges: Array<Pick<LogicEdge, "source" | "target">>,
   return edges.some((edge) => edge.source === nodeId);
 }
 
+/**
+ * Which steps a query matches, over what a reader can actually see plus the source
+ * paths behind it. Kept here, and given its describe function rather than reaching
+ * for one, so the search can be tested without a browser — and so it cannot close
+ * over a value declared later in the component, which is what once turned typing
+ * into a blank page.
+ */
+export function matchingNodeIds(
+  nodes: LogicNode[],
+  query: string,
+  describe: (node: LogicNode) => { label: string; description: string },
+): Set<string> {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return new Set(nodes.map((node) => node.id));
+  return new Set(nodes.filter((node) => {
+    const shown = describe(node);
+    const haystack = [shown.label, shown.description, node.label, ...node.sources.map((source) => source.file)];
+    return haystack.join(" ").toLowerCase().includes(normalized);
+  }).map((node) => node.id));
+}
+
 export function compareVariants(
   previous: FeaturePathVariant | undefined,
   current: FeaturePathVariant | undefined,

@@ -1,6 +1,6 @@
 {
   "name": "agent-runtime-map-workspace",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "Turn your codebase into an evidence-backed Agent Runtime Map.",
   "homepage": "https://github.com/tangyishun9846/agent-runtime-map#readme",
@@ -22,7 +22,7 @@
     "clean": "npm run clean --workspaces --if-present",
     "dev": "npm run build -w @agent-runtime-map/viewer && tsx packages/cli/src/cli.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p apps/viewer/tsconfig.json",
     "agent-runtime-map": "tsx packages/cli/src/cli.ts",
     "logic-map": "tsx packages/cli/src/cli.ts",
     "check": "npm run typecheck && npm test && npm run build",
