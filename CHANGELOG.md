@@ -2,6 +2,26 @@
 
 All notable changes are documented here.
 
+## 0.4.1 - 2026-08-24
+
+### Fixed
+
+- Searching blanked the whole Viewer. The search read a node map declared 142 lines
+  further down the component, so the first keystroke hit the temporal dead zone and
+  took React's tree with it. The matching is now a tested pure function that is
+  handed what it needs instead of reaching for it.
+- Flying to a node the map had not measured threw. Every node hidden by focus is
+  unmeasured, so searching from inside a focus and clicking a result outside it hit
+  this. The fallbacks were already written; the optional chain was not.
+- A node change carrying no id is no longer read for one.
+
+### Changed
+
+- `npm run typecheck` now checks the Viewer, which nothing did before: the root
+  project never included `apps/**`, and the Viewer's build is `vite build`, which
+  does not run `tsc`. Both bugs above were type errors sitting in that blind spot.
+  Verified by injecting an error and watching the check fail.
+
 ## 0.4.0 - 2026-08-23
 
 ### Added

@@ -236,6 +236,11 @@ CLI strings live separately in `packages/cli/src/i18n.ts`.
 
 ## 7. How to develop safely
 
+`npm run typecheck` covers the workspace **and** the Viewer, which are separate
+projects: the Viewer needs DOM libraries and bundler resolution the Node-targeted
+root config does not use. Keep both in that script — the Viewer sat unchecked for a
+long time, and two crashes shipped out of that blind spot.
+
 ```bash
 npm ci
 npm run typecheck

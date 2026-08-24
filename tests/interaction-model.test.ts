@@ -8,6 +8,7 @@ import {
   buildCodeDetailExpansion,
   canFocusNode,
   collectFocusIds,
+  matchingNodeIds,
   captureLayout,
   compareVariants,
   parseDetailNodeId,
@@ -109,6 +110,27 @@ describe("viewer interaction model", () => {
     expect(canFocusNode(cyclic, "a")).toBe(true);
     // A terminal step would narrow to itself alone, which is not worth an affordance.
     expect(canFocusNode(cyclic, "leaf")).toBe(false);
+  });
+
+  it("searches what a reader can see, and the source paths behind it", () => {
+    const nodes = [
+      { id: "a", label: "Execute Review", description: "Calls Score Draft.", sources: [{ file: "src/workflows/review.ts", startLine: 3 }] },
+      { id: "b", label: "Parse Document Tool", description: "Passes its result on.", sources: [{ file: "src/tools/parse.ts", startLine: 1 }] },
+    ] as unknown as LogicNode[];
+    // A reader searching a localized map types the words they are looking at.
+    const describe = (node: LogicNode) => ({
+      label: node.id === "a" ? "执行审核工作流" : "解析文档工具",
+      description: node.description,
+    });
+
+    expect([...matchingNodeIds(nodes, "解析", describe)]).toEqual(["b"]);
+    expect([...matchingNodeIds(nodes, "Execute", describe)]).toEqual(["a"]);
+    // The path is part of the evidence, so it is part of the search.
+    expect([...matchingNodeIds(nodes, "tools/parse", describe)]).toEqual(["b"]);
+    expect([...matchingNodeIds(nodes, "Score Draft", describe)]).toEqual(["a"]);
+    // An empty query matches everything rather than nothing.
+    expect([...matchingNodeIds(nodes, "   ", describe)]).toEqual(["a", "b"]);
+    expect([...matchingNodeIds(nodes, "nothing here", describe)]).toEqual([]);
   });
 
   it("keeps shared branches stable while identifying entering and exiting paths", () => {
