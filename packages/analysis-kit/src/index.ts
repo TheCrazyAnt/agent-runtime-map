@@ -84,6 +84,31 @@ export interface DeclarationFacts {
   enclosingClass?: string;
   /** True when the adapter already recognised a framework route convention. */
   routeConvention?: boolean;
+  /** As written, when the language states one. Used to spot plumbing. */
+  returnType?: string;
+}
+
+/**
+ * Names that describe a shape of work rather than a piece of a product: predicates,
+ * converters, and serializers. `isRecord` is a type guard wherever it happens to sit.
+ */
+const PLUMBING_NAME = /^(is|has|can|should|must|assert|ensure|validate|to|as|from|parse|stringify|format|normali[sz]e|seriali[sz]e|deseriali[sz]e|encode|decode|escape|unescape|clone|merge|equals|compare|coerce|cast|wrap|unwrap|optional|required|default)[A-Z_]/;
+
+/** A type that carries no domain meaning: nothing a product capability returns. */
+const PLUMBING_RETURN = /^(boolean|string|number|bigint|symbol|void|null|undefined|unknown|any)(\s*\|\s*(null|undefined))*$/;
+
+/**
+ * Whether a declaration is plumbing regardless of where it lives.
+ *
+ * A directory convention says what a directory is about; it cannot say that about
+ * every function inside it. `agents/json.ts` holding `isRecord`, `optionalText`, and
+ * `parseJsonBlock` produced three Agents at 72%, and because an Agent outranks
+ * almost everything, they pushed real steps off a compressed map.
+ */
+export function isPlumbing(facts: DeclarationFacts): boolean {
+  if (PLUMBING_NAME.test(facts.name)) return true;
+  const returnType = facts.returnType?.trim();
+  return Boolean(returnType && PLUMBING_RETURN.test(returnType));
 }
 
 /**
@@ -101,7 +126,7 @@ export function classifyDeclaration(facts: DeclarationFacts): Classification {
   const normalizedName = facts.name.toLowerCase();
   // Path conventions describe a whole directory, so they must not promote helper
   // scripts that merely happen to live under it.
-  const pathConventionsApply = !SUPPORTING_PATH_PATTERN.test(normalizedPath);
+  const pathConventionsApply = !SUPPORTING_PATH_PATTERN.test(normalizedPath) && !isPlumbing(facts);
 
   if (facts.routeConvention) {
     return { kind: "route", confidence: 0.95, detail: "Framework route handler convention", method: "framework_convention" };

@@ -29,6 +29,19 @@ const graph = await (await fetch("/graph.json")).json();
 
 The canvas fills the box you give it, so the parent needs a height.
 
+### Bringing your own coordinates
+
+Pass `positions` and the layout engine is never imported — nothing is downloaded and
+nothing runs. This is for a host that already computes its layout, or renders the same
+map in a context where a force pass is not wanted.
+
+```tsx
+<LogicMap graph={graph} positions={{ logic_route_a1b2: { x: 0, y: 0 }, /* … */ }} />
+```
+
+A node with no entry keeps the position it would otherwise be laid out at, so a
+partial map still renders.
+
 | Prop | Meaning |
 | --- | --- |
 | `graph` | The compiled `LogicGraph`. Required. |
@@ -36,6 +49,7 @@ The canvas fills the box you give it, so the parent needs a height.
 | `variantId` | Which inferred branch to frame. Defaults to the first. |
 | `stepIndex` | How far along the route to highlight. `-1` shows it unplayed. |
 | `selectedNodeId` | Node to render as selected. |
+| `positions` | Coordinates by node id. Supplying them skips the layout engine entirely. |
 | `labels` | Boundary titles, so frames can be labelled in your product's language. |
 | `interactive` | `false` renders a static, non-pannable map. |
 | `onSelectNode` | Called with the node id and the compiled node behind it. |

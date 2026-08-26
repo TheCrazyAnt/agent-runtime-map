@@ -2,6 +2,32 @@
 
 All notable changes are documented here.
 
+## 0.5.0 - 2026-08-24
+
+### Fixed
+
+- A directory convention no longer promotes the plumbing beside real Agents. Every
+  function under `agents/` became an Agent at 72%, so `isRecord`, `optionalText`,
+  and `parseJsonBlock` took four slots on a compressed map and pushed real steps
+  off it — an Agent outranks almost everything. A predicate, a converter, or a
+  function returning a bare primitive is plumbing wherever it sits. A name that
+  says `…Tool` is still evidence about the function itself and still counts.
+
+### Added
+
+- Data access is recognized beyond five hardcoded client names: `pool.query`,
+  `repository.save`, and `collection.insertOne` now reach the map. A named client
+  stays a framework fact at `0.88`; a data-shaped receiver is a convention and
+  reports `0.7`. Stores are named after their receiver rather than all reading
+  "Data Data".
+- An outbound call with a computed URL is reported. Only a literal `https://…` was
+  recognized before, so a request built from a variable left no boundary on the
+  map at all. The host cannot be named, and the confidence says so at `0.68`.
+  `got`, `ky`, `undici`, and `superagent` join `fetch` and `axios`.
+- `<LogicMap positions={…} />` takes coordinates the host already has and skips the
+  layout engine entirely — elkjs is never imported, so a host that lays out its own
+  map does not pay for it.
+
 ## 0.4.1 - 2026-08-24
 
 ### Fixed

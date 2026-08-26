@@ -75,7 +75,7 @@ npx agent-runtime-map@latest .
 同一个已经通过发布校验的 CLI 包：
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.4.1/agent-runtime-map-0.4.1.tgz
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.5.0/agent-runtime-map-0.5.0.tgz
 npx agent-runtime-map .
 ```
 
