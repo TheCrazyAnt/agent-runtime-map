@@ -113,6 +113,76 @@ describe("TypeScript analyzer", () => {
     expect(labels).not.toContain("Audit");
   });
 
+  it("does not let a directory convention promote the plumbing beside real Agents", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-plumbing-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src", "agents"), { recursive: true });
+    await mkdir(path.join(root, "src", "tools"), { recursive: true });
+    await writeFile(path.join(root, "src", "agents", "json.ts"), [
+      "export function isRecord(value: unknown): boolean { return typeof value === 'object'; }",
+      "export function optionalText(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }",
+      "export function parseJsonBlock(text: string): unknown { return JSON.parse(text); }",
+    ].join("\n"));
+    await writeFile(path.join(root, "src", "agents", "research.ts"),
+      "export async function researchTopic(topic: string): Promise<string> { return topic; }\n");
+    await writeFile(path.join(root, "src", "tools", "search.ts"),
+      "export function searchTool(query: string) { return [query]; }\nexport function toQueryString(value: unknown): string { return String(value); }\n");
+
+    const raw = await analyzeTypeScriptProject(root);
+    const kind = (name: string) => raw.nodes.find((node) => node.name === name)?.kind;
+
+    // A predicate, a converter, and a parser are plumbing wherever they sit. As
+    // Agents they outranked real steps and pushed them off a compressed map.
+    expect(kind("isRecord")).toBe("function");
+    expect(kind("optionalText")).toBe("function");
+    expect(kind("parseJsonBlock")).toBe("function");
+    expect(kind("toQueryString")).toBe("function");
+    // The directory still means what it means for the work that lives there.
+    expect(kind("researchTopic")).toBe("agent");
+    // A name that says "tool" is evidence about the function, not about its folder.
+    expect(kind("searchTool")).toBe("tool");
+  });
+
+  it("sees data access and outbound calls beyond one hardcoded client each", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-io-"));
+    temporaryDirectories.push(root);
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src", "store.ts"), [
+      "declare const pool: { query(sql: string): Promise<unknown[]> };",
+      "declare const repository: { save(entity: unknown): Promise<void> };",
+      "declare const prisma: { order: { findMany(): Promise<unknown[]> } };",
+      "declare const got: { post(url: string, body?: unknown): Promise<unknown> };",
+      "export async function loadOrders() { return pool.query('select 1'); }",
+      "export async function storeOrder(order: unknown) { return repository.save(order); }",
+      "export async function listOrders() { return prisma.order.findMany(); }",
+      "export async function notifyPartner(endpoint: string) { return got.post(endpoint); }",
+      "export async function callVendor() { return fetch('https://vendor.example.com/ping'); }",
+      "export async function readBody(request: Request) { return request.json(); }",
+    ].join("\n"));
+
+    const raw = await analyzeTypeScriptProject(root);
+    const find = (kind: string, name: string) => raw.nodes.find((node) => node.kind === kind && node.name === name);
+    const confidence = (node: ReturnType<typeof find>) => node?.evidence[0]?.confidence ?? 0;
+
+    // A named client is a fact about the library; a data-shaped receiver is a
+    // convention, and the two are not reported at the same confidence.
+    expect(confidence(find("database", "order data"))).toBe(0.88);
+    expect(confidence(find("database", "pool data"))).toBe(0.7);
+    // Three different stores must not all read as one node called "Data Data".
+    expect(find("database", "repository data")).toBeDefined();
+
+    expect(confidence(find("external_api", "vendor.example.com"))).toBeGreaterThan(0.9);
+    // A computed URL still leaves the system; hiding the boundary would be worse
+    // than naming it without a host.
+    expect(confidence(find("external_api", "got request"))).toBeLessThan(0.75);
+
+    // `request.json()` reads the incoming body. Reading it as an outbound call once
+    // turned a route with no downstream work into a healthy chain, so the only
+    // outbound calls here are the two that genuinely leave the system.
+    expect(raw.nodes.filter((node) => node.kind === "external_api").map((node) => node.name).sort())
+      .toEqual(["got request", "vendor.example.com"]);
+  });
+
   it("does not let a directory convention promote helper scripts", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-scripts-"));
     temporaryDirectories.push(root);

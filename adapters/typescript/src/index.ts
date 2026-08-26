@@ -66,19 +66,37 @@ const ROUTE_APP_FACTORIES: ReadonlyArray<{ pattern: RegExp; name: string }> = [
   { pattern: /^Koa$/, name: "koa" },
 ];
 const DB_OPERATIONS = new Set([
+  "aggregate",
   "create",
   "createMany",
   "delete",
   "deleteMany",
+  "deleteOne",
+  "execute",
+  "find",
   "findFirst",
   "findMany",
+  "findOne",
   "findUnique",
   "insert",
+  "insertMany",
+  "insertOne",
+  "query",
+  "save",
   "select",
   "update",
   "updateMany",
+  "updateOne",
   "upsert",
 ]);
+/** Clients whose name alone identifies the store being reached. */
+const DB_CLIENTS = new Set(["db", "prisma", "supabase", "drizzle", "knex", "mongoose", "sequelize"]);
+/**
+ * Receivers that name a data access path without naming the library. Weaker than a
+ * known client, and reported as such — the Python adapter already read these, and a
+ * rule that means one thing in Python and another in TypeScript is not a rule.
+ */
+const DB_RECEIVER = /^(database|sql|pool|conn|connection|cursor|session|repo|repository|collection|table|store|dao|entityManager|queryRunner)$/i;
 
 export interface TypeScriptAnalyzerOptions {
   maxFiles?: number;
@@ -732,6 +750,13 @@ function collectCalls(
     const external = externalCall(call, expressionText);
     if (external) {
       const externalId = stableId("external_api", external.key);
+      const externalEvidence = [evidence(
+        relativeFile,
+        call.getStartLineNumber(),
+        "name_heuristic",
+        `Outbound request through ${expressionText}`,
+        external.confidence,
+      )];
       nodes.push({
         id: externalId,
         kind: "external_api",
@@ -739,15 +764,15 @@ function collectCalls(
         qualifiedName: external.key,
         language: languageForFile(relativeFile),
         metadata: external.metadata,
-        evidence: callEvidence,
+        evidence: externalEvidence,
       });
-      edges.push(makeEdge(caller.node.id, externalId, "requests", callEvidence, { control, metadata: controlMetadata }));
+      edges.push(makeEdge(caller.node.id, externalId, "requests", externalEvidence, { control, metadata: controlMetadata }));
     }
 
     const database = databaseCall(expressionText);
     if (database) {
       const databaseId = stableId("database", database.key);
-      const databaseEvidence = [evidence(relativeFile, call.getStartLineNumber(), "name_heuristic", `Recognized database operation ${expressionText}`, 0.88)];
+      const databaseEvidence = [evidence(relativeFile, call.getStartLineNumber(), "name_heuristic", `Recognized database operation ${expressionText}`, database.confidence)];
       nodes.push({
         id: databaseId,
         kind: "database",
@@ -1392,9 +1417,17 @@ function declarationKey(node: Node): string {
  */
 function declarationFacts(relativeFile: string, name: string, declaration: Node): DeclarationFacts {
   const method = Node.isMethodDeclaration(declaration) ? declaration : undefined;
+  const callable = Node.isFunctionDeclaration(declaration) || Node.isMethodDeclaration(declaration)
+    ? declaration
+    : Node.isVariableDeclaration(declaration) || Node.isPropertyAssignment(declaration) || Node.isExportAssignment(declaration)
+      ? callableOf(declaration)
+      : undefined;
   return {
     relativeFile,
     name,
+    // Written annotations only: an inferred type would make this a guess about the
+    // whole call graph rather than a fact about the declaration.
+    returnType: callable?.getReturnTypeNode()?.getText(),
     internal: isInternalMember(declaration),
     enclosingClass: method ? enclosingClassName(method) : undefined,
     // Next.js names the HTTP method with the exported function, so the convention is
@@ -1442,20 +1475,42 @@ function isEntrypoint(relativeFile: string): boolean {
   return /(^|\/)(page|layout|route|index|main|server|app)\.[jt]sx?$/.test(relativeFile) || /(^|\/)pages\/api\//.test(relativeFile);
 }
 
-function externalCall(call: CallExpression, expressionText: string): { key: string; label: string; metadata: Record<string, unknown> } | undefined {
+interface ExternalCall {
+  key: string;
+  label: string;
+  metadata: Record<string, unknown>;
+  confidence: number;
+}
+
+/**
+ * HTTP clients whose call is a request whatever the URL turns out to be.
+ *
+ * `request` is deliberately absent: it is overwhelmingly the name of a handler's
+ * parameter, and reading `request.json()` as an outbound call turned a route with no
+ * downstream work into a healthy chain. A widened detector that invents a boundary
+ * is worse than a narrow one that misses it.
+ */
+const HTTP_CLIENTS = /^(fetch|nodeFetch|axios|got|ky|superagent|undici)(\.(get|post|put|patch|delete|head|request))?$/;
+
+function externalCall(call: CallExpression, expressionText: string): ExternalCall | undefined {
   const firstArgument = call.getArguments()[0];
-  if (expressionText === "fetch" && firstArgument && Node.isStringLiteral(firstArgument)) {
-    const url = firstArgument.getLiteralValue();
-    if (/^https?:\/\//.test(url)) {
+  if (HTTP_CLIENTS.test(expressionText)) {
+    const client = expressionText.split(".")[0]!;
+    const url = firstArgument && Node.isStringLiteral(firstArgument) ? firstArgument.getLiteralValue() : undefined;
+    if (url && /^https?:\/\//.test(url)) {
       const host = safeHost(url);
-      return { key: `http:${host}`, label: host, metadata: { provider: "http", url } };
+      return { key: `http:${host}`, label: host, metadata: { provider: client, url }, confidence: 0.92 };
     }
-  }
-  if (/^axios(\.(get|post|put|patch|delete))?$/.test(expressionText) && firstArgument && Node.isStringLiteral(firstArgument)) {
-    const url = firstArgument.getLiteralValue();
-    if (/^https?:\/\//.test(url)) {
-      const host = safeHost(url);
-      return { key: `http:${host}`, label: host, metadata: { provider: "axios", url } };
+    // The destination is computed, so the host cannot be named. That the call leaves
+    // the system is still a fact, and saying nothing would hide the boundary
+    // entirely — which is exactly what a reader is looking for on an architecture map.
+    if (!url) {
+      return {
+        key: `http:${client}`,
+        label: `${humanize(client)} request`,
+        metadata: { provider: client, url: undefined },
+        confidence: 0.68,
+      };
     }
   }
   const sdk = [
@@ -1463,22 +1518,38 @@ function externalCall(call: CallExpression, expressionText: string): { key: stri
     { pattern: /(^|\.)anthropic\.|\.messages\.create$/, key: "sdk:anthropic", label: "Anthropic API" },
     { pattern: /(^|\.)stripe\./, key: "sdk:stripe", label: "Stripe API" },
   ].find((candidate) => candidate.pattern.test(expressionText.toLowerCase()));
-  return sdk ? { key: sdk.key, label: sdk.label, metadata: { provider: sdk.key.slice(4) } } : undefined;
+  return sdk ? { key: sdk.key, label: sdk.label, metadata: { provider: sdk.key.slice(4) }, confidence: 0.9 } : undefined;
 }
 
-function databaseCall(expressionText: string): { key: string; label: string; operation: string; edgeKind: "reads" | "writes" } | undefined {
+interface DatabaseCall {
+  key: string;
+  label: string;
+  operation: string;
+  edgeKind: "reads" | "writes";
+  confidence: number;
+}
+
+function databaseCall(expressionText: string): DatabaseCall | undefined {
   const parts = expressionText.split(".");
   if (parts.length < 2) return undefined;
   const operation = parts.at(-1) ?? "";
-  const root = parts[0]?.toLowerCase();
-  if (!root || !["db", "prisma", "supabase", "drizzle", "knex"].includes(root) || !DB_OPERATIONS.has(operation)) return undefined;
+  const root = parts[0] ?? "";
+  if (!DB_OPERATIONS.has(operation)) return undefined;
+  // A named client is a fact about the library; a data-shaped receiver is only a
+  // convention, so the two cannot be reported at the same confidence.
+  const known = DB_CLIENTS.has(root.toLowerCase());
+  if (!known && !DB_RECEIVER.test(root)) return undefined;
   const model = parts.length > 2 ? parts.at(-2) ?? "data" : "data";
-  const reads = /^(find|select)/.test(operation);
+  // `prisma.order.findMany` names its table; `pool.query` does not, and calling every
+  // such store "Data Data" makes three different stores read as one.
+  const named = model === "data" ? root : model;
+  const reads = /^(find|select|query|aggregate)/.test(operation);
   return {
-    key: `${root}:${model}`,
-    label: `${humanize(model)} data`,
+    key: `${root.toLowerCase()}:${model}`,
+    label: `${humanize(named)} data`,
     operation,
     edgeKind: reads ? "reads" : "writes",
+    confidence: known ? 0.88 : 0.7,
   };
 }
 

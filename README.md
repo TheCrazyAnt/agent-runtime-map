@@ -101,7 +101,7 @@ The same CLI can be installed directly from the CI-validated GitHub Release
 artifact without cloning the monorepo:
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.4.1/agent-runtime-map-0.4.1.tgz
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.5.0/agent-runtime-map-0.5.0.tgz
 npx agent-runtime-map .
 ```
 

@@ -165,6 +165,7 @@ function collectFile(
       internal: Boolean(declaration.enclosingClass) && declaration.name.startsWith("_"),
       enclosingClass: declaration.enclosingClass ?? undefined,
       routeConvention: Boolean(route),
+      returnType: declaration.returns ?? undefined,
     });
     const id = stableId(classification.kind, `${relativeFile}:${declaration.name}:${declaration.line}`);
     const itemEvidence = [evidence(

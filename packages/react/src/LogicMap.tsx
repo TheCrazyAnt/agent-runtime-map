@@ -56,6 +56,13 @@ export interface LogicMapProps {
    * can never be read as the same claim.
    */
   trace?: TraceOverlay | readonly TraceEvent[];
+  /**
+   * Coordinates the host already has, by node id. Supplying them skips the layout
+   * engine entirely — nothing is imported, nothing runs — which is what a host that
+   * computes positions ahead of time is asking for. Any node without an entry keeps
+   * the position it would otherwise be laid out at, so a partial map still renders.
+   */
+  positions?: Readonly<Record<string, { x: number; y: number }>>;
   labels?: Partial<BlueprintGroupLabels>;
   className?: string;
   fitView?: boolean;
@@ -86,6 +93,7 @@ function LogicMapCanvas({
   stepIndex = -1,
   selectedNodeId,
   trace,
+  positions,
   labels,
   className,
   fitView = true,
@@ -115,6 +123,15 @@ function LogicMapCanvas({
   const baseEdges = useMemo(() => graph.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })), [graph.edges]);
 
   useEffect(() => {
+    // Given coordinates, the layout engine is not merely skipped — it is never
+    // imported, so a host that lays out its own map does not pay for elkjs at all.
+    if (positions) {
+      setPositioned(baseNodes.map((node) => {
+        const position = positions[node.id];
+        return position ? { ...node, position } : node;
+      }));
+      return;
+    }
     let active = true;
     layoutGraph(baseNodes, baseEdges).then((next) => {
       if (active) setPositioned(next as Node<BlueprintLogicNodeData>[]);
@@ -123,7 +140,7 @@ function LogicMapCanvas({
       if (active) setPositioned(baseNodes);
     });
     return () => { active = false; };
-  }, [baseEdges, baseNodes]);
+  }, [baseEdges, baseNodes, positions]);
 
   const activeNodeIds = useMemo(
     () => (variant ? new Set(variant.nodeIds) : undefined),
