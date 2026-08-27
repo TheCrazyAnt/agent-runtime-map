@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
-import { generateLogicMap } from "@agent-runtime-map/core";
+import { generateLogicMap, type GenerateLogicMapOptions } from "@agent-runtime-map/core";
 import { openBrowser, startViewerServer } from "./server.js";
+import { runContinuousBuild, runContinuousWatch, runInit } from "./continuous.js";
 import {
   cliText,
   helpText,
@@ -11,7 +12,7 @@ import {
   type CliText,
 } from "./i18n.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.7.0";
 
 export async function run(argv = process.argv.slice(2)): Promise<number> {
   const requestedLocale = localeArgument(argv);
@@ -61,9 +62,11 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
   }
 
   const first = parsed.positionals[0];
-  const command = first === "analyze" || first === "serve" ? first : "serve";
-  const projectPath = command === "serve" && first !== "serve" ? first ?? "." : parsed.positionals[1] ?? ".";
-  const unexpected = command === "serve" && first !== "serve" ? parsed.positionals.slice(1) : parsed.positionals.slice(2);
+  const KNOWN_COMMANDS = new Set(["analyze", "serve", "init", "build", "watch"]);
+  const command = first !== undefined && KNOWN_COMMANDS.has(first) ? first : "serve";
+  const explicitCommand = first !== undefined && KNOWN_COMMANDS.has(first);
+  const projectPath = explicitCommand ? parsed.positionals[1] ?? "." : first ?? ".";
+  const unexpected = explicitCommand ? parsed.positionals.slice(2) : parsed.positionals.slice(1);
   if (unexpected.length) {
     process.stderr.write(`agent-runtime-map: ${text.unexpected(unexpected[0])}\n`);
     return 1;
@@ -91,23 +94,50 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
     return 1;
   }
 
+  const analyzeOptions: GenerateLogicMapOptions = {
+    maxFiles: positiveInteger(parsed.values["max-files"], "--max-files", text),
+    maxContextFiles: positiveInteger(parsed.values["max-context-files"], "--max-context-files", text),
+    maxContextBytes: positiveInteger(parsed.values["max-context-bytes"], "--max-context-bytes", text),
+    readContext: !parsed.values["no-context"],
+    maxNodes: positiveInteger(parsed.values["max-nodes"], "--max-nodes", text),
+    graphType: graphType as "runtime_logic" | "product_logic",
+    productDescription: parsed.values.description,
+    semantic: semanticProvider === "openai" ? {
+      apiKey: process.env.OPENAI_API_KEY!,
+      model: parsed.values["semantic-model"]!,
+      baseUrl: parsed.values["semantic-base-url"],
+    } : undefined,
+  };
+
+  if (command === "init" || command === "build" || command === "watch") {
+    try {
+      if (command === "init") return await runInit(projectPath, text);
+      process.stdout.write(`${text.analyzing(projectPath)}\n`);
+      const continuousOptions = {
+        analyzeOptions,
+        toolVersion: VERSION,
+        host: parsed.values.host ?? "127.0.0.1",
+        port: portNumber(parsed.values.port, text),
+        open: !parsed.values["no-open"],
+        localeParam: parsed.values.locale,
+      };
+      if (command === "build") return await runContinuousBuild(projectPath, continuousOptions, text);
+      return await runContinuousWatch(projectPath, continuousOptions, text);
+    } catch (error) {
+      const message = error instanceof Error
+        ? parsed.values.debug ? error.stack ?? error.message : error.message
+        : String(error);
+      process.stderr.write(`agent-runtime-map: ${message}\n`);
+      return 1;
+    }
+  }
+
   try {
     process.stdout.write(`${text.analyzing(projectPath)}\n`);
     const result = await generateLogicMap(projectPath, {
+      ...analyzeOptions,
       outputFile: parsed.values.out,
       rawOutputFile: parsed.values["no-raw"] ? false : parsed.values["raw-out"],
-      maxFiles: positiveInteger(parsed.values["max-files"], "--max-files", text),
-      maxContextFiles: positiveInteger(parsed.values["max-context-files"], "--max-context-files", text),
-      maxContextBytes: positiveInteger(parsed.values["max-context-bytes"], "--max-context-bytes", text),
-      readContext: !parsed.values["no-context"],
-      maxNodes: positiveInteger(parsed.values["max-nodes"], "--max-nodes", text),
-      graphType,
-      productDescription: parsed.values.description,
-      semantic: semanticProvider === "openai" ? {
-        apiKey: process.env.OPENAI_API_KEY!,
-        model: parsed.values["semantic-model"]!,
-        baseUrl: parsed.values["semantic-base-url"],
-      } : undefined,
     });
 
     process.stdout.write(

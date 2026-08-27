@@ -56,7 +56,47 @@ Viewer 采用开源的工程蓝图视觉系统：细密网格画布、图标型�
 后台可以复用节点、分区边框、链路状态 token 和自动边界计算工具。组件接口和
 嵌入示例见 [Visual Components](docs/VISUAL_COMPONENTS.md)。
 
-## 本地体验
+## 安装到项目（主路径）
+
+把 Agent Runtime Map 装进你的项目，初始化一次，然后让它持续维护一张最新的地图：
+
+```bash
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.7.0/agent-runtime-map-0.7.0.tgz
+npx agent-runtime-map init
+npx agent-runtime-map watch .
+```
+
+- `init` 创建 `agent-runtime-map.config.json`（输出目录、watch include/exclude、
+  防抖时间），并给出 package.json scripts 建议；除此之外不改任何文件。
+- `watch .` 先构建地图并打开 Viewer，然后持续监听：源码、README、docs、PRD、
+  Prompt、配置的任何变化都会触发防抖后的重新分析，打开着的 Viewer 会自动刷新。
+- `build .` 一次性产出同样的文件，适合 CI 或不想挂 watcher 的场合。
+
+每次构建维护 `.agent-runtime-map/`：
+
+```text
+.agent-runtime-map/
+  current/
+    graph.json       Logic Graph（所有嵌入方式消费的就是它）
+    raw-graph.json   详细代码事实
+    manifest.json    buildId 与文件索引；轮询它就能跟上最新地图
+    status.json      updated | stale | failed，含失败原因与时间
+    changes.json     新增/删除/修改的节点、边、功能；受影响的功能；
+                     新出现/已消失的诊断；触发本次更新的文件
+    report.html      内嵌图数据的独立交互式查看页
+  history/<时间戳>/   每次成功构建一份快照
+```
+
+分析失败绝不会清空 `current/`：上一次成功的地图原样保留，`status.json` 标记
+`failed` 并说明原因和时间。新地图先写入 staging，再原子替换，中断只会留下一张
+"旧"地图，不会留下一张"坏"地图。
+
+想在后台管理页看到它：用两个小路由嵌入 `<LogicMap />`
+（[examples/nextjs-embed](examples/nextjs-embed/README.md)），或把
+`current/report.html` 当静态页 / iframe 挂出去
+（[examples/report-embed](examples/report-embed/README.md)）。
+
+不安装、只想试试分析器，可以从本仓库运行：
 
 ```bash
 git clone https://github.com/tangyishun9846/agent-runtime-map.git
@@ -66,34 +106,18 @@ npm run build
 node packages/cli/dist/cli.js examples/simple-agent --no-open
 ```
 
-打开命令输出的地址。示例项目包含四个功能电路：内容生成、多分支内容审核、知识导入，以及一个故意没有下游工作流的发布功能。检查“发布”功能时，链路会在入口爆红并停止。
-
-分析你自己的项目：
-
-```bash
-node packages/cli/dist/cli.js /你的项目绝对路径
-```
-
-npm 正式发布后可以直接运行：
-
-```bash
-npx agent-runtime-map@latest .
-```
-
-在 npm registry 发布前，也可以不克隆 Monorepo，直接从 GitHub Release 安装
-同一个已经通过发布校验的 CLI 包：
-
-```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.6.0/agent-runtime-map-0.6.0.tgz
-npx agent-runtime-map .
-```
+示例项目包含四个功能电路：内容生成、多分支内容审核、知识导入，以及一个故意
+没有下游工作流的发布功能——检查"发布"时链路会在入口爆红并停止。
 
 ## 常用命令
 
 ```text
-agent-runtime-map [项目] [选项]          分析并打开交互式 Viewer
-agent-runtime-map serve [项目] [选项]    分析并打开交互式 Viewer
-agent-runtime-map analyze [项目] [选项]  只生成 JSON
+agent-runtime-map init [项目]            创建 agent-runtime-map.config.json
+agent-runtime-map build [项目]           构建持续地图到 .agent-runtime-map/current/
+agent-runtime-map watch [项目]           持续监听并自动更新地图，同时提供 Viewer
+agent-runtime-map [项目] [选项]          一次性：分析并打开交互式 Viewer
+agent-runtime-map serve [项目] [选项]    一次性：分析并打开交互式 Viewer
+agent-runtime-map analyze [项目] [选项]  一次性：只生成 JSON
 ```
 
 常用选项：
@@ -113,30 +137,11 @@ agent-runtime-map analyze [项目] [选项]  只生成 JSON
 --semantic-model <名称> semantic 模式使用的模型（必填）
 ```
 
-输出位于 `.logic-map/`：
+`init` / `build` / `watch` 的输出位于 `.agent-runtime-map/`（见上文）；
+一次性命令的输出位于 `.logic-map/`：
 
 - `graph.json`：Viewer 使用的 Logic Graph，包含功能、路径、步骤与诊断。
 - `raw-graph.json`：详细代码事实和关系。
-
-## 给 Agent 使用
-
-任何 Agent 都可以把仓库当成一张地图来读，而不是一个文件一个文件地翻。
-
-**Agent 技能**（Claude Code / Cursor / Codex CLI / OpenCode 通用）：
-
-```bash
-npx skills add tangyishun9846/agent-runtime-map -g
-```
-
-然后对你的 Agent 说：`用 agent-runtime-map 讲讲这个仓库是怎么工作的`。技能会
-调用发布版 CLI、读取生成的 Logic Graph，并带着 `文件:行号` 证据和置信度回答——
-它自己不会编造任何拓扑。详见
-[skills/agent-runtime-map/SKILL.md](skills/agent-runtime-map/SKILL.md)。
-
-**MCP server**：支持 Model Context Protocol 的宿主可以注册内置服务器，通过
-`analyze_project`、`list_features`、`describe_feature`、`get_evidence` 四个工具
-逐层提问，每个回答都保留来源位置与置信度。详见
-[packages/mcp](packages/mcp/README.md)。
 
 ## 当前支持
 
@@ -174,3 +179,24 @@ npm run release:check
 架构、协议和 UI 组件详见 [Architecture](docs/ARCHITECTURE.md)、[Graph Schema](docs/GRAPH_SCHEMA.md)、[Visual Components](docs/VISUAL_COMPONENTS.md) 与 [Roadmap](docs/ROADMAP.md)。给 CC 继续开发用的详细交接文档见 [CC Handoff](docs/CC_HANDOFF.md)。
 
 MIT License。
+
+## 可选的 Agent 集成
+
+这些是旁路，不是主线：产品是上面那张持续更新的地图。保留它们，是为了让 Agent
+也能消费同一张有证据的图。
+
+**Agent 技能**（Claude Code / Cursor / Codex CLI / OpenCode 通用）：
+
+```bash
+npx skills add tangyishun9846/agent-runtime-map -g
+```
+
+然后对你的 Agent 说：`用 agent-runtime-map 讲讲这个仓库是怎么工作的`。技能会
+调用发布版 CLI、读取生成的 Logic Graph，并带着 `文件:行号` 证据和置信度回答——
+它自己不会编造任何拓扑。详见
+[skills/agent-runtime-map/SKILL.md](skills/agent-runtime-map/SKILL.md)。
+
+**MCP server**：支持 Model Context Protocol 的宿主可以注册内置服务器，通过
+`analyze_project`、`list_features`、`describe_feature`、`get_evidence` 四个工具
+逐层提问，每个回答都保留来源位置与置信度。详见
+[packages/mcp](packages/mcp/README.md)。

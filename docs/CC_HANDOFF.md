@@ -292,6 +292,36 @@ When adding a feature, use pure helper tests where possible. Add a server test
 for every new local endpoint or security condition. Browser QA should validate
 the visual behavior that unit tests cannot see.
 
+## 8b. Continuous map (the product's main line since 0.7.0)
+
+Direction set by the user in August 2026: the product is **installed into a
+project and keeps its map current**; Skill/MCP remain as optional agent
+integrations, deliberately last in the README.
+
+- `agent-runtime-map init` writes/completes `agent-runtime-map.config.json`
+  (`outDir`, `watch.include/exclude/debounceMs`, `history.limit`); it suggests
+  package.json scripts but never edits anything else.
+- `build`/`watch` maintain `.agent-runtime-map/current/` (graph, raw-graph,
+  manifest, status, changes, report.html + assets) and `history/<timestamp>/`.
+  Everything lives in `packages/core/src/continuous.ts`; the CLI wrapper is
+  `packages/cli/src/continuous.ts`.
+- Invariants (tested in `tests/continuous.test.ts`, browser-verified live):
+  staging → validate → atomic promote; a failed analysis only rewrites
+  `status.json` (state `failed`, reason, `lastSuccessAt`) and never touches the
+  last good map; the watcher ignores the output directory, dot-directories, and
+  build machinery, debounces ~800ms, and full-re-analyzes (correctness over
+  incrementality — v1 decision); identical builds refresh status without
+  churning current/ or history/.
+- The Viewer polls `manifest.json` (2s) and reloads on a buildId change;
+  `report.html` embeds the graph (`window.__ARM_GRAPH__`), boots the full
+  Viewer over HTTP, and degrades to an inline static summary on `file://`.
+- Embedding reference: `examples/nextjs-embed` (allow-list API route + polling
+  `<LogicMap />` panel), `examples/report-embed` (static hosting / iframe).
+- Still open: incremental analysis (only if it can be proven equivalent),
+  serving `report.html` from the CLI server (CSP forbids its inline script
+  there — deliberate), surfacing stale/failed state inside the Viewer chrome,
+  and a `changes.json` timeline view over `history/`.
+
 ## 9. High-value next work
 
 Work in this order unless product direction changes:

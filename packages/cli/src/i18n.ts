@@ -21,6 +21,18 @@ export interface CliText {
   stop: string;
   portInvalid: string;
   positiveInteger(option: string): string;
+  initCreated(file: string): string;
+  initCompleted(file: string, keys: string): string;
+  initUnchanged(file: string): string;
+  initScripts(scripts: string): string;
+  configWarning(warning: string): string;
+  buildUpdated(dir: string, buildId: string, ms: number): string;
+  buildUnchanged(buildId: string): string;
+  buildFailed(reason: string): string;
+  changesSummary(added: number, removed: number, modified: number, features: number): string;
+  watchStarted(dir: string): string;
+  watchChanges(count: number): string;
+  reportHint(file: string): string;
 }
 
 const TEXT: Record<CliLocale, CliText> = {
@@ -45,6 +57,18 @@ const TEXT: Record<CliLocale, CliText> = {
     stop: "Press Ctrl+C to stop.",
     portInvalid: "--port must be an integer between 1 and 65535",
     positiveInteger: (option) => `${option} must be a positive integer`,
+    initCreated: (file) => `Created ${file}.`,
+    initCompleted: (file, keys) => `Completed ${file} (added: ${keys}).`,
+    initUnchanged: (file) => `${file} already has every continuous-map setting; nothing changed.`,
+    initScripts: (scripts) => `Suggested package.json scripts (add them yourself if you want them):\n${scripts}`,
+    configWarning: (warning) => `Warning: ${warning}`,
+    buildUpdated: (dir, buildId, ms) => `Map updated in ${dir} (build ${buildId}, ${ms}ms).`,
+    buildUnchanged: (buildId) => `Map is already current (build ${buildId}); nothing rewritten.`,
+    buildFailed: (reason) => `Analysis failed; the last successful map was kept. Reason: ${reason}`,
+    changesSummary: (added, removed, modified, features) => `Changes: +${added} / -${removed} / ~${modified} nodes, ${features} features affected.`,
+    watchStarted: (dir) => `Watching for changes. Map: ${dir}`,
+    watchChanges: (count) => `${count} file(s) changed; rebuilding...`,
+    reportHint: (file) => `Standalone report: ${file}`,
   },
   "zh-CN": {
     analyzing: (project) => `正在分析 ${project}…`,
@@ -67,6 +91,18 @@ const TEXT: Record<CliLocale, CliText> = {
     stop: "按 Ctrl+C 停止服务。",
     portInvalid: "--port 必须是 1 到 65535 之间的整数",
     positiveInteger: (option) => `${option} 必须是正整数`,
+    initCreated: (file) => `已创建 ${file}。`,
+    initCompleted: (file, keys) => `已补全 ${file}（新增：${keys}）。`,
+    initUnchanged: (file) => `${file} 已包含全部持续地图配置，未做修改。`,
+    initScripts: (scripts) => `建议添加到 package.json 的 scripts（需要请自行添加）：\n${scripts}`,
+    configWarning: (warning) => `警告：${warning}`,
+    buildUpdated: (dir, buildId, ms) => `地图已更新：${dir}（构建 ${buildId}，耗时 ${ms}ms）。`,
+    buildUnchanged: (buildId) => `地图已是最新（构建 ${buildId}），未重写任何文件。`,
+    buildFailed: (reason) => `分析失败，已保留最后一次成功的地图。原因：${reason}`,
+    changesSummary: (added, removed, modified, features) => `变更：节点 +${added} / -${removed} / ~${modified}，${features} 个功能受影响。`,
+    watchStarted: (dir) => `正在监听变化。地图目录：${dir}`,
+    watchChanges: (count) => `检测到 ${count} 个文件变化，正在重新分析…`,
+    reportHint: (file) => `独立报告页：${file}`,
   },
 };
 
@@ -114,6 +150,9 @@ export function helpText(locale: CliLocale, version: string): string {
   agent-runtime-map [项目] [选项]          分析项目并打开交互式 Viewer
   agent-runtime-map serve [项目] [选项]    分析项目并打开交互式 Viewer
   agent-runtime-map analyze [项目] [选项]  只生成 JSON，不启动 Viewer
+  agent-runtime-map init [项目]            创建 agent-runtime-map.config.json
+  agent-runtime-map build [项目]           构建持续地图到 .agent-runtime-map/current/
+  agent-runtime-map watch [项目]           持续监听并自动更新地图，同时提供 Viewer
 
 兼容命令：logic-map
 
@@ -148,6 +187,9 @@ Usage:
   agent-runtime-map [project] [options]          Analyze and open the interactive viewer
   agent-runtime-map serve [project] [options]    Analyze and open the interactive viewer
   agent-runtime-map analyze [project] [options]  Generate JSON without starting a server
+  agent-runtime-map init [project]               Create agent-runtime-map.config.json
+  agent-runtime-map build [project]              Build the continuous map into .agent-runtime-map/current/
+  agent-runtime-map watch [project]              Watch the project, keep the map updated, and serve the viewer
 
 Alias: logic-map
 

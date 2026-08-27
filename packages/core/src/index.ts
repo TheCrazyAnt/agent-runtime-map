@@ -124,3 +124,5 @@ function mergeRawGraphs(primary: RawCodeGraph, secondary: RawCodeGraph): RawCode
     diagnostics: [...primary.diagnostics, ...secondary.diagnostics],
   };
 }
+
+export * from "./continuous.js";

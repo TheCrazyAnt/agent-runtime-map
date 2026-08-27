@@ -89,9 +89,51 @@ frames, edge-state tokens, and boundary measurement helpers for embedding the
 same map in another product. See [Visual Components](docs/VISUAL_COMPONENTS.md)
 for the component contract and integration example.
 
-## Try it
+## Install into your project
 
-From this repository:
+The primary way to use Agent Runtime Map: install it, initialize it once, and let it
+keep an up-to-date map of your project.
+
+```bash
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.7.0/agent-runtime-map-0.7.0.tgz
+npx agent-runtime-map init
+npx agent-runtime-map watch .
+```
+
+- `init` creates `agent-runtime-map.config.json` (output directory, watch
+  include/exclude, debounce) and suggests package.json scripts. It changes nothing
+  else without being asked.
+- `watch .` builds the map, opens the Viewer, and then keeps both current: every
+  change to source, README, docs, PRD, prompts, or configuration triggers a
+  debounced re-analysis, and the open Viewer refreshes itself.
+- `build .` produces the same artifacts once — for CI, or when you don't want a
+  watcher running.
+
+Every build maintains `.agent-runtime-map/`:
+
+```text
+.agent-runtime-map/
+  current/
+    graph.json       the Logic Graph (what every embedding consumes)
+    raw-graph.json   detailed code facts
+    manifest.json    buildId + file index; polling this is how views stay live
+    status.json      updated | stale | failed, with the reason and timestamps
+    changes.json     added/removed/modified nodes, edges, features; affected
+                     features; appeared/resolved diagnostics; triggering files
+    report.html      standalone interactive viewer over the embedded graph
+  history/<timestamp>/   one snapshot per successful build
+```
+
+A failed analysis never clears `current/`: the last successful map stays in place
+and `status.json` says `failed`, why, and when. A new map is staged and promoted
+atomically, so an interrupted build can leave a stale map but never a torn one.
+
+To see it in an admin backend, embed `<LogicMap />` behind two small routes
+([examples/nextjs-embed](examples/nextjs-embed/README.md)) or serve
+`current/report.html` as a static page or iframe
+([examples/report-embed](examples/report-embed/README.md)).
+
+To try the analyzer without installing anything, from this repository:
 
 ```bash
 npm ci
@@ -99,37 +141,15 @@ npm run build
 node packages/cli/dist/cli.js examples/simple-agent --no-open
 ```
 
-Open the URL printed by the command. Press `Ctrl+C` to stop the local server.
-
-The bundled example contains four feature circuits: content generation, draft review with multiple branches, knowledge import, and one intentionally incomplete publish route that demonstrates a red Chain Doctor failure.
-
-After the first npm release, another project will be able to run:
-
-```bash
-npx agent-runtime-map@latest .
-```
-
-The same CLI can be installed directly from the CI-validated GitHub Release
-artifact without cloning the monorepo:
-
-```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.6.0/agent-runtime-map-0.6.0.tgz
-npx agent-runtime-map .
-```
-
-Or install it as a development dependency:
-
-```bash
-npm install --save-dev agent-runtime-map
-npx agent-runtime-map .
-```
-
 ## CLI
 
 ```text
-agent-runtime-map [project] [options]          Analyze and open the interactive viewer
-agent-runtime-map serve [project] [options]    Analyze and open the interactive viewer
-agent-runtime-map analyze [project] [options]  Generate JSON and exit
+agent-runtime-map init [project]               Create agent-runtime-map.config.json
+agent-runtime-map build [project]              Build the continuous map into .agent-runtime-map/current/
+agent-runtime-map watch [project]              Watch, rebuild on change, and serve the live viewer
+agent-runtime-map [project] [options]          One-shot: analyze and open the interactive viewer
+agent-runtime-map serve [project] [options]    One-shot: analyze and open the interactive viewer
+agent-runtime-map analyze [project] [options]  One-shot: generate JSON and exit
 ```
 
 The shorter `logic-map` command remains available as a compatibility alias.
@@ -164,43 +184,6 @@ Agent Runtime Map follows the user's environment automatically: Chinese systems
 and browsers use Chinese, while other locales use English. Use `--locale zh-CN`
 or `--locale en` to override detection. The Viewer also includes a language
 switch. Source symbols and file evidence always retain their original spelling.
-
-## For agents
-
-The fastest path is the bundled agent skill, which works in Claude Code, Cursor,
-Codex CLI, and OpenCode:
-
-```bash
-npx skills add tangyishun9846/agent-runtime-map -g
-```
-
-Then ask your agent: `Use agent-runtime-map to explain how this repository works.`
-The skill runs the release CLI, reads the generated Logic Graph, and answers with
-`file:line` evidence and confidence — it never authors topology of its own. See
-[skills/agent-runtime-map/SKILL.md](skills/agent-runtime-map/SKILL.md).
-
-An agent can read a repository as a map instead of file by file, through the
-Model Context Protocol server:
-
-```json
-{
-  "mcpServers": {
-    "agent-runtime-map": {
-      "command": "node",
-      "args": ["/absolute/path/to/agent-runtime-map/packages/mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-Four tools — `analyze_project`, `list_features`, `describe_feature`, `get_evidence` —
-each answering one question and naming the tool that answers the next. Every answer
-keeps the source location and confidence behind each step, and nothing is written
-into the analyzed project unless asked. See
-[packages/mcp](packages/mcp/README.md).
-
-Without an agent, `agent-runtime-map analyze .` writes `.logic-map/graph.json` for
-anything that can read JSON.
 
 ## Current support
 
@@ -267,6 +250,42 @@ npm run release:check
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing analyzers or semantic rules. New inference rules must include evidence and confidence behavior.
+
+## Optional Agent Integrations
+
+These are side doors, not the main path: the product is the continuously updated
+map above. They exist so an agent can consume the same evidence-backed graph.
+
+**Agent skill** (Claude Code, Cursor, Codex CLI, OpenCode):
+
+```bash
+npx skills add tangyishun9846/agent-runtime-map -g
+```
+
+The skill runs the release CLI, reads the generated Logic Graph, and answers with
+`file:line` evidence and confidence — it never authors topology of its own. See
+[skills/agent-runtime-map/SKILL.md](skills/agent-runtime-map/SKILL.md).
+
+**MCP server** — for hosts that speak the Model Context Protocol:
+
+```json
+{
+  "mcpServers": {
+    "agent-runtime-map": {
+      "command": "node",
+      "args": ["/absolute/path/to/agent-runtime-map/packages/mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+Four tools — `analyze_project`, `list_features`, `describe_feature`, `get_evidence` —
+each answering one question and naming the tool that answers the next. Every answer
+keeps the source location and confidence behind each step. See
+[packages/mcp](packages/mcp/README.md).
+
+Without an agent, `agent-runtime-map analyze .` writes a graph for anything that can
+read JSON.
 
 ## License
 
