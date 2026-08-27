@@ -54,7 +54,7 @@
     "**/*.css"
   ],
   "dependencies": {
-    "elkjs": "^0.11.0"
+    "elkjs": "^0.12.0"
   },
   "peerDependenciesMeta": {
     "react-dom": {
