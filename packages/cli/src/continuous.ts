@@ -92,11 +92,17 @@ export async function runContinuousBuild(
 ): Promise<number> {
   const { config, warning } = await loadContinuousConfig(projectPath);
   if (warning) process.stderr.write(`${text.configWarning(warning)}\n`);
+  // Verification hook, never set by the action itself: lets CI prove the
+  // failure path (map preserved, status failed) with a genuine CLI-level failure.
+  const simulatedFailure = process.env.AGENT_RUNTIME_MAP_SIMULATE_FAILURE;
   const result = await buildContinuousMap(projectPath, config, {
     ...continuousEnvOptions(),
     analyzeOptions: options.analyzeOptions,
     toolVersion: options.toolVersion,
     viewerAssetsDir: await resolveViewerDirectory().catch(() => undefined),
+    analyze: simulatedFailure
+      ? async () => { throw new Error(`Simulated analysis failure: ${simulatedFailure}`); }
+      : undefined,
   });
   printBuildResult(result, text);
   if (result.ok && !result.unchanged) {

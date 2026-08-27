@@ -105,6 +105,95 @@ describe("cross-run continuity (what the action does between runners)", () => {
   });
 });
 
+describe("provenance without map changes", () => {
+  it("advances manifest commit on an unchanged build without rewriting the map", { timeout: 60_000 }, async () => {
+    const config = resolveContinuousConfig();
+    const root = await fixtureCopy();
+    const first = await buildContinuousMap(root, config, {
+      toolVersion: "test",
+      source: { commitSha: "commit-a", ref: "refs/heads/main", baselineRestored: false },
+    });
+    expect(first.ok).toBe(true);
+    const graphBefore = await readFile(path.join(first.currentDir, "graph.json"), "utf8");
+    const historyBefore = (await readdir(path.join(first.outDir, "history"))).length;
+
+    // Commit B changes nothing that affects the map (no file edits at all here);
+    // the analysis still ran on B, and the record must say so.
+    const second = await buildContinuousMap(root, config, {
+      trigger: ["style.css"],
+      toolVersion: "test",
+      source: { commitSha: "commit-b", ref: "refs/heads/main", baselineRestored: true },
+    });
+    expect(second.ok).toBe(true);
+    expect(second.unchanged).toBe(true);
+    expect(second.buildId).toBe(first.buildId);
+    // The map itself is untouched: no rewrite, no new history entry.
+    expect(await readFile(path.join(first.currentDir, "graph.json"), "utf8")).toBe(graphBefore);
+    expect((await readdir(path.join(first.outDir, "history"))).length).toBe(historyBefore);
+    // But provenance moved from A to B.
+    const manifest = await readArtifact<ContinuousManifest>(first.currentDir, "manifest.json");
+    expect(manifest.buildId).toBe(first.buildId);
+    expect(manifest.commit).toEqual({
+      sha: "commit-b", ref: "refs/heads/main", baselineSha: "commit-a", baselineRestored: true,
+    });
+    const status = await readArtifact<ContinuousStatus>(first.currentDir, "status.json");
+    expect(status.state).toBe("updated");
+    expect(status.trigger).toEqual(["style.css"]);
+
+    // A third build with an actual change must baseline against B, not A.
+    await writeFile(
+      path.join(root, "app/src/agents/script.ts"),
+      `${await readFile(path.join(root, "app/src/agents/script.ts"), "utf8")}\nexport const commitCAgent = { name: "Commit C", instructions: "Changes the map." };\n`,
+      "utf8",
+    );
+    const third = await buildContinuousMap(root, config, {
+      trigger: ["app/src/agents/script.ts"],
+      toolVersion: "test",
+      source: { commitSha: "commit-c", ref: "refs/heads/main", baselineRestored: true },
+    });
+    expect(third.ok).toBe(true);
+    const thirdManifest = await readArtifact<ContinuousManifest>(first.currentDir, "manifest.json");
+    expect(thirdManifest.commit?.baselineSha).toBe("commit-b");
+  });
+
+  it("records the attempted commit apart from the preserved map's commit on failure", { timeout: 60_000 }, async () => {
+    const config = resolveContinuousConfig();
+    const root = await fixtureCopy();
+    const first = await buildContinuousMap(root, config, {
+      toolVersion: "test",
+      source: { commitSha: "commit-a", ref: "refs/heads/main" },
+    });
+    expect(first.ok).toBe(true);
+
+    const failed = await buildContinuousMap(root, config, {
+      toolVersion: "test",
+      source: { commitSha: "commit-d", ref: "refs/heads/main", baselineRestored: true },
+      analyze: async () => { throw new Error("SyntaxError on commit-d"); },
+    });
+    expect(failed.ok).toBe(false);
+    const status = await readArtifact<ContinuousStatus>(first.currentDir, "status.json");
+    expect(status.state).toBe("failed");
+    expect(status.attemptedCommit).toBe("commit-d");
+    expect(status.attemptedRef).toBe("refs/heads/main");
+    const manifest = await readArtifact<ContinuousManifest>(first.currentDir, "manifest.json");
+    // The preserved map still belongs to commit-a; failure must not relabel it.
+    expect(manifest.commit?.sha).toBe("commit-a");
+
+    // And the summary shows both, distinctly.
+    const summaryFile = path.join(root, "failed-run-summary.md");
+    execFileSync("node", [path.join(REPO, "action/summary.mjs"), first.currentDir], {
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_STEP_SUMMARY: summaryFile, BUILD_OK: "false", ARTIFACT_NAME: "m" },
+    });
+    const summary = await readFile(summaryFile, "utf8");
+    expect(summary).toContain("Run commit");
+    expect(summary).toContain("commit-d");
+    expect(summary).toContain("Map commit");
+    expect(summary).toContain("commit-a");
+    expect(summary).toContain("preserved");
+  });
+});
+
 describe("artifact privacy", () => {
   it("current/ contains only map artifacts even when the project holds secrets", { timeout: 60_000 }, async () => {
     const root = await fixtureCopy();

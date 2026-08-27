@@ -49,7 +49,15 @@ lines.push("|---|---|");
 lines.push(`| Status | ${stateLabel} |`);
 if (manifest?.buildId) lines.push(`| Build | \`${manifest.buildId}\` |`);
 if (manifest?.toolVersion || status?.toolVersion) lines.push(`| Tool version | \`${manifest?.toolVersion ?? status?.toolVersion}\` |`);
-if (manifest?.commit?.sha) lines.push(`| Commit | \`${short(manifest.commit.sha)}\` |`);
+if (buildOk) {
+  if (manifest?.commit?.sha) lines.push(`| Commit | \`${short(manifest.commit.sha)}\` |`);
+} else {
+  // The failing commit and the preserved map's commit are different facts; a
+  // single "Commit" row would pin the failure on the wrong one.
+  const runSha = status?.attemptedCommit ?? process.env.RUN_SHA;
+  if (runSha) lines.push(`| Run commit | \`${short(runSha)}\` — analysis of this commit failed |`);
+  if (manifest?.commit?.sha) lines.push(`| Map commit | \`${short(manifest.commit.sha)}\` — last successful map, preserved |`);
+}
 if (manifest?.commit?.baselineSha) lines.push(`| Baseline | \`${short(manifest.commit.baselineSha)}\` (restored: ${manifest.commit.baselineRestored ? "yes" : "no"}) |`);
 else if (changes?.initial) lines.push("| Baseline | none — initial build |");
 else if (baselineRestored) lines.push("| Baseline | restored from cache |");

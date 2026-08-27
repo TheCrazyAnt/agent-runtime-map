@@ -50,10 +50,12 @@ runs:
       with:
         path: ${{ inputs.project-path }}/.agent-runtime-map/current
         key: ${{ inputs.cache-prefix }}-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
+        # Same ref first, then the repository's actual default branch. There is
+        # deliberately no bare catch-all: a baseline from an unrelated branch
+        # would fabricate a comparison.
         restore-keys: |
           ${{ inputs.cache-prefix }}-${{ github.ref }}-
-          ${{ inputs.cache-prefix }}-refs/heads/main-
-          ${{ inputs.cache-prefix }}-
+          ${{ inputs.cache-prefix }}-refs/heads/${{ github.event.repository.default_branch }}-
 
     - name: Install agent-runtime-map CLI
       id: install
@@ -84,6 +86,10 @@ runs:
         set -uo pipefail
         CURRENT="$PROJECT/.agent-runtime-map/current"
 
+        # The commit actually analyzed is the checkout's HEAD; for a normal run it
+        # equals the event SHA, and when it does not, HEAD is the truthful one.
+        RUN_SHA=$(git -C "$PROJECT" rev-parse HEAD 2>/dev/null || echo "${GITHUB_SHA:-}")
+
         # The baseline SHA is whatever the restored map says about itself.
         BASELINE_SHA=""
         if [ -f "$CURRENT/manifest.json" ]; then
@@ -94,7 +100,7 @@ runs:
         # (fetch-depth: 0 makes it reachable more often); the event name otherwise.
         TRIGGER=""
         if [ -n "$BASELINE_SHA" ] && git -C "$PROJECT" cat-file -e "$BASELINE_SHA^{commit}" 2>/dev/null; then
-          TRIGGER=$(git -C "$PROJECT" diff --name-only "$BASELINE_SHA" "$GITHUB_SHA" 2>/dev/null | head -200 || true)
+          TRIGGER=$(git -C "$PROJECT" diff --name-only "$BASELINE_SHA" "$RUN_SHA" 2>/dev/null | head -200 || true)
         fi
         if [ -z "$TRIGGER" ]; then
           if [ -z "$BASELINE_SHA" ]; then TRIGGER="initial"; else TRIGGER="${GITHUB_EVENT_NAME:-manual}"; fi
@@ -105,7 +111,7 @@ runs:
           BEFORE_ID=$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).buildId??"")}catch{console.log("")}' "$CURRENT/manifest.json")
         fi
 
-        export AGENT_RUNTIME_MAP_COMMIT_SHA="$GITHUB_SHA"
+        export AGENT_RUNTIME_MAP_COMMIT_SHA="$RUN_SHA"
         export AGENT_RUNTIME_MAP_REF="$GITHUB_REF"
         export AGENT_RUNTIME_MAP_BASELINE_RESTORED="$BASELINE_RESTORED"
         export AGENT_RUNTIME_MAP_TRIGGER="$TRIGGER"
@@ -125,6 +131,7 @@ runs:
           echo "ok=$([ "$EXIT" = "0" ] && echo true || echo false)"
           echo "unchanged=$([ "$EXIT" = "0" ] && [ -n "$BEFORE_ID" ] && [ "$BEFORE_ID" = "$AFTER_ID" ] && echo true || echo false)"
           echo "baseline-sha=$BASELINE_SHA"
+          echo "run-sha=$RUN_SHA"
         } >> "$GITHUB_OUTPUT"
 
     # The artifact is gated on this: nothing uploads unless the output directory
@@ -146,6 +153,7 @@ runs:
         BUILD_OK: ${{ steps.build.outputs.ok }}
         BUILD_UNCHANGED: ${{ steps.build.outputs.unchanged }}
         BASELINE_RESTORED: ${{ steps.restore.outputs.cache-matched-key != '' }}
+        RUN_SHA: ${{ steps.build.outputs.run-sha }}
         UPLOAD_ENABLED: ${{ inputs.upload-artifact }}
       run: node "$GITHUB_ACTION_PATH/action/summary.mjs" "$PROJECT/.agent-runtime-map/current"
 
