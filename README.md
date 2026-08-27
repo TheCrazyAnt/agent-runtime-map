@@ -96,7 +96,7 @@ workflow it generates — and from then on every push and pull request rebuilds 
 map on GitHub automatically.
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz
+npm install --save-dev https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz
 npx agent-runtime-map init --github
 git add agent-runtime-map.config.json .github/workflows/agent-runtime-map.yml
 git commit -m "Add Agent Runtime Map"
@@ -116,7 +116,7 @@ That's the whole setup. Afterwards:
   [examples/nextjs-embed](examples/nextjs-embed/README.md) and
   [examples/report-embed](examples/report-embed/README.md).
 
-The generated workflow references `tangyishun9846/agent-runtime-map@v1`: `v1`
+The generated workflow references `TheCrazyAnt/agent-runtime-map@v1`: `v1`
 receives backward-compatible features and fixes only, so the map improves without
 you editing the workflow — breaking changes ship as `v2`, and the exact tool
 version behind every build is recorded in its `manifest.json` and `status.json`.
@@ -288,7 +288,7 @@ map above. They exist so an agent can consume the same evidence-backed graph.
 **Agent skill** (Claude Code, Cursor, Codex CLI, OpenCode):
 
 ```bash
-npx skills add tangyishun9846/agent-runtime-map -g
+npx skills add TheCrazyAnt/agent-runtime-map -g
 ```
 
 The skill runs the release CLI, reads the generated Logic Graph, and answers with

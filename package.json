@@ -3,13 +3,13 @@
   "version": "0.8.0",
   "private": true,
   "description": "Turn your codebase into an evidence-backed Agent Runtime Map.",
-  "homepage": "https://github.com/tangyishun9846/agent-runtime-map#readme",
+  "homepage": "https://github.com/TheCrazyAnt/agent-runtime-map#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tangyishun9846/agent-runtime-map.git"
+    "url": "git+https://github.com/TheCrazyAnt/agent-runtime-map.git"
   },
   "bugs": {
-    "url": "https://github.com/tangyishun9846/agent-runtime-map/issues"
+    "url": "https://github.com/TheCrazyAnt/agent-runtime-map/issues"
   },
   "type": "module",
   "workspaces": [

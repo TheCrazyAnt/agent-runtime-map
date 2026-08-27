@@ -69,3 +69,21 @@ if (Object.keys(mcpManifest.dependencies ?? {}).some((name) => name.startsWith("
 process.stdout.write(`MCP package check passed: ${mcpReport.filename}, ${mcpReport.size} bytes, ${mcpReport.entryCount} files.\n`);
 
 process.stdout.write(`Component package check passed: ${componentReport.filename}, ${componentReport.size} bytes, ${componentReport.entryCount} files.\n`);
+
+// The repository moved to its canonical owner; the retired slug must never
+// reappear in anything a user copies, installs, or that GitHub resolves as an
+// action reference. Redirects work for browsers, not for a published identity.
+{
+  const { execFileSync } = await import("node:child_process");
+  const RETIRED_SLUG = ["tangyishun9846", "agent-runtime-map"].join("/");
+  const tracked = execFileSync("git", ["ls-files"], { encoding: "utf8" }).trim().split("\n");
+  const offenders = [];
+  for (const file of tracked) {
+    const contents = await readFile(new URL(`../${file}`, import.meta.url), "utf8").catch(() => "");
+    if (contents.includes(RETIRED_SLUG)) offenders.push(file);
+  }
+  if (offenders.length) {
+    throw new Error(`Retired repository slug "${RETIRED_SLUG}" found in: ${offenders.join(", ")}`);
+  }
+  process.stdout.write("Repository identity check passed: no retired slug in tracked files.\n");
+}

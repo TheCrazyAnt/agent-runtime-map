@@ -3,7 +3,7 @@ description: >-
   Build an evidence-backed runtime map of this repository, publish it as a private
   artifact, and summarize what changed. Never executes the analyzed project, never
   uploads source or secrets, never commits to your branch.
-author: "tangyishun9846"
+author: "TheCrazyAnt"
 branding:
   icon: "map"
   color: "blue"
@@ -68,7 +68,7 @@ runs:
         if [ -n "$CLI_TARBALL" ]; then
           SOURCE="$CLI_TARBALL"
         else
-          SOURCE="https://github.com/tangyishun9846/agent-runtime-map/releases/download/v${CLI_VERSION}/agent-runtime-map-${CLI_VERSION}.tgz"
+          SOURCE="https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v${CLI_VERSION}/agent-runtime-map-${CLI_VERSION}.tgz"
         fi
         DIR="$RUNNER_TEMP/agent-runtime-map-cli"
         mkdir -p "$DIR"

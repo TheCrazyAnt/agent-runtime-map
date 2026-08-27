@@ -40,7 +40,7 @@ describe("the generated workflow", () => {
     const concurrency = parsed.concurrency as { "cancel-in-progress": boolean };
     expect(concurrency["cancel-in-progress"]).toBe(true);
     const jobs = parsed.jobs as { map: { steps: Array<{ uses?: string; with?: Record<string, unknown> }> } };
-    expect(jobs.map.steps.some((step) => step.uses === "tangyishun9846/agent-runtime-map@v1")).toBe(true);
+    expect(jobs.map.steps.some((step) => step.uses === "TheCrazyAnt/agent-runtime-map@v1")).toBe(true);
     // Full history keeps the baseline commit reachable for real trigger paths.
     const checkout = jobs.map.steps.find((step) => step.uses?.startsWith("actions/checkout"));
     expect(checkout?.with?.["fetch-depth"]).toBe(0);
@@ -72,7 +72,36 @@ describe("the generated workflow", () => {
       expect(await detectDefaultBranch(root)).toBe(branch);
       const result = await initGithubWorkflow(root);
       expect(result.defaultBranch).toBe(branch);
-      expect(await readFile(result.workflowFile, "utf8")).toContain(`branches: [${branch}]`);
+      const workflow = parseYaml(await readFile(result.workflowFile, "utf8")) as Record<string, unknown>;
+      const on = (workflow.on ?? workflow[true as unknown as string]) as { push: { branches: string[] } };
+      expect(on.push.branches).toEqual([branch]);
+    }
+  });
+
+  it("refuses to guess from a feature branch when an origin exists without a recorded HEAD", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const { detectDefaultBranch } = await import("@agent-runtime-map/core");
+    const root = await tempRoot();
+    execFileSync("git", ["-C", root, "init", "-q", "-b", "feat/foo"]);
+    execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x"]);
+    // An origin exists, but origin/HEAD was never recorded (no fetch of HEAD).
+    execFileSync("git", ["-C", root, "remote", "add", "origin", "https://example.invalid/repo.git"]);
+    expect(await detectDefaultBranch(root)).toBeUndefined();
+    // And the workflow therefore builds on every push instead of pinning feat/foo.
+    const result = await initGithubWorkflow(root);
+    expect(result.defaultBranch).toBeUndefined();
+    const workflow = parseYaml(await readFile(result.workflowFile, "utf8")) as Record<string, unknown>;
+    const on = (workflow.on ?? workflow[true as unknown as string]) as { push: unknown };
+    expect(on.push).toBeNull();
+  });
+
+  it("quotes branch names so legal Git characters cannot break the YAML array", () => {
+    for (const branch of ["weird,branch", "release/1.0", "a'b", 'quo"te']) {
+      const template = githubWorkflowTemplate({ defaultBranch: branch });
+      const parsed = parseYaml(template) as Record<string, unknown>;
+      const on = (parsed.on ?? parsed[true as unknown as string]) as { push: { branches: string[] } };
+      expect(on.push.branches).toEqual([branch]);
+      expect(isGeneratedWorkflow(template)).toBe(true);
     }
   });
 

@@ -62,7 +62,7 @@ Viewer 采用开源的工程蓝图视觉系统：细密网格画布、图标型�
 Request 都会在 GitHub 上自动重建地图。
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz
+npm install --save-dev https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz
 npx agent-runtime-map init --github
 git add agent-runtime-map.config.json .github/workflows/agent-runtime-map.yml
 git commit -m "Add Agent Runtime Map"
@@ -80,7 +80,7 @@ git commit -m "Add Agent Runtime Map"
   [examples/nextjs-embed](examples/nextjs-embed/README.md) 和
   [examples/report-embed](examples/report-embed/README.md)。
 
-生成的 workflow 引用 `tangyishun9846/agent-runtime-map@v1`：`v1` 只接收向后兼容
+生成的 workflow 引用 `TheCrazyAnt/agent-runtime-map@v1`：`v1` 只接收向后兼容
 的功能与修复，地图会自动变好而无需你改 workflow——破坏性变化只会以 `v2` 发布，
 且每次构建使用的精确工具版本都记录在 `manifest.json` 和 `status.json` 里。对供应
 链安全要求最高的组织可以把 action 固定到完整 commit SHA，代价是不再自动升级。
@@ -124,7 +124,7 @@ npx agent-runtime-map watch .
 不安装、只想试试分析器，可以从本仓库运行：
 
 ```bash
-git clone https://github.com/tangyishun9846/agent-runtime-map.git
+git clone https://github.com/TheCrazyAnt/agent-runtime-map.git
 cd agent-runtime-map
 npm ci
 npm run build
@@ -214,7 +214,7 @@ MIT License。
 **Agent 技能**（Claude Code / Cursor / Codex CLI / OpenCode 通用）：
 
 ```bash
-npx skills add tangyishun9846/agent-runtime-map -g
+npx skills add TheCrazyAnt/agent-runtime-map -g
 ```
 
 然后对你的 Agent 说：`用 agent-runtime-map 讲讲这个仓库是怎么工作的`。技能会
