@@ -12,7 +12,7 @@ import {
   type CliText,
 } from "./i18n.js";
 
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
 
 export async function run(argv = process.argv.slice(2)): Promise<number> {
   const requestedLocale = localeArgument(argv);
@@ -44,6 +44,8 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
         port: { type: "string", short: "p" },
         host: { type: "string" },
         "no-open": { type: "boolean" },
+        github: { type: "boolean" },
+        force: { type: "boolean" },
         debug: { type: "boolean" },
       },
     });
@@ -111,7 +113,16 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
 
   if (command === "init" || command === "build" || command === "watch") {
     try {
-      if (command === "init") return await runInit(projectPath, text);
+      if (command === "init") {
+        return await runInit(projectPath, text, {
+          github: Boolean(parsed.values.github),
+          force: Boolean(parsed.values.force),
+        });
+      }
+      if (parsed.values.force || parsed.values.github) {
+        process.stderr.write(`agent-runtime-map: ${text.forceRequiresGithub}\n`);
+        return 1;
+      }
       process.stdout.write(`${text.analyzing(projectPath)}\n`);
       const continuousOptions = {
         analyzeOptions,

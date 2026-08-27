@@ -1,15 +1,15 @@
 {
   "name": "agent-runtime-map",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Inspect every Agent feature as an evidence-backed, step-through execution circuit.",
-  "homepage": "https://github.com/tangyishun9846/agent-runtime-map#readme",
+  "homepage": "https://github.com/TheCrazyAnt/agent-runtime-map#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tangyishun9846/agent-runtime-map.git",
+    "url": "git+https://github.com/TheCrazyAnt/agent-runtime-map.git",
     "directory": "packages/cli"
   },
   "bugs": {
-    "url": "https://github.com/tangyishun9846/agent-runtime-map/issues"
+    "url": "https://github.com/TheCrazyAnt/agent-runtime-map/issues"
   },
   "type": "module",
   "bin": {

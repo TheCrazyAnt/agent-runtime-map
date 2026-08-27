@@ -33,6 +33,13 @@ export interface CliText {
   watchStarted(dir: string): string;
   watchChanges(count: number): string;
   reportHint(file: string): string;
+  githubWorkflowCreated(file: string): string;
+  githubWorkflowUpdated(file: string): string;
+  githubWorkflowOverwritten(file: string): string;
+  githubWorkflowUnchanged(file: string): string;
+  githubWorkflowModified(file: string): string;
+  githubNextSteps: string;
+  forceRequiresGithub: string;
 }
 
 const TEXT: Record<CliLocale, CliText> = {
@@ -69,6 +76,13 @@ const TEXT: Record<CliLocale, CliText> = {
     watchStarted: (dir) => `Watching for changes. Map: ${dir}`,
     watchChanges: (count) => `${count} file(s) changed; rebuilding...`,
     reportHint: (file) => `Standalone report: ${file}`,
+    githubWorkflowCreated: (file) => `Created ${file}.`,
+    githubWorkflowUpdated: (file) => `Updated ${file} (it was an unmodified generated file).`,
+    githubWorkflowOverwritten: (file) => `Overwrote ${file} as requested by --force; your previous edits to it are gone.`,
+    githubWorkflowUnchanged: (file) => `${file} is already current; nothing changed.`,
+    githubWorkflowModified: (file) => `${file} exists and has local modifications, so it was NOT touched. Re-run with --force to overwrite it.`,
+    githubNextSteps: `Next: commit agent-runtime-map.config.json and .github/workflows/agent-runtime-map.yml.\nEvery push, pull request, and a weekly schedule will then rebuild the map on GitHub:\nthe run's Summary shows what changed, and the full map (report.html) is attached as an artifact.`,
+    forceRequiresGithub: "--force is only meaningful together with init --github",
   },
   "zh-CN": {
     analyzing: (project) => `正在分析 ${project}…`,
@@ -103,6 +117,13 @@ const TEXT: Record<CliLocale, CliText> = {
     watchStarted: (dir) => `正在监听变化。地图目录：${dir}`,
     watchChanges: (count) => `检测到 ${count} 个文件变化，正在重新分析…`,
     reportHint: (file) => `独立报告页：${file}`,
+    githubWorkflowCreated: (file) => `已创建 ${file}。`,
+    githubWorkflowUpdated: (file) => `已更新 ${file}（原文件是未经修改的生成文件）。`,
+    githubWorkflowOverwritten: (file) => `已按 --force 要求覆盖 ${file}；你之前对它的修改已被丢弃。`,
+    githubWorkflowUnchanged: (file) => `${file} 已是最新，未做修改。`,
+    githubWorkflowModified: (file) => `${file} 已存在且包含你的手动修改，因此没有改动它。如需覆盖，请使用 --force 重新执行。`,
+    githubNextSteps: `下一步：提交 agent-runtime-map.config.json 和 .github/workflows/agent-runtime-map.yml。\n之后每次 push、Pull Request 以及每周一次的定时任务都会在 GitHub 上自动重建地图：\n运行的 Summary 会显示变更摘要，完整地图（report.html）会作为 artifact 附在运行结果里。`,
+    forceRequiresGithub: "--force 只能与 init --github 一起使用",
   },
 };
 
@@ -151,6 +172,7 @@ export function helpText(locale: CliLocale, version: string): string {
   agent-runtime-map serve [项目] [选项]    分析项目并打开交互式 Viewer
   agent-runtime-map analyze [项目] [选项]  只生成 JSON，不启动 Viewer
   agent-runtime-map init [项目]            创建 agent-runtime-map.config.json
+  agent-runtime-map init --github [项目]   同时生成 GitHub Actions workflow，push 后自动更新地图
   agent-runtime-map build [项目]           构建持续地图到 .agent-runtime-map/current/
   agent-runtime-map watch [项目]           持续监听并自动更新地图，同时提供 Viewer
 
@@ -188,6 +210,7 @@ Usage:
   agent-runtime-map serve [project] [options]    Analyze and open the interactive viewer
   agent-runtime-map analyze [project] [options]  Generate JSON without starting a server
   agent-runtime-map init [project]               Create agent-runtime-map.config.json
+  agent-runtime-map init --github [project]      Also generate the GitHub Actions workflow for automatic updates
   agent-runtime-map build [project]              Build the continuous map into .agent-runtime-map/current/
   agent-runtime-map watch [project]              Watch the project, keep the map updated, and serve the viewer
 

@@ -3,8 +3,8 @@ name: agent-runtime-map
 description: Read a TypeScript, JavaScript, or Python repository as an evidence-backed runtime map instead of file by file. Deterministic AST analysis extracts routes, agents, workflows, tools, models, data stores, and external services, compiles them into feature circuits, and keeps a source location and confidence score behind every node and edge — the analyzer builds the topology, so the map cannot contain a connection the code does not have. Use when the user asks how an agent codebase works, which features a repository implements, what a route or workflow actually calls, where a chain is broken or unverified, or for an interactive architecture map grounded in real code rather than authored from a description.
 license: MIT
 metadata:
-  version: "0.7"
-  author: tangyishun9846
+  version: "0.8"
+  author: TheCrazyAnt
 ---
 
 # Agent Runtime Map
@@ -31,7 +31,7 @@ compiler-grade tooling (ts-morph for TypeScript/JavaScript, Python's own `ast`
 for Python), never executes the analyzed project, and never uploads source.
 
 ```bash
-npx --yes https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.7.0/agent-runtime-map-0.7.0.tgz analyze <project-path> -o /tmp/arm-graph.json --no-raw
+npx --yes https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz analyze <project-path> -o /tmp/arm-graph.json --no-raw
 ```
 
 Use an absolute `<project-path>`. Writing the graph to a temporary path keeps
@@ -76,7 +76,7 @@ For an interactive viewer (feature list, step-through playback, evidence
 drawer, focus mode, Chinese/English UI):
 
 ```bash
-npx --yes https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.7.0/agent-runtime-map-0.7.0.tgz <project-path>
+npx --yes https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz <project-path>
 ```
 
 It serves on localhost and opens a browser. Playback is a static simulation of

@@ -56,21 +56,51 @@ Viewer 采用开源的工程蓝图视觉系统：细密网格画布、图标型�
 后台可以复用节点、分区边框、链路状态 token 和自动边界计算工具。组件接口和
 嵌入示例见 [Visual Components](docs/VISUAL_COMPONENTS.md)。
 
-## 安装到项目（主路径）
+## 一次设置，GitHub 持续更新（主路径）
 
-把 Agent Runtime Map 装进你的项目，初始化一次，然后让它持续维护一张最新的地图：
+主用法：安装、执行一次 init、提交它生成的 workflow——之后每次 push 和 Pull
+Request 都会在 GitHub 上自动重建地图。
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.7.0/agent-runtime-map-0.7.0.tgz
-npx agent-runtime-map init
+npm install --save-dev https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz
+npx agent-runtime-map init --github
+git add agent-runtime-map.config.json .github/workflows/agent-runtime-map.yml
+git commit -m "Add Agent Runtime Map"
+```
+
+设置到此为止。之后：
+
+- **每次 push 和 PR** 自动重新分析并重建地图；每周一次的定时任务保证即使近期
+  没有提交，发布的兼容改进也会让仓库自动重建一次。
+- **运行的 Step Summary** 显示地图状态、节点/边/功能的增删改、受影响的功能、
+  新增或消失的诊断，以及触发本次更新的文件。
+- **完整地图**（含独立交互式 `report.html`）作为私有 artifact 附在运行结果里。
+  不会向你的分支提交任何内容，默认也不会公开发布到任何地方。
+- **自己的后台**照常嵌入同一套产物：见
+  [examples/nextjs-embed](examples/nextjs-embed/README.md) 和
+  [examples/report-embed](examples/report-embed/README.md)。
+
+生成的 workflow 引用 `TheCrazyAnt/agent-runtime-map@v1`：`v1` 只接收向后兼容
+的功能与修复，地图会自动变好而无需你改 workflow——破坏性变化只会以 `v2` 发布，
+且每次构建使用的精确工具版本都记录在 `manifest.json` 和 `status.json` 里。对供应
+链安全要求最高的组织可以把 action 固定到完整 commit SHA，代价是不再自动升级。
+Action 只使用官方 `actions/*` 组件，权限只需 `contents: read`，不执行被分析的
+项目，不上传源码、环境变量或密钥——上传前会校验 artifact 里只有地图文件。想要
+公开地图的团队可以显式配置 `publish: pages`，启用时会收到明确警告：地图会暴露
+项目内部逻辑。
+
+## 本地开发：watch 模式
+
+改代码时本地 watcher 比等 CI 快：
+
+```bash
+npx agent-runtime-map init      # 如果还没执行过
 npx agent-runtime-map watch .
 ```
 
-- `init` 创建 `agent-runtime-map.config.json`（输出目录、watch include/exclude、
-  防抖时间），并给出 package.json scripts 建议；除此之外不改任何文件。
 - `watch .` 先构建地图并打开 Viewer，然后持续监听：源码、README、docs、PRD、
   Prompt、配置的任何变化都会触发防抖后的重新分析，打开着的 Viewer 会自动刷新。
-- `build .` 一次性产出同样的文件，适合 CI 或不想挂 watcher 的场合。
+- `build .` 一次性产出同样的文件。
 
 每次构建维护 `.agent-runtime-map/`：
 
@@ -91,15 +121,10 @@ npx agent-runtime-map watch .
 `failed` 并说明原因和时间。新地图先写入 staging，再原子替换，中断只会留下一张
 "旧"地图，不会留下一张"坏"地图。
 
-想在后台管理页看到它：用两个小路由嵌入 `<LogicMap />`
-（[examples/nextjs-embed](examples/nextjs-embed/README.md)），或把
-`current/report.html` 当静态页 / iframe 挂出去
-（[examples/report-embed](examples/report-embed/README.md)）。
-
 不安装、只想试试分析器，可以从本仓库运行：
 
 ```bash
-git clone https://github.com/tangyishun9846/agent-runtime-map.git
+git clone https://github.com/TheCrazyAnt/agent-runtime-map.git
 cd agent-runtime-map
 npm ci
 npm run build
@@ -113,6 +138,7 @@ node packages/cli/dist/cli.js examples/simple-agent --no-open
 
 ```text
 agent-runtime-map init [项目]            创建 agent-runtime-map.config.json
+agent-runtime-map init --github [项目]   同时生成 GitHub Actions workflow（--force 可覆盖你的修改）
 agent-runtime-map build [项目]           构建持续地图到 .agent-runtime-map/current/
 agent-runtime-map watch [项目]           持续监听并自动更新地图，同时提供 Viewer
 agent-runtime-map [项目] [选项]          一次性：分析并打开交互式 Viewer
@@ -188,7 +214,7 @@ MIT License。
 **Agent 技能**（Claude Code / Cursor / Codex CLI / OpenCode 通用）：
 
 ```bash
-npx skills add tangyishun9846/agent-runtime-map -g
+npx skills add TheCrazyAnt/agent-runtime-map -g
 ```
 
 然后对你的 Agent 说：`用 agent-runtime-map 讲讲这个仓库是怎么工作的`。技能会

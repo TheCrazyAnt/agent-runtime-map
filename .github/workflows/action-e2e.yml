@@ -1,0 +1,276 @@
+# Exercises the real composite action end to end on the bundled fixture:
+# an initial build with no baseline, then a second run that restores the first
+# map from cache, sees a code change, and reports a non-initial diff.
+name: Action E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: cd packages/cli && npm pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e2e-cli-tarball
+          path: packages/cli/agent-runtime-map-*.tgz
+          retention-days: 1
+
+  map-initial:
+    needs: build-cli
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-cli-tarball
+          path: ${{ runner.temp }}/tarball
+      - name: Run the action (no baseline exists)
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-map-initial
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cache-prefix: e2e-${{ github.run_id }}
+      - name: Assert initial build semantics
+        run: |
+          node - <<'EOF'
+          const { readFileSync, existsSync } = require("node:fs");
+          const dir = "examples/simple-agent/.agent-runtime-map/current";
+          const read = (f) => JSON.parse(readFileSync(`${dir}/${f}`, "utf8"));
+          const changes = read("changes.json"), manifest = read("manifest.json"), status = read("status.json");
+          const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); process.exit(1); } };
+          assert(changes.initial === true, "first build must be initial");
+          assert(changes.trigger.includes("initial"), `trigger must say initial, got ${JSON.stringify(changes.trigger)}`);
+          assert(manifest.commit.sha === process.env.GITHUB_SHA, "manifest must record this commit");
+          assert(manifest.commit.baselineSha === undefined, "no baseline SHA may be invented");
+          assert(manifest.commit.baselineRestored === false, "baseline must be marked not restored");
+          assert(status.state === "updated", "status must be updated");
+          assert(status.toolVersion === "0.8.0", `toolVersion recorded, got ${status.toolVersion}`);
+          assert(existsSync(`${dir}/report.html`), "report.html must exist");
+          console.log("initial build OK:", manifest.buildId);
+          EOF
+      - name: Assert nothing was committed
+        run: |
+          test "$(git log -1 --format=%H)" = "$GITHUB_SHA"
+          git diff --quiet && git diff --cached --quiet
+
+  map-update:
+    needs: map-initial
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-cli-tarball
+          path: ${{ runner.temp }}/tarball
+      - name: Change the fixture's code (uncommitted, like a PR diff)
+        run: |
+          printf '\nexport const e2eProbeAgent = { name: "E2E Probe", instructions: "Added by the action E2E run." };\n' \
+            >> examples/simple-agent/app/src/agents/script.ts
+      - name: Run the action (baseline restored from the previous job)
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-map-updated
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cache-prefix: e2e-${{ github.run_id }}
+      - name: Assert continuity semantics
+        run: |
+          node - <<'EOF'
+          const { readFileSync } = require("node:fs");
+          const dir = "examples/simple-agent/.agent-runtime-map/current";
+          const read = (f) => JSON.parse(readFileSync(`${dir}/${f}`, "utf8"));
+          const changes = read("changes.json"), manifest = read("manifest.json");
+          const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); process.exit(1); } };
+          assert(changes.initial === false, "restored baseline must make this a non-initial build");
+          assert(changes.previousBuildId && changes.previousBuildId !== changes.buildId, "previous buildId must be recorded");
+          assert(changes.nodes.added.length >= 1, "the new agent must appear as an added node");
+          assert(manifest.commit.baselineSha === process.env.GITHUB_SHA, "baseline SHA must come from the restored manifest");
+          assert(manifest.commit.baselineRestored === true, "baseline must be marked restored");
+          console.log("continuity OK:", changes.previousBuildId, "->", changes.buildId,
+            "added:", changes.nodes.added.map((n) => n.label).join(", "));
+          EOF
+      - name: Assert nothing was committed
+        run: |
+          test "$(git log -1 --format=%H)" = "$GITHUB_SHA"
+          git diff --cached --quiet
+          # The only working-tree change is the probe edit this job made itself.
+          test "$(git status --porcelain | grep -v '^??' )" = " M examples/simple-agent/app/src/agents/script.ts"
+
+  # Real Git semantics: four true commits (A baseline, B code change, C map-neutral
+  # change, D failing analysis) prove provenance advances correctly across commits.
+  map-git-history:
+    needs: build-cli
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-cli-tarball
+          path: ${{ runner.temp }}/tarball
+      - name: Prepare local commits
+        id: commits
+        run: |
+          git config user.email "e2e@example.invalid"
+          git config user.name "E2E"
+          echo "sha-a=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: "Commit A: initial map"
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-git-a
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cache-prefix: e2e-git-${{ github.run_id }}
+
+      - name: "Commit B: real code change, committed"
+        id: commit-b
+        run: |
+          printf '\nexport const commitBAgent = { name: "Commit B", instructions: "A real committed change." };\n' \
+            >> examples/simple-agent/app/src/agents/script.ts
+          git add examples/simple-agent/app/src/agents/script.ts
+          git commit -q -m "e2e: commit B"
+          echo "sha-b=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          rm -rf examples/simple-agent/.agent-runtime-map
+
+      - name: "Commit B: rebuild against restored baseline A"
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-git-b
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cache-prefix: e2e-git-${{ github.run_id }}
+
+      - name: "Assert B: cross-commit provenance and real trigger paths"
+        env:
+          SHA_A: ${{ steps.commits.outputs.sha-a }}
+          SHA_B: ${{ steps.commit-b.outputs.sha-b }}
+        run: |
+          node - <<'EOF'
+          const { readFileSync } = require("node:fs");
+          const dir = "examples/simple-agent/.agent-runtime-map/current";
+          const read = (f) => JSON.parse(readFileSync(`${dir}/${f}`, "utf8"));
+          const changes = read("changes.json"), manifest = read("manifest.json");
+          const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); process.exit(1); } };
+          assert(manifest.commit.sha === process.env.SHA_B, `map commit must be B, got ${manifest.commit.sha}`);
+          assert(manifest.commit.baselineSha === process.env.SHA_A, `baseline must be A, got ${manifest.commit.baselineSha}`);
+          assert(manifest.commit.sha !== manifest.commit.baselineSha, "commit and baseline must differ");
+          assert(manifest.commit.baselineRestored === true, "baseline must be restored");
+          assert(changes.initial === false, "must not be initial");
+          assert(changes.trigger.includes("app/src/agents/script.ts"), `trigger must name the real file, got ${JSON.stringify(changes.trigger)}`);
+          assert(changes.nodes.added.length >= 1, "commit B agent must appear");
+          console.log("B OK:", manifest.commit.baselineSha.slice(0,10), "->", manifest.commit.sha.slice(0,10),
+            "trigger:", changes.trigger.join(","));
+          EOF
+
+      - name: "Commit C: map-neutral change, committed"
+        id: commit-c
+        run: |
+          echo "body { color: inherit; }" > examples/simple-agent/style.css
+          git add examples/simple-agent/style.css
+          git commit -q -m "e2e: commit C (does not affect the map)"
+          echo "sha-c=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          rm -rf examples/simple-agent/.agent-runtime-map
+
+      - name: "Commit C: rebuild — map unchanged, provenance must advance"
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-git-c
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cache-prefix: e2e-git-${{ github.run_id }}
+
+      - name: "Assert C: unchanged buildId, advanced commit"
+        env:
+          SHA_B: ${{ steps.commit-b.outputs.sha-b }}
+          SHA_C: ${{ steps.commit-c.outputs.sha-c }}
+        run: |
+          node - <<'EOF'
+          const { readFileSync } = require("node:fs");
+          const dir = "examples/simple-agent/.agent-runtime-map/current";
+          const read = (f) => JSON.parse(readFileSync(`${dir}/${f}`, "utf8"));
+          const manifest = read("manifest.json"), changes = read("changes.json"), status = read("status.json");
+          const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); process.exit(1); } };
+          assert(manifest.buildId === changes.buildId, "map content must be the one commit B produced");
+          assert(manifest.commit.sha === process.env.SHA_C, `manifest commit must advance to C, got ${manifest.commit.sha}`);
+          assert(manifest.commit.baselineSha === process.env.SHA_B, `baseline must advance to B, got ${manifest.commit.baselineSha}`);
+          assert(status.state === "updated", "status must record the successful run");
+          console.log("C OK: buildId", manifest.buildId, "commit", manifest.commit.sha.slice(0,10),
+            "baseline", manifest.commit.baselineSha.slice(0,10));
+          EOF
+
+      - name: "Commit D: committed change whose analysis fails"
+        id: commit-d
+        run: |
+          printf '\nexport const commitDAgent = { name: "Commit D", instructions: "This commit will fail analysis." };\n' \
+            >> examples/simple-agent/app/src/agents/script.ts
+          git add examples/simple-agent/app/src/agents/script.ts
+          git commit -q -m "e2e: commit D"
+          echo "sha-d=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          rm -rf examples/simple-agent/.agent-runtime-map
+          echo "AGENT_RUNTIME_MAP_SIMULATE_FAILURE=commit D verification" >> "$GITHUB_ENV"
+
+      - name: "Commit D: run must fail but preserve commit C's map"
+        id: run-d
+        continue-on-error: true
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-git-d
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cache-prefix: e2e-git-${{ github.run_id }}
+
+      - name: "Assert D: failed run, preserved map, distinct commits"
+        env:
+          SHA_C: ${{ steps.commit-c.outputs.sha-c }}
+          SHA_D: ${{ steps.commit-d.outputs.sha-d }}
+          RUN_D_OUTCOME: ${{ steps.run-d.outcome }}
+        run: |
+          test "$RUN_D_OUTCOME" = "failure"
+          node - <<'EOF'
+          const { readFileSync } = require("node:fs");
+          const dir = "examples/simple-agent/.agent-runtime-map/current";
+          const read = (f) => JSON.parse(readFileSync(`${dir}/${f}`, "utf8"));
+          const manifest = read("manifest.json"), status = read("status.json");
+          const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); process.exit(1); } };
+          assert(status.state === "failed", "status must be failed");
+          assert(status.attemptedCommit === process.env.SHA_D, `attempted commit must be D, got ${status.attemptedCommit}`);
+          assert(manifest.commit.sha === process.env.SHA_C, `map commit must stay C, got ${manifest.commit.sha}`);
+          assert(status.error.message.includes("Simulated analysis failure"), "failure reason recorded");
+          console.log("D OK: run", status.attemptedCommit.slice(0,10), "map", manifest.commit.sha.slice(0,10));
+          EOF
+          # Each step gets its own GITHUB_STEP_SUMMARY file, so verify the summary
+          # by rendering it from the same artifacts the action's summary step read.
+          GITHUB_STEP_SUMMARY= BUILD_OK=false node action/summary.mjs examples/simple-agent/.agent-runtime-map/current > d-summary.md
+          grep -q "Run commit" d-summary.md
+          grep -q "Map commit" d-summary.md
+          grep -q "preserved" d-summary.md
+          cat d-summary.md
+
+      - name: Assert the action itself staged and pushed nothing
+        run: |
+          # The three commits above were made by this job on purpose; beyond them
+          # the working tree and index must be clean, and no push ever happened
+          # (the job has contents: read, so a push would have failed loudly).
+          test -z "$(git status --porcelain | grep -v '^??')"

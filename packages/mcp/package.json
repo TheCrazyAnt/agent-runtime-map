@@ -2,14 +2,14 @@
   "name": "@agent-runtime-map/mcp",
   "version": "0.7.0",
   "description": "Model Context Protocol server exposing the Agent Runtime Map to any agent.",
-  "homepage": "https://github.com/tangyishun9846/agent-runtime-map/tree/main/packages/mcp#readme",
+  "homepage": "https://github.com/TheCrazyAnt/agent-runtime-map/tree/main/packages/mcp#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tangyishun9846/agent-runtime-map.git",
+    "url": "git+https://github.com/TheCrazyAnt/agent-runtime-map.git",
     "directory": "packages/mcp"
   },
   "bugs": {
-    "url": "https://github.com/tangyishun9846/agent-runtime-map/issues"
+    "url": "https://github.com/TheCrazyAnt/agent-runtime-map/issues"
   },
   "type": "module",
   "bin": {

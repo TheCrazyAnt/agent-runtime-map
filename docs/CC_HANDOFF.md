@@ -322,6 +322,37 @@ integrations, deliberately last in the README.
   there — deliberate), surfacing stale/failed state inside the Viewer chrome,
   and a `changes.json` timeline view over `history/`.
 
+## 8c. GitHub Continuous Map (0.8.0)
+
+The main line extends to GitHub: set up once, and pushes/PRs keep the map
+current with no local watcher.
+
+- `init --github` additionally generates `.github/workflows/agent-runtime-map.yml`.
+  The file carries an integrity hash line (`packages/core/src/github.ts`): an
+  unmodified generated file — any template version — is updated freely; a
+  user-edited one is never silently overwritten (`WorkflowModifiedError`,
+  `--force` → outcome `overwritten` with honest wording).
+- The root `action.yml` is a composite action over ONLY official `actions/*`
+  steps: cache-restore the previous `current/` (the baseline), npm-install the
+  release CLI tarball (`cli-version` input; `cli-tarball` override for CI/
+  air-gapped), run `build`, verify the artifact (`action/verify-artifact.mjs`
+  allow-list gate), write the Step Summary (`action/summary.mjs`), upload the
+  artifact (even on failure — it then holds the last good map + failed status),
+  cache-save on success, fail the job at the end if analysis failed.
+- CI provenance flows through env vars (`AGENT_RUNTIME_MAP_COMMIT_SHA`/`REF`/
+  `BASELINE_RESTORED`/`TRIGGER` → `continuousEnvOptions()` in the CLI); the
+  baseline SHA is never an input — it is read from the restored manifest
+  (`manifest.commit.baselineSha`). No baseline → changes.json says `initial`.
+- Versioning contract: users reference `@v1`; v1 = compatible changes only,
+  breaking → v2; exact tool version recorded in manifest + status. The `v1`
+  tag is NOT yet published — the user wants to confirm before it moves.
+- Privacy defaults: private artifact + Step Summary only; `publish: pages` is
+  an explicit opt-in with a loud warning. `contents: read` only; never commits.
+- Real-action proof lives in `.github/workflows/action-e2e.yml`: job 1 packs
+  the CLI, job 2 runs the action with no baseline (asserts `initial`), job 3
+  restores job 2's cache, edits the fixture, and asserts a non-initial diff
+  with both SHAs recorded — plus asserts nothing was committed.
+
 ## 9. High-value next work
 
 Work in this order unless product direction changes:

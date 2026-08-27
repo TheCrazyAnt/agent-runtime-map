@@ -144,6 +144,8 @@ export async function initContinuousProject(root: string): Promise<InitResult> {
 export interface ContinuousStatus {
   schemaVersion: 1;
   state: "updated" | "stale" | "failed";
+  /** The exact analyzer version that produced (or failed to produce) this state. */
+  toolVersion?: string;
   /** Of the map in `current/`, i.e. the last successful build. */
   buildId?: string;
   generatedAt?: string;
@@ -153,6 +155,13 @@ export interface ContinuousStatus {
   trigger?: string[];
   /** Present only when `state` is `failed`. */
   error?: { message: string; failedAt: string };
+  /**
+   * The commit whose analysis failed. Kept apart from the map's own commit in
+   * manifest.json on purpose: the preserved map still belongs to its last
+   * successful commit, and conflating the two would misplace the failure.
+   */
+  attemptedCommit?: string;
+  attemptedRef?: string;
   /** Present only when `state` is `stale`. */
   staleSince?: string;
 }
@@ -165,6 +174,18 @@ export interface ContinuousManifest {
   generatedAt: string;
   graphType: LogicGraph["graphType"];
   project: { name: string };
+  /**
+   * Where this map came from, when the caller runs in CI. `baselineSha` is read
+   * from the restored previous manifest, so a diff can always be traced to the two
+   * commits it compares — and when there is no baseline, the build says `initial`
+   * in changes.json rather than inventing a comparison.
+   */
+  commit?: {
+    sha?: string;
+    ref?: string;
+    baselineSha?: string;
+    baselineRestored?: boolean;
+  };
   files: {
     graph: string;
     rawGraph?: string;
@@ -328,6 +349,8 @@ export interface ContinuousBuildOptions {
   /** Built Viewer assets for the interactive report. Optional: without them the report is a static summary. */
   viewerAssetsDir?: string;
   toolVersion?: string;
+  /** CI provenance. The baseline SHA is not an input: it comes from the restored manifest. */
+  source?: { commitSha?: string; ref?: string; baselineRestored?: boolean };
   now?: () => Date;
 }
 
@@ -361,6 +384,7 @@ export async function buildContinuousMap(
 
   const previousGraph = await readJsonIfPresent<LogicGraph>(path.join(currentDir, "graph.json"));
   const previousStatus = await readJsonIfPresent<ContinuousStatus>(path.join(currentDir, "status.json"));
+  const previousManifest = await readJsonIfPresent<ContinuousManifest>(path.join(currentDir, "manifest.json"));
 
   let result: GenerateLogicMapResult;
   try {
@@ -374,6 +398,8 @@ export async function buildContinuousMap(
       failedAt: now().toISOString(),
       trigger,
       previous: previousStatus,
+      toolVersion: options.toolVersion,
+      source: options.source,
     });
     return { ok: false, currentDir, outDir, error: message, durationMs };
   }
@@ -383,11 +409,27 @@ export async function buildContinuousMap(
   const durationMs = Date.now() - startedAt;
 
   if (previousGraph && computeBuildId(previousGraph) === buildId) {
-    // The map did not change; refresh the status without churning current/ or history/.
+    // The map did not change: graph, raw graph, report, and history stay untouched.
+    // Provenance still advances — this commit was analyzed and produced this very
+    // map, and the next build must diff against this commit, not a stale one.
     await writeJson(path.join(currentDir, "status.json"), statusFor({
-      state: "updated", buildId, generatedAt: previousStatus?.generatedAt ?? generatedAt,
+      state: "updated", toolVersion: options.toolVersion, buildId,
+      generatedAt: previousStatus?.generatedAt ?? generatedAt,
       lastSuccessAt: generatedAt, durationMs, trigger,
     }));
+    if (previousManifest) {
+      await writeJson(path.join(currentDir, "manifest.json"), {
+        ...previousManifest,
+        toolVersion: options.toolVersion ?? previousManifest.toolVersion,
+        generatedAt,
+        commit: options.source ? {
+          sha: options.source.commitSha,
+          ref: options.source.ref,
+          baselineSha: previousManifest.commit?.sha,
+          baselineRestored: options.source.baselineRestored,
+        } : previousManifest.commit,
+      } satisfies ContinuousManifest);
+    }
     return { ok: true, unchanged: true, buildId, graph: result.graph, currentDir, outDir, durationMs };
   }
 
@@ -400,6 +442,12 @@ export async function buildContinuousMap(
     generatedAt,
     graphType: result.graph.graphType,
     project: { name: path.basename(resolvedRoot) },
+    commit: options.source ? {
+      sha: options.source.commitSha,
+      ref: options.source.ref,
+      baselineSha: previousManifest?.commit?.sha,
+      baselineRestored: options.source.baselineRestored,
+    } : undefined,
     files: {
       graph: "graph.json",
       rawGraph: "raw-graph.json",
@@ -417,7 +465,8 @@ export async function buildContinuousMap(
     await writeJson(path.join(stagingDir, "changes.json"), changes);
     await writeJson(path.join(stagingDir, "manifest.json"), manifest);
     await writeJson(path.join(stagingDir, "status.json"), statusFor({
-      state: "updated", buildId, generatedAt, lastSuccessAt: generatedAt, durationMs, trigger,
+      state: "updated", toolVersion: options.toolVersion, buildId, generatedAt,
+      lastSuccessAt: generatedAt, durationMs, trigger,
     }));
     await writeReport(stagingDir, result.graph, result.rawGraph, options.viewerAssetsDir);
 
@@ -431,6 +480,8 @@ export async function buildContinuousMap(
       failedAt: now().toISOString(),
       trigger,
       previous: previousStatus,
+      toolVersion: options.toolVersion,
+      source: options.source,
     });
     return { ok: false, currentDir, outDir, error: message, durationMs: Date.now() - startedAt };
   }
@@ -504,16 +555,26 @@ export async function markStale(currentDir: string, trigger: string[], now: () =
 
 async function writeFailureStatus(
   currentDir: string,
-  failure: { message: string; failedAt: string; trigger: string[]; previous?: ContinuousStatus },
+  failure: {
+    message: string;
+    failedAt: string;
+    trigger: string[];
+    previous?: ContinuousStatus;
+    toolVersion?: string;
+    source?: ContinuousBuildOptions["source"];
+  },
 ): Promise<void> {
   // Only status.json is written: the last successful map must survive every failure.
   await writeJson(path.join(currentDir, "status.json"), statusFor({
     state: "failed",
+    toolVersion: failure.toolVersion,
     buildId: failure.previous?.buildId,
     generatedAt: failure.previous?.generatedAt,
     lastSuccessAt: failure.previous?.lastSuccessAt,
     trigger: failure.trigger,
     error: { message: failure.message, failedAt: failure.failedAt },
+    attemptedCommit: failure.source?.commitSha,
+    attemptedRef: failure.source?.ref,
   }));
 }
 

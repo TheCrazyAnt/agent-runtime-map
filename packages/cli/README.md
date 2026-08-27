@@ -9,7 +9,7 @@ npx agent-runtime-map@latest .
 GitHub Release fallback:
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.2.0/agent-runtime-map-0.2.0.tgz
+npm install --save-dev https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.2.0/agent-runtime-map-0.2.0.tgz
 npx agent-runtime-map .
 ```
 
@@ -35,6 +35,6 @@ This mode sends a bounded evidence snapshot, not the absolute project root or
 raw source files. It can improve names and descriptions for existing graph IDs,
 but it cannot add topology or evidence.
 
-Use `agent-runtime-map analyze .` to generate JSON without starting a server. The original `logic-map` command remains available as an alias. See the [project repository](https://github.com/tangyishun9846/agent-runtime-map) for supported frameworks, context limits, privacy behavior, and contribution guidelines.
+Use `agent-runtime-map analyze .` to generate JSON without starting a server. The original `logic-map` command remains available as an alias. See the [project repository](https://github.com/TheCrazyAnt/agent-runtime-map) for supported frameworks, context limits, privacy behavior, and contribution guidelines.
 
 The CLI and Viewer automatically use Chinese for Chinese locales and English for other locales. Pass `--locale zh-CN` or `--locale en` to override detection.
