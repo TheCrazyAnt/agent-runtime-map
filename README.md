@@ -8,6 +8,18 @@ Agent Runtime Map reads a TypeScript, JavaScript, or Python repository together 
 
 > Status: **0.1 alpha**. The supported scope is intentionally narrow and documented below. Agent Runtime Map does not claim to understand every codebase.
 
+## Grounded, not authored
+
+Diagram skills that ask an LLM to read a repository and *author* a map can
+produce a beautiful picture of what the model believed; their validation checks
+that the picture is well-formed, not that it matches the code. Agent Runtime Map
+takes the opposite contract: **a deterministic analyzer builds the topology**,
+so the map cannot contain a connection the code does not have, the same commit
+always produces the same graph, and every node and edge keeps the `file:line`
+evidence, inference method, and confidence score that produced it. The optional
+LLM layer may rename and describe — it is structurally unable to add a node or
+an edge.
+
 ## What it produces
 
 ```text
@@ -154,6 +166,18 @@ or `--locale en` to override detection. The Viewer also includes a language
 switch. Source symbols and file evidence always retain their original spelling.
 
 ## For agents
+
+The fastest path is the bundled agent skill, which works in Claude Code, Cursor,
+Codex CLI, and OpenCode:
+
+```bash
+npx skills add tangyishun9846/agent-runtime-map -g
+```
+
+Then ask your agent: `Use agent-runtime-map to explain how this repository works.`
+The skill runs the release CLI, reads the generated Logic Graph, and answers with
+`file:line` evidence and confidence — it never authors topology of its own. See
+[skills/agent-runtime-map/SKILL.md](skills/agent-runtime-map/SKILL.md).
 
 An agent can read a repository as a map instead of file by file, through the
 Model Context Protocol server:

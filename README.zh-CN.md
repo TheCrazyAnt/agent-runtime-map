@@ -4,11 +4,20 @@
 
 让 Agent 代码自己画出它的功能电路，并逐步检查每一条执行链路。
 
-Agent Runtime Map 会读取 TypeScript / JavaScript 项目，同时理解 README、docs/PRD、Prompt、依赖和安全配置；再通过 AST 与框架规则提取页面操作、API、工作流、Agent、工具、模型、数据库、外部服务与控制流，最后编译成一张全局 Agent 执行图。
+Agent Runtime Map 会读取 TypeScript / JavaScript / Python 项目，同时理解 README、docs/PRD、Prompt、依赖和安全配置；再通过 AST 与框架规则提取页面操作、API、工作流、Agent、工具、模型、数据库、外部服务与控制流，最后编译成一张全局 Agent 执行图。
 
 左侧是项目的全部功能。点击某个功能，就能在右侧全局图上播放、暂停、单步前进、重新检查、调整速度，并切换该功能的不同执行分支。
 
 > 当前为 **0.1 alpha**。支持范围是刻意收窄的，不会声称能理解所有代码项目。
+
+## 图是提取出来的，不是"写作"出来的
+
+让 LLM 读一遍仓库、然后"写"出一张架构图的技能，画出来的是模型当时的理解；
+它们的校验只保证图**自洽**，不保证图**符合代码**。Agent Runtime Map 走的是相反
+的契约：**拓扑由确定性分析器构建**——图里不可能出现代码中不存在的连线，同一个
+commit 永远生成同一张图，每个节点和连线都保留产生它的 `文件:行号` 证据、推断
+方法与置信度。可选的 LLM 层只能改名和补描述，在结构上没有能力新增任何节点或
+连线。
 
 ## 它解决什么问题
 
@@ -109,9 +118,30 @@ agent-runtime-map analyze [项目] [选项]  只生成 JSON
 - `graph.json`：Viewer 使用的 Logic Graph，包含功能、路径、步骤与诊断。
 - `raw-graph.json`：详细代码事实和关系。
 
+## 给 Agent 使用
+
+任何 Agent 都可以把仓库当成一张地图来读，而不是一个文件一个文件地翻。
+
+**Agent 技能**（Claude Code / Cursor / Codex CLI / OpenCode 通用）：
+
+```bash
+npx skills add tangyishun9846/agent-runtime-map -g
+```
+
+然后对你的 Agent 说：`用 agent-runtime-map 讲讲这个仓库是怎么工作的`。技能会
+调用发布版 CLI、读取生成的 Logic Graph，并带着 `文件:行号` 证据和置信度回答——
+它自己不会编造任何拓扑。详见
+[skills/agent-runtime-map/SKILL.md](skills/agent-runtime-map/SKILL.md)。
+
+**MCP server**：支持 Model Context Protocol 的宿主可以注册内置服务器，通过
+`analyze_project`、`list_features`、`describe_feature`、`get_evidence` 四个工具
+逐层提问，每个回答都保留来源位置与置信度。详见
+[packages/mcp](packages/mcp/README.md)。
+
 ## 当前支持
 
 - TypeScript、TSX、JavaScript、JSX
+- Python（通过内置 `ast` 提取器；分类规则与 TypeScript 共享）
 - `tsconfig.json` / `jsconfig.json` 路径别名
 - Next.js App Router、Express / Hono 风格路由
 - 函数、方法、导入、静态调用与结果数据流
@@ -126,7 +156,7 @@ agent-runtime-map analyze [项目] [选项]  只生成 JSON
 默认模式不会执行被分析的项目、上传源码、调用 LLM 或发送遥测。只有显式使用
 `--semantic openai --semantic-model <模型>` 并设置 `OPENAI_API_KEY` 时，才会发送
 经过裁剪的证据摘要；请求不包含绝对项目根目录或原始源码文件，并且模型只能修改
-已有节点和功能的名称、说明，不能新增节点、连线或证据。Python、实际运行追踪、
+已有节点和功能的名称、说明，不能新增节点、连线或证据。实际运行追踪、
 Token、性能与 APM 仍不属于当前静态版本。
 
 启用联网语义能力前请阅读 [Project Context](docs/PROJECT_CONTEXT.md)。
