@@ -127,7 +127,7 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
           result.graph.features.filter((feature) => feature.health === "error").length,
           result.graph.features.filter((feature) => feature.health === "warning").length,
         ),
-        text.logicGraph(result.outputFile),
+        result.outputFile ? text.logicGraph(result.outputFile) : undefined,
         result.rawOutputFile ? text.rawGraph(result.rawOutputFile) : undefined,
       ]
         .filter(Boolean)
@@ -138,7 +138,7 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
     const host = parsed.values.host ?? "127.0.0.1";
     const port = portNumber(parsed.values.port, text);
     const server = await startViewerServer({
-      graphFile: result.outputFile,
+      graphFile: result.outputFile!,
       rawGraphFile: result.rawOutputFile,
       projectRoot: result.rawGraph.project.root,
       // Product evidence points at README/PRD/prompt files, which the drawer must be

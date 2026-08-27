@@ -8,7 +8,11 @@ import { enrichLogicGraphWithOpenAI, type OpenAISemanticOptions } from "@agent-r
 import type { LogicGraph, RawCodeGraph } from "@agent-runtime-map/schema";
 
 export interface GenerateLogicMapOptions extends CompileOptions {
-  outputFile?: string;
+  /**
+   * Where to write the Logic Graph, or `false` to write nothing. A caller analyzing
+   * someone else's repository on their behalf should not leave files in it.
+   */
+  outputFile?: string | false;
   rawOutputFile?: string | false;
   maxFiles?: number;
   maxContextFiles?: number;
@@ -22,7 +26,8 @@ export interface GenerateLogicMapOptions extends CompileOptions {
 export interface GenerateLogicMapResult {
   graph: LogicGraph;
   rawGraph: RawCodeGraph;
-  outputFile: string;
+  /** Absent when the caller asked for nothing to be written. */
+  outputFile?: string;
   rawOutputFile?: string;
 }
 
@@ -33,7 +38,9 @@ export async function generateLogicMap(
   const root = path.resolve(projectPath);
   const details = await stat(root).catch(() => undefined);
   if (!details?.isDirectory()) throw new Error(`Project path does not exist or is not a directory: ${root}`);
-  const outputFile = resolveOutput(root, options.outputFile ?? ".logic-map/graph.json");
+  const outputFile = options.outputFile === false
+    ? undefined
+    : resolveOutput(root, options.outputFile ?? ".logic-map/graph.json");
   const rawOutputFile =
     options.rawOutputFile === false
       ? undefined
@@ -78,7 +85,7 @@ export async function generateLogicMap(
   let graph = compileLogicGraph(rawGraph, options);
   if (options.semantic) graph = await enrichLogicGraphWithOpenAI(rawGraph, graph, options.semantic);
 
-  await writeJson(outputFile, graph);
+  if (outputFile) await writeJson(outputFile, graph);
   if (rawOutputFile) await writeJson(rawOutputFile, rawGraph);
 
   return { graph, rawGraph, outputFile, rawOutputFile };

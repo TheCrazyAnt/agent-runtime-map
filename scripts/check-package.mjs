@@ -50,4 +50,22 @@ if (
   throw new Error("React component package metadata or peer dependencies are invalid.");
 }
 
+const mcpPacked = spawnSync("npm", ["pack", "--workspace", "@agent-runtime-map/mcp", "--dry-run", "--json", "--ignore-scripts"], {
+  encoding: "utf8",
+  stdio: ["ignore", "pipe", "inherit"],
+});
+if (mcpPacked.status !== 0) process.exit(mcpPacked.status ?? 1);
+const [mcpReport] = JSON.parse(mcpPacked.stdout);
+const mcpPaths = new Set(mcpReport.files.map((file) => file.path));
+for (const required of ["dist/index.js", "dist/python/extract.py", "README.md", "package.json"]) {
+  if (!mcpPaths.has(required)) throw new Error(`MCP package is missing ${required}`);
+}
+const mcpManifest = JSON.parse(await readFile(new URL("../packages/mcp/package.json", import.meta.url), "utf8"));
+// Workspace packages are bundled into the server, so declaring them would make the
+// published package depend on names npm cannot resolve.
+if (Object.keys(mcpManifest.dependencies ?? {}).some((name) => name.startsWith("@agent-runtime-map/"))) {
+  throw new Error("MCP package must not depend on unpublished workspace packages.");
+}
+process.stdout.write(`MCP package check passed: ${mcpReport.filename}, ${mcpReport.size} bytes, ${mcpReport.entryCount} files.\n`);
+
 process.stdout.write(`Component package check passed: ${componentReport.filename}, ${componentReport.size} bytes, ${componentReport.entryCount} files.\n`);
