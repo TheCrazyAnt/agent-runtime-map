@@ -134,6 +134,7 @@ runs:
           echo "unchanged=$([ "$EXIT" = "0" ] && [ -n "$BEFORE_ID" ] && [ "$BEFORE_ID" = "$AFTER_ID" ] && echo true || echo false)"
           echo "baseline-sha=$BASELINE_SHA"
           echo "run-sha=$RUN_SHA"
+          echo "stamp=$(date +%s%N)"
         } >> "$GITHUB_OUTPUT"
 
     # The artifact is gated on this: nothing uploads unless the output directory
@@ -170,12 +171,15 @@ runs:
         retention-days: ${{ inputs.retention-days }}
         if-no-files-found: warn
 
+    # The save key must be unique per invocation: cache keys are immutable, and a
+    # second save under a reused key is silently refused — which would strand the
+    # baseline at an older build whenever one workflow runs this action twice.
     - name: Save the map as the next baseline
       if: steps.build.outputs.ok == 'true'
       uses: actions/cache/save@v4
       with:
         path: ${{ inputs.project-path }}/.agent-runtime-map/current
-        key: ${{ steps.restore.outputs.cache-primary-key }}
+        key: ${{ inputs.cache-prefix }}-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.build.outputs.stamp }}
 
     - name: Warn before publishing to GitHub Pages
       if: inputs.publish == 'pages'
