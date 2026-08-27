@@ -2,6 +2,22 @@
 
 All notable changes are documented here.
 
+## 0.6.0 - 2026-08-27
+
+### Added
+
+- `@agent-runtime-map/mcp`, a Model Context Protocol server, so an agent can read a
+  repository as an evidence-backed map instead of file by file. Four tools:
+  `analyze_project`, `list_features`, `describe_feature`, `get_evidence`. Each
+  answers one question and names the tool that answers the next — a compiled map of
+  a real repository is hundreds of kilobytes, and no tool returns it whole.
+- Every answer keeps the source location and confidence behind each step, and
+  reports a documented-capability match separately from code confidence. A route is
+  labelled a statically inferred path in the answer itself, not a recorded run.
+- `generateLogicMap` accepts `outputFile: false`. An agent analyzing someone else's
+  repository on their behalf should not leave files in it, and the MCP server writes
+  nothing unless asked.
+
 ## 0.5.0 - 2026-08-24
 
 ### Fixed

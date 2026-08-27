@@ -101,7 +101,7 @@ The same CLI can be installed directly from the CI-validated GitHub Release
 artifact without cloning the monorepo:
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.5.0/agent-runtime-map-0.5.0.tgz
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.6.0/agent-runtime-map-0.6.0.tgz
 npx agent-runtime-map .
 ```
 
@@ -152,6 +152,31 @@ Agent Runtime Map follows the user's environment automatically: Chinese systems
 and browsers use Chinese, while other locales use English. Use `--locale zh-CN`
 or `--locale en` to override detection. The Viewer also includes a language
 switch. Source symbols and file evidence always retain their original spelling.
+
+## For agents
+
+An agent can read a repository as a map instead of file by file, through the
+Model Context Protocol server:
+
+```json
+{
+  "mcpServers": {
+    "agent-runtime-map": {
+      "command": "node",
+      "args": ["/absolute/path/to/agent-runtime-map/packages/mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+Four tools — `analyze_project`, `list_features`, `describe_feature`, `get_evidence` —
+each answering one question and naming the tool that answers the next. Every answer
+keeps the source location and confidence behind each step, and nothing is written
+into the analyzed project unless asked. See
+[packages/mcp](packages/mcp/README.md).
+
+Without an agent, `agent-runtime-map analyze .` writes `.logic-map/graph.json` for
+anything that can read JSON.
 
 ## Current support
 

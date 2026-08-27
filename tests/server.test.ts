@@ -26,7 +26,7 @@ describe("viewer server", () => {
     await writeFile(path.join(viewerDirectory, "index.html"), '<!doctype html><div id="root"></div>');
     const result = await generateLogicMap(root);
     const server = await startViewerServer({
-      graphFile: result.outputFile,
+      graphFile: result.outputFile!,
       rawGraphFile: result.rawOutputFile,
       projectRoot: result.rawGraph.project.root,
       sourceFiles: [...new Set(result.graph.nodes.flatMap((node) => node.sources.map((source) => source.file)))],
@@ -84,7 +84,7 @@ describe("viewer server", () => {
     expect(productFiles.length).toBeGreaterThan(0);
 
     const server = await startViewerServer({
-      graphFile: result.outputFile,
+      graphFile: result.outputFile!,
       rawGraphFile: result.rawOutputFile,
       projectRoot: result.rawGraph.project.root,
       // The CLI widens the allow-list the same way, so attribution is checkable.

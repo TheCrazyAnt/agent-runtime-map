@@ -107,6 +107,10 @@ packages/analysis-kit/        Classification and evidence rules shared by adapte
 packages/logic-compiler/      Raw graph compression, features, Chain Doctor
 packages/semantic/            Optional evidence-constrained label enrichment
 packages/core/                Orchestrates reader → analyzer → compiler
+packages/mcp/
+  src/server.ts               MCP tools over stdio; caches one analysis per project
+  src/summaries.ts            Pure answer formatting (unit-tested)
+  scripts/extract.py copy     Bundled beside the server, as the CLI does
 packages/cli/
   src/cli.ts                  Public command, writes outputs, starts viewer
   src/server.ts               Local static server, graph/raw/source endpoints
