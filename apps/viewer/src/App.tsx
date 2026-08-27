@@ -112,7 +112,7 @@ function LogicMapViewer() {
     document.documentElement.lang = locale;
     document.title = locale === "zh-CN" ? "Agent Runtime Map · 智能体运行逻辑图" : "Agent Runtime Map";
   }, [locale]);
-  useEffect(() => {
+  const loadGraphs = useCallback(() => {
     fetch("./graph.json", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error(`graph.json (${response.status})`);
@@ -127,6 +127,39 @@ function LogicMapViewer() {
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
   }, []);
+  useEffect(() => {
+    // report.html embeds the graph so the same app renders with no server behind it.
+    const embedded = window as { __ARM_GRAPH__?: LogicGraph; __ARM_RAW_GRAPH__?: RawCodeGraph };
+    if (embedded.__ARM_GRAPH__) {
+      setGraph(embedded.__ARM_GRAPH__);
+      if (embedded.__ARM_RAW_GRAPH__) setRawGraph(embedded.__ARM_RAW_GRAPH__);
+      return;
+    }
+    loadGraphs();
+  }, [loadGraphs]);
+  useEffect(() => {
+    // A continuous map publishes manifest.json next to the graph; polling its buildId
+    // is what makes the open Viewer follow `agent-runtime-map watch`. Where there is
+    // no manifest (a one-shot serve, a file:// report), polling stops on first miss.
+    let stopped = false;
+    let knownBuildId: string | undefined;
+    const interval = window.setInterval(() => {
+      fetch("./manifest.json", { cache: "no-store" })
+        .then(async (response) => {
+          if (stopped) return;
+          if (!response.ok) throw new Error("no manifest");
+          const manifest = (await response.json()) as { buildId?: string };
+          if (!manifest.buildId) return;
+          if (knownBuildId === undefined) { knownBuildId = manifest.buildId; return; }
+          if (manifest.buildId !== knownBuildId) {
+            knownBuildId = manifest.buildId;
+            loadGraphs();
+          }
+        })
+        .catch(() => { window.clearInterval(interval); });
+    }, 2000);
+    return () => { stopped = true; window.clearInterval(interval); };
+  }, [loadGraphs]);
   useEffect(() => {
     if (!graph) return;
     const byId = new Map(graph.nodes.map((item) => [item.id, item]));

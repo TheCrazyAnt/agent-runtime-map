@@ -9,7 +9,10 @@ export interface ViewerServerOptions {
   graphFile: string;
   rawGraphFile?: string;
   projectRoot?: string;
-  sourceFiles?: string[];
+  /** A function is consulted per request, so a watch-mode rebuild can extend the allow-list. */
+  sourceFiles?: string[] | (() => string[]);
+  /** A continuous-map `current/` directory; serves its manifest, status, and changes. */
+  currentDir?: string;
   viewerDirectory?: string;
   host?: string;
   port?: number;
@@ -111,6 +114,11 @@ async function handleRequest(
     await sendSource(response, options, requestUrl, method);
     return;
   }
+  if (options.currentDir && (pathname === "/manifest.json" || pathname === "/status.json" || pathname === "/changes.json")) {
+    // Continuous-map state is what the Viewer polls, so it must never be cached.
+    await sendFile(response, path.join(options.currentDir, pathname.slice(1)), method, "no-store");
+    return;
+  }
 
   const relativeRequest = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const file = path.resolve(viewerDirectory, relativeRequest);
@@ -136,12 +144,13 @@ async function sendSource(
   requestUrl: URL,
   method: string,
 ): Promise<void> {
-  if (!options.projectRoot || !options.sourceFiles?.length) {
+  const sourceFiles = typeof options.sourceFiles === "function" ? options.sourceFiles() : options.sourceFiles;
+  if (!options.projectRoot || !sourceFiles?.length) {
     sendText(response, 404, "Source access is unavailable.", "text/plain; charset=utf-8", method);
     return;
   }
   const requestedFile = normalizeSourcePath(requestUrl.searchParams.get("file") ?? "");
-  const allowedFiles = new Set(options.sourceFiles.map(normalizeSourcePath));
+  const allowedFiles = new Set(sourceFiles.map(normalizeSourcePath));
   if (!requestedFile || path.isAbsolute(requestedFile) || requestedFile.startsWith("../") || !allowedFiles.has(requestedFile)) {
     sendText(response, 403, "Source file is not part of this graph.", "text/plain; charset=utf-8", method);
     return;
@@ -263,7 +272,7 @@ async function listenOnAvailablePort(server: Server, host: string, preferredPort
   throw new Error(`No available port found between ${preferredPort} and ${preferredPort + 19}.`);
 }
 
-async function resolveViewerDirectory(): Promise<string> {
+export async function resolveViewerDirectory(): Promise<string> {
   const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
     path.join(moduleDirectory, "viewer"),
