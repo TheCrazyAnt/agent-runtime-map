@@ -262,7 +262,7 @@ jobs:
           EOF
           # Each step gets its own GITHUB_STEP_SUMMARY file, so verify the summary
           # by rendering it from the same artifacts the action's summary step read.
-          BUILD_OK=false node action/summary.mjs examples/simple-agent/.agent-runtime-map/current > d-summary.md
+          GITHUB_STEP_SUMMARY= BUILD_OK=false node action/summary.mjs examples/simple-agent/.agent-runtime-map/current > d-summary.md
           grep -q "Run commit" d-summary.md
           grep -q "Map commit" d-summary.md
           grep -q "preserved" d-summary.md
