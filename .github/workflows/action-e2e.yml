@@ -260,8 +260,13 @@ jobs:
           assert(status.error.message.includes("Simulated analysis failure"), "failure reason recorded");
           console.log("D OK: run", status.attemptedCommit.slice(0,10), "map", manifest.commit.sha.slice(0,10));
           EOF
-          grep -q "Run commit" "$GITHUB_STEP_SUMMARY"
-          grep -q "Map commit" "$GITHUB_STEP_SUMMARY"
+          # Each step gets its own GITHUB_STEP_SUMMARY file, so verify the summary
+          # by rendering it from the same artifacts the action's summary step read.
+          BUILD_OK=false node action/summary.mjs examples/simple-agent/.agent-runtime-map/current > d-summary.md
+          grep -q "Run commit" d-summary.md
+          grep -q "Map commit" d-summary.md
+          grep -q "preserved" d-summary.md
+          cat d-summary.md
 
       - name: Assert the action itself staged and pushed nothing
         run: |
