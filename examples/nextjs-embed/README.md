@@ -7,7 +7,7 @@ they are reference code, not a runnable app.
 ## 1. Keep the map current
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.7.0/agent-runtime-map-0.7.0.tgz
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz
 npx agent-runtime-map init
 npx agent-runtime-map watch .
 ```
@@ -27,7 +27,7 @@ auth as the rest of your admin routes; the graph knows your source layout.
 ## 3. Render and follow — `app/runtime-map/RuntimeMapPanel.tsx`
 
 ```bash
-npm install https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.7.0/agent-runtime-map-react-0.7.0.tgz
+npm install https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-react-0.8.0.tgz
 ```
 
 The panel fetches `graph.json`, renders `<LogicMap />`, and polls `manifest.json`

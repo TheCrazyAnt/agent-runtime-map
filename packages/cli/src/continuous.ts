@@ -2,8 +2,11 @@ import path from "node:path";
 import {
   buildContinuousMap,
   initContinuousProject,
+  initGithubWorkflow,
   loadContinuousConfig,
   watchContinuousMap,
+  WorkflowModifiedError,
+  type ContinuousBuildOptions,
   type ContinuousBuildResult,
   type GenerateLogicMapOptions,
   type LogicGraph,
@@ -18,7 +21,11 @@ import { localizedViewerUrl, type CliText } from "./i18n.js";
  * output and the Viewer server.
  */
 
-export async function runInit(projectPath: string, text: CliText): Promise<number> {
+export async function runInit(
+  projectPath: string,
+  text: CliText,
+  options: { github?: boolean; force?: boolean } = {},
+): Promise<number> {
   const result = await initContinuousProject(projectPath);
   if (result.created) process.stdout.write(`${text.initCreated(result.configFile)}\n`);
   else if (result.addedKeys.length) process.stdout.write(`${text.initCompleted(result.configFile, result.addedKeys.join(", "))}\n`);
@@ -27,7 +34,46 @@ export async function runInit(projectPath: string, text: CliText): Promise<numbe
     .map(([name, command]) => `  "${name}": "${command}"`)
     .join("\n");
   process.stdout.write(`${text.initScripts(scripts)}\n`);
-  return 0;
+  if (!options.github) return 0;
+
+  try {
+    const workflow = await initGithubWorkflow(projectPath, { force: options.force });
+    const line = workflow.outcome === "created"
+      ? text.githubWorkflowCreated(workflow.workflowFile)
+      : workflow.outcome === "unchanged"
+        ? text.githubWorkflowUnchanged(workflow.workflowFile)
+        : workflow.outcome === "overwritten"
+          ? text.githubWorkflowOverwritten(workflow.workflowFile)
+          : text.githubWorkflowUpdated(workflow.workflowFile);
+    process.stdout.write(`${line}\n${text.githubNextSteps}\n`);
+    return 0;
+  } catch (error) {
+    if (error instanceof WorkflowModifiedError) {
+      process.stderr.write(`${text.githubWorkflowModified(error.workflowFile)}\n`);
+      return 1;
+    }
+    throw error;
+  }
+}
+
+/**
+ * CI provenance travels by environment because the composite action calls this same
+ * CLI a person calls. The baseline SHA is deliberately absent here: it comes from
+ * the restored manifest, never from a caller's claim.
+ */
+export function continuousEnvOptions(env: NodeJS.ProcessEnv = process.env): Pick<ContinuousBuildOptions, "source" | "trigger"> {
+  const sha = env.AGENT_RUNTIME_MAP_COMMIT_SHA?.trim();
+  const ref = env.AGENT_RUNTIME_MAP_REF?.trim();
+  const restored = env.AGENT_RUNTIME_MAP_BASELINE_RESTORED?.trim();
+  const trigger = env.AGENT_RUNTIME_MAP_TRIGGER?.split("\n").map((item) => item.trim()).filter(Boolean);
+  return {
+    source: sha || ref || restored !== undefined ? {
+      commitSha: sha || undefined,
+      ref: ref || undefined,
+      baselineRestored: restored === undefined ? undefined : restored === "true",
+    } : undefined,
+    trigger: trigger?.length ? trigger : undefined,
+  };
 }
 
 export interface ContinuousCommandOptions {
@@ -47,6 +93,7 @@ export async function runContinuousBuild(
   const { config, warning } = await loadContinuousConfig(projectPath);
   if (warning) process.stderr.write(`${text.configWarning(warning)}\n`);
   const result = await buildContinuousMap(projectPath, config, {
+    ...continuousEnvOptions(),
     analyzeOptions: options.analyzeOptions,
     toolVersion: options.toolVersion,
     viewerAssetsDir: await resolveViewerDirectory().catch(() => undefined),

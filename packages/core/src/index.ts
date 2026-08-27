@@ -126,3 +126,4 @@ function mergeRawGraphs(primary: RawCodeGraph, secondary: RawCodeGraph): RawCode
 }
 
 export * from "./continuous.js";
+export * from "./github.js";

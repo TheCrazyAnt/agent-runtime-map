@@ -89,25 +89,58 @@ frames, edge-state tokens, and boundary measurement helpers for embedding the
 same map in another product. See [Visual Components](docs/VISUAL_COMPONENTS.md)
 for the component contract and integration example.
 
-## Install into your project
+## Set it up once, GitHub keeps the map current
 
-The primary way to use Agent Runtime Map: install it, initialize it once, and let it
-keep an up-to-date map of your project.
+The primary way to use Agent Runtime Map: install it, run one init, commit the
+workflow it generates — and from then on every push and pull request rebuilds the
+map on GitHub automatically.
 
 ```bash
-npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.7.0/agent-runtime-map-0.7.0.tgz
-npx agent-runtime-map init
+npm install --save-dev https://github.com/tangyishun9846/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz
+npx agent-runtime-map init --github
+git add agent-runtime-map.config.json .github/workflows/agent-runtime-map.yml
+git commit -m "Add Agent Runtime Map"
+```
+
+That's the whole setup. Afterwards:
+
+- **Every push and PR** re-analyzes the repository and rebuilds the map; a weekly
+  scheduled run picks up compatible analyzer improvements even when nobody pushes.
+- **The run's Step Summary** shows the map's status, what changed (nodes, flows,
+  features), which features were affected, new or resolved diagnostics, and which
+  files triggered the update.
+- **The full map** — including the standalone interactive `report.html` — is
+  attached to the run as a private artifact. Nothing is committed to your branch,
+  and nothing is published anywhere public by default.
+- **Your own backend** can keep embedding the same artifacts; see
+  [examples/nextjs-embed](examples/nextjs-embed/README.md) and
+  [examples/report-embed](examples/report-embed/README.md).
+
+The generated workflow references `tangyishun9846/agent-runtime-map@v1`: `v1`
+receives backward-compatible features and fixes only, so the map improves without
+you editing the workflow — breaking changes ship as `v2`, and the exact tool
+version behind every build is recorded in its `manifest.json` and `status.json`.
+Organizations with strict supply-chain requirements can pin the action to a full
+commit SHA instead, at the cost of automatic updates. The action uses only
+official `actions/*` building blocks, needs nothing beyond `contents: read`,
+never executes the analyzed project, and uploads no source, environment
+variables, or secrets — the artifact is verified to contain only the map before
+upload. An explicit `publish: pages` input exists for teams who want a public
+map, with a loud warning: the map exposes internal logic.
+
+## Local development: watch mode
+
+While actively editing, a local watcher is faster than waiting for CI:
+
+```bash
+npx agent-runtime-map init      # if you haven't already
 npx agent-runtime-map watch .
 ```
 
-- `init` creates `agent-runtime-map.config.json` (output directory, watch
-  include/exclude, debounce) and suggests package.json scripts. It changes nothing
-  else without being asked.
-- `watch .` builds the map, opens the Viewer, and then keeps both current: every
+- `watch .` builds the map, opens the Viewer, and keeps both current: every
   change to source, README, docs, PRD, prompts, or configuration triggers a
   debounced re-analysis, and the open Viewer refreshes itself.
-- `build .` produces the same artifacts once — for CI, or when you don't want a
-  watcher running.
+- `build .` produces the same artifacts once, without a watcher.
 
 Every build maintains `.agent-runtime-map/`:
 
@@ -128,11 +161,6 @@ A failed analysis never clears `current/`: the last successful map stays in plac
 and `status.json` says `failed`, why, and when. A new map is staged and promoted
 atomically, so an interrupted build can leave a stale map but never a torn one.
 
-To see it in an admin backend, embed `<LogicMap />` behind two small routes
-([examples/nextjs-embed](examples/nextjs-embed/README.md)) or serve
-`current/report.html` as a static page or iframe
-([examples/report-embed](examples/report-embed/README.md)).
-
 To try the analyzer without installing anything, from this repository:
 
 ```bash
@@ -145,6 +173,7 @@ node packages/cli/dist/cli.js examples/simple-agent --no-open
 
 ```text
 agent-runtime-map init [project]               Create agent-runtime-map.config.json
+agent-runtime-map init --github [project]      Also generate the GitHub Actions workflow (--force to overwrite your edits)
 agent-runtime-map build [project]              Build the continuous map into .agent-runtime-map/current/
 agent-runtime-map watch [project]              Watch, rebuild on change, and serve the live viewer
 agent-runtime-map [project] [options]          One-shot: analyze and open the interactive viewer

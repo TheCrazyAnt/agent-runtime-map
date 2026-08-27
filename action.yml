@@ -1,0 +1,195 @@
+name: "Agent Runtime Map"
+description: >-
+  Build an evidence-backed runtime map of this repository, publish it as a private
+  artifact, and summarize what changed. Never executes the analyzed project, never
+  uploads source or secrets, never commits to your branch.
+author: "tangyishun9846"
+branding:
+  icon: "map"
+  color: "blue"
+
+inputs:
+  project-path:
+    description: "Directory to analyze, relative to the workspace."
+    default: "."
+  artifact-name:
+    description: "Name of the uploaded artifact holding the map."
+    default: "agent-runtime-map"
+  retention-days:
+    description: "Artifact retention in days."
+    default: "30"
+  upload-artifact:
+    description: "Set to 'false' to skip the artifact upload."
+    default: "true"
+  publish:
+    description: >-
+      'artifact' (default) keeps the map private to the repository. 'pages'
+      ADDITIONALLY deploys it to GitHub Pages — which can make your project's
+      internal logic, prompts, and service relationships public. Requires
+      pages: write and id-token: write permissions.
+    default: "artifact"
+  cli-version:
+    description: "agent-runtime-map release version to run. Updated with every compatible action release."
+    default: "0.8.0"
+  cli-tarball:
+    description: "Advanced: path or URL of an agent-runtime-map npm tarball to run instead of the release download."
+    default: ""
+  cache-prefix:
+    description: "Advanced: namespace for the baseline cache. Change it to keep several maps (for example per monorepo package) from sharing a baseline."
+    default: "agent-runtime-map"
+
+runs:
+  using: "composite"
+  steps:
+    # Runners start empty, so the previous successful map is restored from the
+    # official cache: it is the diff baseline, and the thing we keep when this
+    # run's analysis fails. No third-party actions are involved anywhere.
+    - name: Restore last successful map
+      id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ inputs.project-path }}/.agent-runtime-map/current
+        key: ${{ inputs.cache-prefix }}-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          ${{ inputs.cache-prefix }}-${{ github.ref }}-
+          ${{ inputs.cache-prefix }}-refs/heads/main-
+          ${{ inputs.cache-prefix }}-
+
+    - name: Install agent-runtime-map CLI
+      id: install
+      shell: bash
+      env:
+        CLI_VERSION: ${{ inputs.cli-version }}
+        CLI_TARBALL: ${{ inputs.cli-tarball }}
+      run: |
+        set -euo pipefail
+        if [ -n "$CLI_TARBALL" ]; then
+          SOURCE="$CLI_TARBALL"
+        else
+          SOURCE="https://github.com/tangyishun9846/agent-runtime-map/releases/download/v${CLI_VERSION}/agent-runtime-map-${CLI_VERSION}.tgz"
+        fi
+        DIR="$RUNNER_TEMP/agent-runtime-map-cli"
+        mkdir -p "$DIR"
+        ( cd "$DIR" && npm install --no-save --no-audit --no-fund --loglevel=error "$SOURCE" )
+        echo "cli=$DIR/node_modules/agent-runtime-map/dist/cli.js" >> "$GITHUB_OUTPUT"
+
+    - name: Build the map
+      id: build
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project-path }}
+        CLI: ${{ steps.install.outputs.cli }}
+        BASELINE_RESTORED: ${{ steps.restore.outputs.cache-matched-key != '' }}
+      run: |
+        set -uo pipefail
+        CURRENT="$PROJECT/.agent-runtime-map/current"
+
+        # The baseline SHA is whatever the restored map says about itself.
+        BASELINE_SHA=""
+        if [ -f "$CURRENT/manifest.json" ]; then
+          BASELINE_SHA=$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).commit?.sha??"")}catch{console.log("")}' "$CURRENT/manifest.json")
+        fi
+
+        # Trigger files: the real diff when the baseline commit is reachable
+        # (fetch-depth: 0 makes it reachable more often); the event name otherwise.
+        TRIGGER=""
+        if [ -n "$BASELINE_SHA" ] && git -C "$PROJECT" cat-file -e "$BASELINE_SHA^{commit}" 2>/dev/null; then
+          TRIGGER=$(git -C "$PROJECT" diff --name-only "$BASELINE_SHA" "$GITHUB_SHA" 2>/dev/null | head -200 || true)
+        fi
+        if [ -z "$TRIGGER" ]; then
+          if [ -z "$BASELINE_SHA" ]; then TRIGGER="initial"; else TRIGGER="${GITHUB_EVENT_NAME:-manual}"; fi
+        fi
+
+        BEFORE_ID=""
+        if [ -f "$CURRENT/manifest.json" ]; then
+          BEFORE_ID=$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).buildId??"")}catch{console.log("")}' "$CURRENT/manifest.json")
+        fi
+
+        export AGENT_RUNTIME_MAP_COMMIT_SHA="$GITHUB_SHA"
+        export AGENT_RUNTIME_MAP_REF="$GITHUB_REF"
+        export AGENT_RUNTIME_MAP_BASELINE_RESTORED="$BASELINE_RESTORED"
+        export AGENT_RUNTIME_MAP_TRIGGER="$TRIGGER"
+
+        set +e
+        node "$CLI" build "$PROJECT"
+        EXIT=$?
+        set -e
+
+        AFTER_ID=""
+        if [ -f "$CURRENT/manifest.json" ]; then
+          AFTER_ID=$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).buildId??"")}catch{console.log("")}' "$CURRENT/manifest.json")
+        fi
+
+        {
+          echo "exit=$EXIT"
+          echo "ok=$([ "$EXIT" = "0" ] && echo true || echo false)"
+          echo "unchanged=$([ "$EXIT" = "0" ] && [ -n "$BEFORE_ID" ] && [ "$BEFORE_ID" = "$AFTER_ID" ] && echo true || echo false)"
+          echo "baseline-sha=$BASELINE_SHA"
+        } >> "$GITHUB_OUTPUT"
+
+    # The artifact is gated on this: nothing uploads unless the output directory
+    # contains exactly the map artifacts and none of the project's own files.
+    - name: Verify the artifact contains only the map
+      id: verify
+      if: always()
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project-path }}
+      run: node "$GITHUB_ACTION_PATH/action/verify-artifact.mjs" "$PROJECT/.agent-runtime-map/current"
+
+    - name: Write the step summary
+      if: always()
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project-path }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        BUILD_OK: ${{ steps.build.outputs.ok }}
+        BUILD_UNCHANGED: ${{ steps.build.outputs.unchanged }}
+        BASELINE_RESTORED: ${{ steps.restore.outputs.cache-matched-key != '' }}
+        UPLOAD_ENABLED: ${{ inputs.upload-artifact }}
+      run: node "$GITHUB_ACTION_PATH/action/summary.mjs" "$PROJECT/.agent-runtime-map/current"
+
+    # Uploaded even when this run's analysis failed: the artifact then holds the
+    # last successful map with status.json explaining the failure.
+    - name: Upload the map artifact
+      if: always() && steps.verify.outcome == 'success' && inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.project-path }}/.agent-runtime-map/current
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: warn
+
+    - name: Save the map as the next baseline
+      if: steps.build.outputs.ok == 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ inputs.project-path }}/.agent-runtime-map/current
+        key: ${{ steps.restore.outputs.cache-primary-key }}
+
+    - name: Warn before publishing to GitHub Pages
+      if: inputs.publish == 'pages'
+      shell: bash
+      run: |
+        echo "::warning title=Agent Runtime Map is being published to GitHub Pages::The map exposes your project's internal logic: source paths, prompts, service relationships, and API routes. On a public Pages site this is public. Remove publish: 'pages' if that is not intended."
+
+    - name: Upload Pages artifact
+      if: inputs.publish == 'pages'
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: ${{ inputs.project-path }}/.agent-runtime-map/current
+
+    - name: Deploy to GitHub Pages
+      if: inputs.publish == 'pages'
+      uses: actions/deploy-pages@v4
+
+    - name: Fail the job if analysis failed
+      if: always()
+      shell: bash
+      env:
+        BUILD_EXIT: ${{ steps.build.outputs.exit }}
+      run: |
+        if [ "${BUILD_EXIT:-1}" != "0" ]; then
+          echo "Analysis failed (exit $BUILD_EXIT). The last successful map, if any, was preserved and uploaded."
+          exit 1
+        fi
