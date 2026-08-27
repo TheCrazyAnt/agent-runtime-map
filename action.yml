@@ -100,7 +100,9 @@ runs:
         # (fetch-depth: 0 makes it reachable more often); the event name otherwise.
         TRIGGER=""
         if [ -n "$BASELINE_SHA" ] && git -C "$PROJECT" cat-file -e "$BASELINE_SHA^{commit}" 2>/dev/null; then
-          TRIGGER=$(git -C "$PROJECT" diff --name-only "$BASELINE_SHA" "$RUN_SHA" 2>/dev/null | head -200 || true)
+          # --relative keeps paths project-relative, matching what local watch
+          # writes, and drops files outside the analyzed directory.
+          TRIGGER=$(git -C "$PROJECT" diff --name-only --relative "$BASELINE_SHA" "$RUN_SHA" 2>/dev/null | head -200 || true)
         fi
         if [ -z "$TRIGGER" ]; then
           if [ -z "$BASELINE_SHA" ]; then TRIGGER="initial"; else TRIGGER="${GITHUB_EVENT_NAME:-manual}"; fi
