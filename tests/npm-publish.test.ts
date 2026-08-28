@@ -121,6 +121,10 @@ describe("the publish workflow", () => {
     expect(push.branches).toBeUndefined();
     expect(on).not.toHaveProperty("pull_request");
 
+    // The npm CLI is pinned: release infrastructure must not float on latest.
+    expect(effective).not.toContain("npm@latest");
+    expect(effective).toMatch(/npm install -g npm@\d+\.\d+\.\d+/);
+
     // The full release gate runs before any publish.
     const job = (parsed.jobs as { publish: { steps: Array<{ run?: string }> } }).publish;
     const runs = job.steps.map((step) => step.run ?? "");
