@@ -15,10 +15,23 @@ const PROJECTS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
  */
 const analyses = new Map<string, Promise<GenerateLogicMapResult>>();
 
-function analyze(project: string): Promise<GenerateLogicMapResult> {
+async function readExpected(project: string): Promise<Record<string, unknown>> {
+  return JSON.parse(await readFile(path.join(PROJECTS_DIR, project, "expected.json"), "utf8"));
+}
+
+/**
+ * A sample may pin the compile options it is an expectation *about*. `large-platform`
+ * needs `maxNodes` fixed, because what it asserts is which nodes survive that exact
+ * budget — read against a different one, its answer would be neither right nor wrong.
+ */
+async function analyze(project: string): Promise<GenerateLogicMapResult> {
   let pending = analyses.get(project);
   if (!pending) {
-    pending = generateLogicMap(path.join(PROJECTS_DIR, project), { outputFile: false, rawOutputFile: false });
+    pending = readExpected(project).then((expected) => generateLogicMap(path.join(PROJECTS_DIR, project), {
+      outputFile: false,
+      rawOutputFile: false,
+      ...(expected.options as object ?? {}),
+    }));
     analyses.set(project, pending);
   }
   return pending;
@@ -36,7 +49,7 @@ describe("map accuracy benchmark", async () => {
 
   for (const project of projects) {
     it(`matches the hand-confirmed graph for ${project}`, { timeout: 90_000 }, async () => {
-      const expected = JSON.parse(await readFile(path.join(PROJECTS_DIR, project, "expected.json"), "utf8"));
+      const expected = await readExpected(project);
       const result = await analyze(project);
       const { failures, stats } = evaluateExpectations(expected, result);
       if (failures.length) {
@@ -45,9 +58,18 @@ describe("map accuracy benchmark", async () => {
     });
   }
 
-  it("produces the same graph for the same code, twice", { timeout: 90_000 }, async () => {
-    const first = await analyze("support-desk");
-    const second = await generateLogicMap(path.join(PROJECTS_DIR, "support-desk"), { outputFile: false, rawOutputFile: false });
-    expect(computeBuildId(second.graph)).toBe(computeBuildId(first.graph));
-  });
+  // Determinism is checked on both a small sample and the compressed one: ranking ties
+  // under a budget are exactly where a stable sort quietly stops being stable.
+  for (const project of ["support-desk", "large-platform"]) {
+    it(`produces the same graph for the same code, twice (${project})`, { timeout: 90_000 }, async () => {
+      const first = await analyze(project);
+      const expected = await readExpected(project);
+      const second = await generateLogicMap(path.join(PROJECTS_DIR, project), {
+        outputFile: false,
+        rawOutputFile: false,
+        ...(expected.options as object ?? {}),
+      });
+      expect(computeBuildId(second.graph)).toBe(computeBuildId(first.graph));
+    });
+  }
 });

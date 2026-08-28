@@ -38,12 +38,19 @@ export function evaluateExpectations(expected, { rawGraph, graph }) {
   const failures = [];
   const counts = { nodes: { tp: 0, fp: 0, fn: 0 }, edges: { tp: 0, fp: 0, fn: 0 } };
   const byId = new Map(rawGraph.nodes.map((node) => [node.id, node]));
+  /**
+   * A sample may opt out of the exact raw allowlist. Only one does: `large-platform`
+   * asks what survives *compression*, and enumerating its ~150 extracted nodes would
+   * bury that one claim under an inventory the four small samples already guarantee.
+   * Extraction accuracy stays their job; this flag never relaxes a logic-level check.
+   */
+  const exactRawTopology = expected.scope?.exactRawTopology !== false;
 
   // ---- Business nodes: exact allowlist -------------------------------------
-  const allowedNodes = expected.nodes ?? [];
+  const allowedNodes = exactRawTopology ? (expected.nodes ?? []) : [];
   const businessNodes = rawGraph.nodes.filter((node) => BUSINESS_NODE_KINDS.has(node.kind));
   const matchedNodeEntries = new Set();
-  for (const node of businessNodes) {
+  for (const node of exactRawTopology ? businessNodes : []) {
     const entry = allowedNodes.find((matcher) => nodeMatches(node, matcher));
     if (entry) {
       counts.nodes.tp += 1;
@@ -61,7 +68,7 @@ export function evaluateExpectations(expected, { rawGraph, graph }) {
   }
 
   // ---- Business edges: exact allowlist -------------------------------------
-  const allowedEdges = expected.edges ?? [];
+  const allowedEdges = exactRawTopology ? (expected.edges ?? []) : [];
   const businessEdges = rawGraph.edges.filter((edge) => {
     if (!BUSINESS_EDGE_KINDS.has(edge.kind)) return false;
     const source = byId.get(edge.source);
@@ -80,7 +87,7 @@ export function evaluateExpectations(expected, { rawGraph, graph }) {
     return true;
   };
   const matchedEdgeEntries = new Set();
-  for (const edge of businessEdges) {
+  for (const edge of exactRawTopology ? businessEdges : []) {
     const entry = allowedEdges.find((matcher) => edgeMatches(edge, matcher));
     if (entry) {
       counts.edges.tp += 1;
@@ -98,8 +105,11 @@ export function evaluateExpectations(expected, { rawGraph, graph }) {
   }
 
   // ---- Diagnostics ---------------------------------------------------------
+  // Extraction diagnostics land on the raw graph, compression diagnostics on the logic
+  // graph; a required diagnostic is a claim about the analysis, not about which of the
+  // two layers happened to record it.
   for (const matcher of expected.diagnostics?.required ?? []) {
-    const found = rawGraph.diagnostics.some((diagnostic) =>
+    const found = [...rawGraph.diagnostics, ...graph.diagnostics].some((diagnostic) =>
       diagnostic.code === matcher.code && (!matcher.file || contains(diagnostic.source?.file ?? "", matcher.file)));
     if (!found) failures.push(`missing diagnostic: ${matcher.code} in ${matcher.file ?? "any file"}`);
   }
@@ -113,6 +123,34 @@ export function evaluateExpectations(expected, { rawGraph, graph }) {
     const offender = graph.nodes.find((node) => contains(node.label, forbidden));
     if (offender) failures.push(`forbidden label on the map: "${offender.label}"`);
   }
+  /**
+   * Nodes that must survive compression. When the code has more business nodes than
+   * the budget draws, "which ones" is the whole question: a map that keeps a feature's
+   * entry but drops the agent it calls has not compressed the feature, it has hidden it.
+   */
+  for (const required of expected.logic?.requiredNodes ?? []) {
+    const found = graph.nodes.find((node) =>
+      contains(node.label, required.label) && (!required.type || node.type === required.type));
+    if (!found) {
+      const near = graph.nodes.find((node) => contains(node.label, required.label));
+      failures.push(near
+        ? `required logic node "${required.label}" survived as type ${near.type}, expected ${required.type}`
+        : `required logic node missing from the compressed map: ${required.type ?? "any"}:${required.label}`);
+    }
+  }
+  /**
+   * An entry with nothing downstream is a doorway drawn without the room behind it.
+   * A handful is normal (a health check really does end there); a map made mostly of
+   * them means the budget went to breadth and every chain was cut off at the door.
+   */
+  const danglingCap = expected.logic?.maxDanglingEntrypoints;
+  if (typeof danglingCap === "number") {
+    const dangling = graph.nodes.filter((node) =>
+      node.type === "entrypoint" && !graph.edges.some((edge) => edge.source === node.id));
+    if (dangling.length > danglingCap) {
+      failures.push(`${dangling.length} entrypoints have no downstream step (cap ${danglingCap}): ${dangling.slice(0, 6).map((node) => node.label).join(", ")}${dangling.length > 6 ? ", …" : ""}`);
+    }
+  }
 
   // ---- Features: ordered routes, per variant, with control kinds -----------
   const features = graph.features;
@@ -121,14 +159,43 @@ export function evaluateExpectations(expected, { rawGraph, graph }) {
     failures.push(`feature count ${features.length} outside [${count.min}, ${count.max}]: ${features.map((f) => f.label).join(", ")}`);
   }
   const labelOf = (id) => graph.nodes.find((node) => node.id === id)?.label ?? "";
+  const entryNodesOf = (feature) => feature.entryNodeIds
+    .map((id) => graph.nodes.find((node) => node.id === id))
+    .filter(Boolean);
+  const matchesEntry = (feature, entry) => entryNodesOf(feature).some((node) =>
+    contains(node.label, entry.label) && (!entry.type || node.type === entry.type));
   for (const matcher of expected.features ?? []) {
-    const feature = features.find((item) => contains(item.label, matcher.label));
+    // Select by entry when one is given. A feature's *label* can be borrowed from a
+    // document, so pinning an expectation to it would test the project's prose; its
+    // entry is a code fact, and on this sample it is the fact under test.
+    const feature = matcher.entry
+      ? features.find((item) => matchesEntry(item, matcher.entry))
+        ?? (matcher.label ? features.find((item) => contains(item.label, matcher.label)) : undefined)
+      : features.find((item) => contains(item.label, matcher.label));
     if (!feature) {
-      failures.push(`missing feature: ${matcher.label}`);
+      failures.push(`missing feature: ${matcher.label ?? `${matcher.entry.type ?? "any"}:${matcher.entry.label}`}`);
       continue;
     }
     if (matcher.health && feature.health !== matcher.health) {
       failures.push(`feature ${feature.label} is ${feature.health}, expected ${matcher.health}`);
+    }
+    if (matcher.healthNot && feature.health === matcher.healthNot) {
+      failures.push(`feature ${feature.label} is ${feature.health}, which it must not be`);
+    }
+    /**
+     * Where the feature begins, as a person tracing the code would name it. A feature
+     * rooted at an interior step is not a smaller answer to "how does this run" — it is
+     * a wrong one, because it asserts work starts somewhere it does not.
+     */
+    if (matcher.entry && !matchesEntry(feature, matcher.entry)) {
+      const entries = entryNodesOf(feature);
+      failures.push(`feature ${feature.label} begins at ${entries.map((node) => `${node.type}:${node.label}`).join(", ") || "nothing"}, expected ${matcher.entry.type ?? "any"}:${matcher.entry.label}`);
+    }
+    /** Chain diagnostics the feature must carry — an honest "unknown" beats a clean lie. */
+    for (const required of matcher.diagnostics ?? []) {
+      if (!feature.diagnostics.some((item) => item.code === required.code)) {
+        failures.push(`feature ${feature.label} is missing diagnostic ${required.code} (has: ${feature.diagnostics.map((item) => item.code).join(", ") || "none"})`);
+      }
     }
     const variantCount = matcher.variantCount;
     if (variantCount && (feature.variants.length < variantCount.min || feature.variants.length > variantCount.max)) {
