@@ -46,7 +46,7 @@ runs:
     # run's analysis fails. No third-party actions are involved anywhere.
     - name: Restore last successful map
       id: restore
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: ${{ inputs.project-path }}/.agent-runtime-map/current
         key: ${{ inputs.cache-prefix }}-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -176,7 +176,7 @@ runs:
     # baseline at an older build whenever one workflow runs this action twice.
     - name: Save the map as the next baseline
       if: steps.build.outputs.ok == 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v6
       with:
         path: ${{ inputs.project-path }}/.agent-runtime-map/current
         key: ${{ inputs.cache-prefix }}-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.build.outputs.stamp }}
