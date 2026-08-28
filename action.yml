@@ -189,7 +189,7 @@ runs:
 
     - name: Upload Pages artifact
       if: inputs.publish == 'pages'
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v5
       with:
         path: ${{ inputs.project-path }}/.agent-runtime-map/current
 
