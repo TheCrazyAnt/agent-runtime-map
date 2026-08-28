@@ -1,6 +1,0 @@
-{
-  "name": "benchmark-large-platform",
-  "private": true,
-  "description": "Benchmark sample: a content platform with 64 Express routes and high-fan-out services, sized so the logic compressor must choose which nodes survive.",
-  "dependencies": { "express": "^4.19.0" }
-}

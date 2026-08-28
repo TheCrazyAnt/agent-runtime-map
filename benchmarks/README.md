@@ -45,30 +45,6 @@ node scripts/benchmark-report.mjs
 | `research-crew` | Factory-produced agent instances, literal vs. computed object-member dispatch, an orchestrating entry function with no route, a vector store, a template-literal external URL, a fallback path |
 | `checkout-flow` | Negative control: Next.js route + page, service object, payment/external calls, database write — and **zero** AI constructs to invent |
 | `rag-chat` | Minimal reproduction of a real repository's structure ([REAL_WORLD.md](REAL_WORLD.md)): AWS SDK client call, in-handler system prompt, runtime-selected model, UI fetch to an internal route, retrieval fallback |
-| `large-platform` | **Compression under pressure**: 66 routes and four high-fan-out services against a 44-node budget. Asserts that three chains keep their real route entry *and* the agent, tool, gate, store, and external system each reaches — and that a chain with no resolvable entry says so instead of reading healthy |
-
-## Compression is a separate claim from extraction
-
-The first four samples fit under the default budget, so their expectations are
-about what the analyzer *finds*. `large-platform` does not fit, and its
-expectation is about what survives when the map may not draw everything.
-
-The two questions need different files. Enumerating `large-platform`'s ~150
-extracted business nodes would bury its one claim under an inventory the small
-samples already guarantee, so it sets `"scope": { "exactRawTopology": false }`
-and spends its expectation on the logic layer instead. That flag skips the raw
-allowlist and nothing else; every logic-level and feature-level check still runs.
-
-Keys the compression sample adds:
-
-| Key | Claim |
-|---|---|
-| `options` | Compile options the expectation is *about* — `large-platform` pins `maxNodes`, because "which 44 nodes" is meaningless read against a different budget |
-| `logic.requiredNodes` | Nodes that must survive, by label **and** type. A feature whose entry survives but whose agent does not has been hidden, not compressed |
-| `logic.maxDanglingEntrypoints` | Cap on entries drawn with nothing downstream. A few are honest; a map made of them spent its budget on breadth |
-| `features[].entry` | Where the feature begins. Also **selects** the feature, so an expectation never depends on a label the analyzer may borrow from a document |
-| `features[].healthNot` | A health the feature must not report |
-| `features[].diagnostics` | Chain diagnostics it must carry — an honest `FEATURE_ENTRY_UNRESOLVED` beats a clean lie |
 
 ## Adding a sample
 
