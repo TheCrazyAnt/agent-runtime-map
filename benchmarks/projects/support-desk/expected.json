@@ -1,0 +1,419 @@
+{
+  "notes": "Hand-confirmed exact topology. Every business node and edge the analyzer may emit is listed; anything else is a false positive. The refund chain is a branch of the ticket route; the dynamic tool-probe route keeps its code-derived name.",
+  "nodes": [
+    {
+      "kind": "route",
+      "name": "POST /api/tickets",
+      "evidenceFile": "src/server.ts"
+    },
+    {
+      "kind": "route",
+      "name": "GET /api/faq",
+      "evidenceFile": "src/server.ts"
+    },
+    {
+      "kind": "route",
+      "name": "POST /api/tools/:name",
+      "evidenceFile": "src/server.ts"
+    },
+    {
+      "kind": "agent",
+      "name": "Triage",
+      "evidenceFile": "src/agents/triage.ts"
+    },
+    {
+      "kind": "agent",
+      "name": "Reply",
+      "evidenceFile": "src/agents/triage.ts"
+    },
+    {
+      "kind": "prompt",
+      "name": "triageAgent instructions"
+    },
+    {
+      "kind": "prompt",
+      "name": "replyAgent instructions"
+    },
+    {
+      "kind": "tool",
+      "name": "kbSearchTool",
+      "evidenceFile": "src/tools/kb.ts"
+    },
+    {
+      "kind": "tool",
+      "name": "ticketLookupTool",
+      "evidenceFile": "src/tools/kb.ts"
+    },
+    {
+      "kind": "tool",
+      "name": "anyTool",
+      "evidenceFile": "src/tools/registry.ts"
+    },
+    {
+      "kind": "human_gate",
+      "name": "approveRefund",
+      "evidenceFile": "src/workflows/refund.ts"
+    },
+    {
+      "kind": "human_gate",
+      "name": "awaitHumanDecision",
+      "evidenceFile": "src/workflows/refund.ts"
+    },
+    {
+      "kind": "workflow",
+      "name": "refundWorkflow",
+      "evidenceFile": "src/workflows/refund.ts"
+    },
+    {
+      "kind": "service",
+      "name": "refundOrder",
+      "evidenceFile": "src/services/billing.ts"
+    },
+    {
+      "kind": "service",
+      "name": "email",
+      "evidenceFile": "src/services/billing.ts"
+    },
+    {
+      "kind": "service",
+      "name": "services",
+      "evidenceFile": "src/services/index.ts",
+      "optional": true
+    },
+    {
+      "kind": "database",
+      "name": "ticket"
+    },
+    {
+      "kind": "database",
+      "name": "refund"
+    },
+    {
+      "kind": "external_api",
+      "name": "api.stripe.com"
+    },
+    {
+      "kind": "external_api",
+      "name": "api.sendgrid.com"
+    },
+    {
+      "kind": "external_api",
+      "name": "kb.internal.example.com"
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "name": "POST /api/tickets"
+      },
+      "to": {
+        "name": "handleTicket"
+      }
+    },
+    {
+      "from": {
+        "name": "POST /api/tickets"
+      },
+      "to": {
+        "name": "isTicketBody"
+      },
+      "control": "conditional"
+    },
+    {
+      "from": {
+        "name": "GET /api/faq"
+      },
+      "to": {
+        "name": "handleFaq"
+      }
+    },
+    {
+      "from": {
+        "name": "POST /api/tools/:name"
+      },
+      "to": {
+        "name": "handleToolProbe"
+      }
+    },
+    {
+      "from": {
+        "name": "handleTicket"
+      },
+      "to": {
+        "kind": "database",
+        "name": "ticket"
+      },
+      "kind": "writes"
+    },
+    {
+      "from": {
+        "name": "handleTicket"
+      },
+      "to": {
+        "kind": "agent",
+        "name": "Triage"
+      }
+    },
+    {
+      "from": {
+        "name": "handleTicket"
+      },
+      "to": {
+        "kind": "workflow",
+        "name": "refundWorkflow"
+      },
+      "control": "conditional"
+    },
+    {
+      "from": {
+        "name": "handleTicket"
+      },
+      "to": {
+        "kind": "tool",
+        "name": "kbSearchTool"
+      }
+    },
+    {
+      "from": {
+        "name": "handleTicket"
+      },
+      "to": {
+        "kind": "agent",
+        "name": "Reply"
+      }
+    },
+    {
+      "from": {
+        "name": "run"
+      },
+      "to": {
+        "name": "refundWorkflow"
+      },
+      "kind": "data_flow"
+    },
+    {
+      "from": {
+        "name": "handleFaq"
+      },
+      "to": {
+        "kind": "tool",
+        "name": "kbSearchTool"
+      }
+    },
+    {
+      "from": {
+        "name": "handleToolProbe"
+      },
+      "to": {
+        "kind": "tool",
+        "name": "anyTool"
+      }
+    },
+    {
+      "from": {
+        "kind": "agent",
+        "name": "Triage"
+      },
+      "to": {
+        "kind": "prompt",
+        "name": "triageAgent"
+      },
+      "kind": "data_flow"
+    },
+    {
+      "from": {
+        "kind": "agent",
+        "name": "Reply"
+      },
+      "to": {
+        "kind": "prompt",
+        "name": "replyAgent"
+      },
+      "kind": "data_flow"
+    },
+    {
+      "from": {
+        "name": "refundWorkflow"
+      },
+      "to": {
+        "kind": "human_gate",
+        "name": "approveRefund"
+      },
+      "control": "human_approval"
+    },
+    {
+      "from": {
+        "name": "refundWorkflow"
+      },
+      "to": {
+        "name": "refundOrder"
+      },
+      "control": "retry"
+    },
+    {
+      "from": {
+        "name": "refundWorkflow"
+      },
+      "to": {
+        "name": "email"
+      }
+    },
+    {
+      "from": {
+        "name": "approveRefund"
+      },
+      "to": {
+        "name": "awaitHumanDecision"
+      }
+    },
+    {
+      "from": {
+        "name": "refundOrder"
+      },
+      "to": {
+        "name": "api.stripe.com"
+      },
+      "kind": "requests"
+    },
+    {
+      "from": {
+        "name": "refundOrder"
+      },
+      "to": {
+        "kind": "database",
+        "name": "refund"
+      },
+      "kind": "writes"
+    },
+    {
+      "from": {
+        "name": "email"
+      },
+      "to": {
+        "name": "api.sendgrid.com"
+      },
+      "kind": "requests"
+    },
+    {
+      "from": {
+        "name": "kbSearchTool"
+      },
+      "to": {
+        "name": "kb.internal.example.com"
+      },
+      "kind": "requests"
+    },
+    {
+      "from": {
+        "name": "ticketLookupTool"
+      },
+      "to": {
+        "kind": "database",
+        "name": "ticket"
+      },
+      "kind": "reads"
+    }
+  ],
+  "diagnostics": {
+    "required": [
+      {
+        "code": "CALL_UNRESOLVED_DYNAMIC",
+        "file": "src/tools/registry.ts"
+      }
+    ]
+  },
+  "logic": {
+    "forbiddenLabels": [
+      "Is Ticket Body",
+      "Format Ticket"
+    ]
+  },
+  "featureCount": {
+    "min": 3,
+    "max": 3
+  },
+  "features": [
+    {
+      "label": "Submit Ticket",
+      "health": "healthy",
+      "variantCount": {
+        "min": 3,
+        "max": 12
+      },
+      "variants": [
+        {
+          "orderedRoute": [
+            "POST /api/tickets",
+            "Handle Ticket",
+            "Refund",
+            "Approve Refund"
+          ],
+          "controls": [
+            {
+              "from": "Refund",
+              "to": "Approve Refund",
+              "control": "human_approval"
+            }
+          ]
+        },
+        {
+          "orderedRoute": [
+            "POST /api/tickets",
+            "Handle Ticket",
+            "Refund",
+            "Refund Order",
+            "api.stripe.com"
+          ],
+          "controls": [
+            {
+              "from": "Refund",
+              "to": "Refund Order",
+              "control": "retry"
+            }
+          ]
+        },
+        {
+          "orderedRoute": [
+            "POST /api/tickets",
+            "Handle Ticket",
+            "Reply Writer"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "FAQ",
+      "health": "healthy",
+      "variantCount": {
+        "min": 1,
+        "max": 1
+      },
+      "variants": [
+        {
+          "orderedRoute": [
+            "GET /api/faq",
+            "Handle Faq",
+            "Kb Search Tool",
+            "kb.internal.example.com"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "/api/tools",
+      "variantCount": {
+        "min": 1,
+        "max": 1
+      },
+      "variants": [
+        {
+          "orderedRoute": [
+            "POST /api/tools/:name",
+            "Handle Tool Probe",
+            "Any Tool"
+          ]
+        }
+      ]
+    }
+  ]
+}

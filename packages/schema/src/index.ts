@@ -179,6 +179,11 @@ export interface Diagnostic {
   code: string;
   message: string;
   source?: SourceLocation;
+  /**
+   * Structured facts behind the diagnostic — for an unresolved call, the reason,
+   * the inference method, and the analyzer's confidence in the diagnosis itself.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export type GraphType = "runtime_logic" | "product_logic";

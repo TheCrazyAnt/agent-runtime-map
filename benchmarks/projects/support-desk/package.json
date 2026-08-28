@@ -1,0 +1,6 @@
+{
+  "name": "benchmark-support-desk",
+  "private": true,
+  "description": "Benchmark sample: an Express support-ticket service with a triage agent, a tool registry, human-approved refunds, and retry logic.",
+  "dependencies": { "express": "^4.19.0" }
+}

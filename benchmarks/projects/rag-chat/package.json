@@ -1,0 +1,6 @@
+{
+  "name": "benchmark-rag-chat",
+  "private": true,
+  "description": "Benchmark sample: minimal reproduction of the structure of anthropics/anthropic-quickstarts customer-support-agent (MIT) — a chat route with Bedrock retrieval, an in-handler system prompt, and a runtime-selected Anthropic model. Code written for this benchmark; structure credit to the original.",
+  "dependencies": { "next": "^15.0.0", "@anthropic-ai/sdk": "^0.30.0", "@aws-sdk/client-bedrock-agent-runtime": "^3.600.0" }
+}
