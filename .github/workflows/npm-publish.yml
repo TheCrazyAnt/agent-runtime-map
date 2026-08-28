@@ -1,0 +1,55 @@
+# Publishes the three npm packages via Trusted Publishing (OIDC).
+#
+# There is no NPM_TOKEN anywhere: npm exchanges this workflow's OIDC identity for
+# a short-lived credential, which only works because the npm Trusted Publisher
+# configuration for each package names exactly this repository and this file.
+#
+# Runs only for a release tag (vX.Y.Z) or an explicit manual dispatch — never for
+# ordinary pushes or pull requests. Already-published versions are skipped, so
+# re-running a partially failed release completes it instead of erroring, and no
+# run can ever overwrite or republish an existing version.
+name: npm publish
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      # Trusted Publishing needs a current npm CLI; the one bundled with Node
+      # may predate OIDC publish support.
+      - name: Ensure an OIDC-capable npm
+        run: npm install -g npm@latest && npm --version
+
+      - run: npm ci
+
+      # The full gate: typecheck, all tests, builds, audit, package checks, and
+      # the repository-identity check. Nothing publishes if any of it fails.
+      - run: npm run release:check
+
+      - name: Publish (skips versions the registry already has)
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            node scripts/publish-npm.mjs --tag "${{ github.ref_name }}"
+          else
+            node scripts/publish-npm.mjs
+          fi

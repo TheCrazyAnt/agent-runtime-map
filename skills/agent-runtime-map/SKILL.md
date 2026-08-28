@@ -31,7 +31,7 @@ compiler-grade tooling (ts-morph for TypeScript/JavaScript, Python's own `ast`
 for Python), never executes the analyzed project, and never uploads source.
 
 ```bash
-npx --yes https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz analyze <project-path> -o /tmp/arm-graph.json --no-raw
+npx --yes agent-runtime-map@0.8.0 analyze <project-path> -o /tmp/arm-graph.json --no-raw
 ```
 
 Use an absolute `<project-path>`. Writing the graph to a temporary path keeps
@@ -76,7 +76,7 @@ For an interactive viewer (feature list, step-through playback, evidence
 drawer, focus mode, Chinese/English UI):
 
 ```bash
-npx --yes https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz <project-path>
+npx --yes agent-runtime-map@0.8.0 <project-path>
 ```
 
 It serves on localhost and opens a browser. Playback is a static simulation of
