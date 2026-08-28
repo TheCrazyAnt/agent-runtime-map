@@ -405,6 +405,21 @@ Resolver gains shipped with it (all deterministic, all regression-tested in
   task entries back); documented-capability labels are only borrowed when
   entry terms match or score ≥ 3.
 
+The benchmark is an exact-topology allowlist since the second review round:
+business nodes/edges not in the hand-confirmed answer are FPs that fail CI,
+feature routes are checked in order per variant with control kinds, and every
+logic node/edge must chain to raw evidence with file:line. A real-repository
+verification (anthropics/anthropic-quickstarts customer-support-agent @
+3313e9716fb5, MIT) is recorded in benchmarks/REAL_WORLD.md and reproduced
+offline as the rag-chat sample; it drove four more deterministic fixes: AWS
+SDK client.send service naming (works uninstalled — alias symbol yields an
+EMPTY declarations array, not undefined), nested in-handler prompt constants
+(nested declarations participate in prompt detection only), runtime-selected
+model call sites kept as model nodes, and compression retention widened to
+functions flowing into external_api/database/route. Unresolved-diagnostic
+dedupe is per-analysis (concurrency-safe, tested), and DB_RECEIVER requires a
+camelCase suffix boundary (restore/reindex negative-tested).
+
 simple-agent's graph is byte-identical before/after — verified against the
 released 0.8.0 CLI. Known still-unresolved (by design or deferred): runtime
 member dispatch (diagnosed), wrapper functions returning registry lookups

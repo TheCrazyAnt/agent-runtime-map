@@ -124,6 +124,10 @@ export function hasQualifiedSuffix(name: string, pattern: RegExp): boolean {
 export function classifyDeclaration(facts: DeclarationFacts): Classification {
   const normalizedPath = facts.relativeFile.toLowerCase();
   const normalizedName = facts.name.toLowerCase();
+  // `makeAgent` manufactures agents; it is not one. A factory verb in front of a
+  // suffix disqualifies the suffix rule — the instances the factory returns are
+  // classified on their own names instead.
+  const factoryNamed = /^(make|create|build|new|init)[A-Z]/.test(facts.name);
   // Path conventions describe a whole directory, so they must not promote helper
   // scripts that merely happen to live under it.
   const pathConventionsApply = !SUPPORTING_PATH_PATTERN.test(normalizedPath) && !isPlumbing(facts);
@@ -138,31 +142,31 @@ export function classifyDeclaration(facts: DeclarationFacts): Classification {
   if (facts.internal) {
     return { kind: "function", confidence: 1, detail: "Private class member, treated as an implementation detail", method: "ast" };
   }
-  if (hasQualifiedSuffix(normalizedName, /(workflow|orchestrator|pipeline|graph|crew)$/)) {
+  if (!factoryNamed && hasQualifiedSuffix(normalizedName, /(workflow|orchestrator|pipeline|graph|crew)$/)) {
     return { kind: "workflow", confidence: 0.84, detail: "Workflow or orchestrator naming convention", method: "name_heuristic" };
   }
   // A human-approval name outranks directory conventions: `approveRefund` inside
   // `workflows/` is a gate that happens to live with the workflows, and calling it
   // a workflow erases the one property a reader most needs to see.
-  if (/(approve|approval|humanreview|human_review|confirm|moderate)/.test(normalizedName)) {
+  if (/(approve|approval|humanreview|human_review|humandecision|human_decision|confirm|moderate)/.test(normalizedName)) {
     return { kind: "human_gate", confidence: 0.68, detail: "Human approval or review naming convention", method: "name_heuristic" };
   }
   if (pathConventionsApply && /(^|\/)(workflows?|orchestrators?|pipelines?|graphs?|crews?)(\/|$)/.test(normalizedPath)) {
     return { kind: "workflow", confidence: 0.72, detail: "Declared under a workflow or orchestrator directory", method: "path_heuristic" };
   }
-  if (hasQualifiedSuffix(normalizedName, /agent$/)) {
+  if (!factoryNamed && hasQualifiedSuffix(normalizedName, /agent$/)) {
     return { kind: "agent", confidence: 0.84, detail: "Agent naming convention", method: "name_heuristic" };
   }
   if (pathConventionsApply && /(^|\/)(agents?)(\/|$)/.test(normalizedPath)) {
     return { kind: "agent", confidence: 0.72, detail: "Declared under an Agent directory", method: "path_heuristic" };
   }
-  if (hasQualifiedSuffix(normalizedName, /(tool|action)$/)) {
+  if (!factoryNamed && hasQualifiedSuffix(normalizedName, /(tool|action)$/)) {
     return { kind: "tool", confidence: 0.8, detail: "Tool or action naming convention", method: "name_heuristic" };
   }
   if (pathConventionsApply && /(^|\/)(tools?|actions?)(\/|$)/.test(normalizedPath)) {
     return { kind: "tool", confidence: 0.65, detail: "Declared under a tool or action directory", method: "path_heuristic" };
   }
-  if (hasQualifiedSuffix(normalizedName, /(service|usecase)$/)) {
+  if (!factoryNamed && hasQualifiedSuffix(normalizedName, /(service|usecase)$/)) {
     return { kind: "service", confidence: 0.8, detail: "Service naming convention", method: "name_heuristic" };
   }
   if (pathConventionsApply && /(^|\/)(services?|use-cases?|commands?)(\/|$)/.test(normalizedPath)) {

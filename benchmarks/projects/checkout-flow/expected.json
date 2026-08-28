@@ -1,28 +1,40 @@
 {
-  "notes": "Hand-confirmed negative control: a checkout with no agents, models, or prompts anywhere in the code — the map must not invent any.",
-  "rawNodes": {
-    "required": [
-      { "kind": "route", "name": "POST", "evidenceFile": "app/api/checkout/route.ts" },
-      { "kind": "service", "name": "createOrder", "evidenceFile": "src/services.ts" },
-      { "kind": "workflow", "name": "fulfillmentWorkflow", "evidenceFile": "src/fulfillment.ts" },
-      { "kind": "database", "name": "order" },
-      { "kind": "external_api", "name": "api.stripe.com" },
-      { "kind": "external_api", "name": "api.postmarkapp.com" }
-    ]
-  },
-  "rawEdges": {
-    "required": [
-      { "from": { "kind": "route", "name": "POST" }, "to": { "name": "createOrder" } },
-      { "from": { "kind": "route", "name": "POST" }, "to": { "name": "api.stripe.com" } },
-      { "from": { "name": "createOrder" }, "to": { "kind": "database", "name": "order" } },
-      { "from": { "name": "fulfillmentWorkflow" }, "to": { "name": "api.postmarkapp.com" } }
-    ]
-  },
+  "notes": "Hand-confirmed exact topology and negative control: the code contains no agents, models, prompts, or human gates, and the map must not invent any.",
+  "nodes": [
+    { "kind": "route", "name": "POST", "evidenceFile": "app/api/checkout/route.ts" },
+    { "kind": "service", "name": "validate", "evidenceFile": "src/services.ts" },
+    { "kind": "service", "name": "createOrder", "evidenceFile": "src/services.ts" },
+    { "kind": "workflow", "name": "fulfillmentWorkflow", "evidenceFile": "src/fulfillment.ts" },
+    { "kind": "database", "name": "order" },
+    { "kind": "external_api", "name": "api.stripe.com" },
+    { "kind": "external_api", "name": "api.postmarkapp.com" }
+  ],
+  "edges": [
+    { "from": { "name": "CheckoutPage" }, "to": { "kind": "route", "name": "POST" }, "kind": "requests" },
+    { "from": { "kind": "route", "name": "POST" }, "to": { "name": "validate" }, "control": "conditional" },
+    { "from": { "kind": "route", "name": "POST" }, "to": { "name": "api.stripe.com" }, "kind": "requests" },
+    { "from": { "kind": "route", "name": "POST" }, "to": { "name": "createOrder" } },
+    { "from": { "kind": "route", "name": "POST" }, "to": { "name": "fulfillmentWorkflow" } },
+    { "from": { "name": "createOrder" }, "to": { "kind": "database", "name": "order" }, "kind": "writes" },
+    { "from": { "name": "createOrder" }, "to": { "name": "fulfillmentWorkflow" }, "kind": "data_flow" },
+    { "from": { "name": "fulfillmentWorkflow" }, "to": { "name": "requestShipment" } },
+    { "from": { "name": "fulfillmentWorkflow" }, "to": { "name": "api.postmarkapp.com" }, "kind": "requests" }
+  ],
   "logic": {
-    "forbiddenTypes": ["ai_process", "model", "human_gate"],
-    "featureCount": { "min": 1, "max": 2 },
-    "features": [
-      { "label": "Checkout", "health": "healthy", "routeIncludes": ["Create Order"] }
-    ]
-  }
+    "forbiddenTypes": ["ai_process", "model", "human_gate"]
+  },
+  "featureCount": { "min": 1, "max": 2 },
+  "features": [
+    {
+      "label": "Checkout",
+      "health": "healthy",
+      "variantCount": { "min": 1, "max": 4 },
+      "variants": [
+        {
+          "orderedRoute": ["POST /api/checkout", "Validate", "api.stripe.com", "Create Order", "Fulfillment"],
+          "controls": [{ "from": "POST /api/checkout", "to": "Validate", "control": "conditional" }]
+        }
+      ]
+    }
+  ]
 }

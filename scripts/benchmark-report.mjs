@@ -25,10 +25,11 @@ let failed = false;
 for (const project of projects) {
   const expected = JSON.parse(readFileSync(path.join(projectsDir, project, "expected.json"), "utf8"));
   const result = await generateLogicMap(path.join(projectsDir, project), { outputFile: false, rawOutputFile: false });
-  const { failures, stats } = evaluateExpectations(expected, result);
+  const { failures, counts, stats } = evaluateExpectations(expected, result);
   const features = result.graph.features.map((feature) => `${feature.label}(${feature.health})`).join(", ");
   console.log(`\n== ${project}`);
-  console.log(`   raw ${stats.rawNodes} nodes / ${stats.rawEdges} edges · logic ${stats.logicNodes}/${stats.logicEdges} · ${stats.features} features · ${stats.unresolved} unresolved`);
+  console.log(`   business ${stats.rawNodes} nodes / ${stats.rawEdges} edges · logic ${stats.logicNodes}/${stats.logicEdges} · ${stats.features} features · ${stats.unresolved} unresolved`);
+  console.log(`   nodes TP ${counts.nodes.tp} / FP ${counts.nodes.fp} / FN ${counts.nodes.fn} · edges TP ${counts.edges.tp} / FP ${counts.edges.fp} / FN ${counts.edges.fn}`);
   console.log(`   features: ${features}`);
   if (failures.length) {
     failed = true;

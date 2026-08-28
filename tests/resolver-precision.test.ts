@@ -121,6 +121,33 @@ describe("outbound request naming", () => {
     expect(raw.nodes.some((node) => node.kind === "external_api" && node.name === "api.search.example.com")).toBe(true);
   });
 
+  it("does not mistake ordinary objects for databases", async () => {
+    const raw = await analyzeFixture({
+      "src/ops.ts": [
+        "declare const restore: { query(sql: string): Promise<void> };",
+        "declare const reindex: { find(id: string): Promise<void> };",
+        "export async function rebuild(id: string) { await restore.query('x'); await reindex.find(id); }",
+      ].join("\n"),
+    });
+    // `restore` and `reindex` merely END in store/index as plain words; without a
+    // camelCase boundary they are not data receivers.
+    expect(raw.nodes.filter((node) => node.kind === "database")).toEqual([]);
+  });
+
+  it("names an AWS service from its SDK client import, even uninstalled", async () => {
+    const raw = await analyzeFixture({
+      "src/rag.ts": [
+        "import { BedrockAgentRuntimeClient, RetrieveCommand } from '@aws-sdk/client-bedrock-agent-runtime';",
+        "const bedrockClient = new BedrockAgentRuntimeClient({ region: 'us-east-1' });",
+        "export async function retrieveContext(query: string) {",
+        "  return bedrockClient.send(new RetrieveCommand({ retrievalQuery: { text: query } }));",
+        "}",
+      ].join("\n"),
+    });
+    const external = raw.nodes.find((node) => node.kind === "external_api");
+    expect(external?.name).toBe("AWS Bedrock Agent Runtime");
+  });
+
   it("recognizes suffix-named data stores", async () => {
     const raw = await analyzeFixture({
       "src/store.ts": [
@@ -129,5 +156,27 @@ describe("outbound request naming", () => {
       ].join("\n"),
     });
     expect(raw.nodes.some((node) => node.kind === "database" && /vector/i.test(node.name))).toBe(true);
+  });
+});
+
+describe("concurrent analyses", () => {
+  it("keeps unresolved diagnostics independent across simultaneous projects", async () => {
+    const registryProject = {
+      "src/registry.ts": [
+        "export const echoTool = { name: 'echo', async execute(q: string) { return q; } };",
+        "export const registry = new Map<string, { execute(q: string): Promise<string> }>();",
+        "registry.set('echo', echoTool);",
+        "export async function lookup(name: string, q: string) { return registry.get(name)?.execute(q); }",
+      ].join("\n"),
+    };
+    // Two projects with the SAME file path and SAME unresolved expression: a
+    // shared dedupe set would report the site once and silently swallow the twin.
+    const [first, second] = await Promise.all([
+      analyzeFixture(registryProject),
+      analyzeFixture(registryProject),
+    ]);
+    const unresolvedIn = (raw: RawCodeGraph) => raw.diagnostics.filter((d) => d.code === "CALL_UNRESOLVED_DYNAMIC");
+    expect(unresolvedIn(first)).toHaveLength(1);
+    expect(unresolvedIn(second)).toHaveLength(1);
   });
 });

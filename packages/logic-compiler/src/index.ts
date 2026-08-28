@@ -116,9 +116,15 @@ function isLogicCandidate(node: RawCodeNode, flowDegree: number, orchestrators: 
   return false;
 }
 
-const ORCHESTRATED_KINDS = new Set(["agent", "workflow", "tool", "human_gate", "model"]);
+const ORCHESTRATED_KINDS = new Set([
+  "agent", "workflow", "tool", "human_gate", "model",
+  // Integration steps: a function that reaches an external system, a data
+  // store, or an internal route is a step in the business flow — dropping it
+  // severs the chain between the entrypoint and the boundary it crosses.
+  "external_api", "database", "route",
+]);
 
-/** Function nodes with an observed flow edge into something agentic. */
+/** Function nodes with an observed flow edge into something the map must show. */
 function findOrchestrators(raw: RawCodeGraph): ReadonlySet<string> {
   const kindById = new Map(raw.nodes.map((node) => [node.id, node.kind]));
   const orchestrators = new Set<string>();

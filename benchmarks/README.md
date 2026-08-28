@@ -5,6 +5,13 @@ Hand-confirmed samples that hold the analyzer to account. Each project under
 is the **human-verified correct answer**: which nodes and edges the code proves,
 what the map must not invent, and which relations are honestly unresolvable.
 
+Verdicts are exact topology: every business node and edge must match the
+allowlist (anything extra is a false positive that fails the suite), every
+non-optional entry must appear (a miss is a false negative), feature routes are
+checked in order per variant with their control kinds, and every visible logic
+node and edge must trace to a raw edge with file-and-line evidence. The report
+prints TP / FP / FN per sample.
+
 The gating version runs in CI (`tests/benchmark.test.ts`); the readable version
 is:
 
@@ -37,6 +44,7 @@ node scripts/benchmark-report.mjs
 | `support-desk` | Express routes, agent + prompt configs, a string-keyed tool registry (cross-file set/get), class instances held on an object property, a human-approval gate inside a `workflows/` directory, a bounded retry loop, plumbing helpers that must stay off the map, one genuinely dynamic tool lookup |
 | `research-crew` | Factory-produced agent instances, literal vs. computed object-member dispatch, an orchestrating entry function with no route, a vector store, a template-literal external URL, a fallback path |
 | `checkout-flow` | Negative control: Next.js route + page, service object, payment/external calls, database write — and **zero** AI constructs to invent |
+| `rag-chat` | Minimal reproduction of a real repository's structure ([REAL_WORLD.md](REAL_WORLD.md)): AWS SDK client call, in-handler system prompt, runtime-selected model, UI fetch to an internal route, retrieval fallback |
 
 ## Adding a sample
 

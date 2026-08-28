@@ -1,0 +1,120 @@
+{
+  "notes": "Hand-confirmed exact topology, mirroring the real customer-support-agent verification: the chat route must show retrieval reaching AWS Bedrock, the LLM call with its runtime-selected model, the in-handler system prompt, and the UI reaching the route — with nothing invented.",
+  "nodes": [
+    {
+      "kind": "route",
+      "name": "POST",
+      "evidenceFile": "app/api/chat/route.ts"
+    },
+    {
+      "kind": "prompt",
+      "name": "systemPrompt",
+      "evidenceFile": "app/api/chat/route.ts"
+    },
+    {
+      "kind": "model",
+      "name": "anthropic model (runtime-selected)"
+    },
+    {
+      "kind": "external_api",
+      "name": "Anthropic API"
+    },
+    {
+      "kind": "external_api",
+      "name": "AWS Bedrock Agent Runtime"
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "name": "ChatArea"
+      },
+      "to": {
+        "kind": "route",
+        "name": "POST"
+      },
+      "kind": "requests"
+    },
+    {
+      "from": {
+        "kind": "route",
+        "name": "POST"
+      },
+      "to": {
+        "name": "retrieveContext"
+      }
+    },
+    {
+      "from": {
+        "name": "retrieveContext"
+      },
+      "to": {
+        "name": "AWS Bedrock"
+      },
+      "kind": "requests"
+    },
+    {
+      "from": {
+        "kind": "route",
+        "name": "POST"
+      },
+      "to": {
+        "name": "Anthropic API"
+      },
+      "kind": "requests"
+    },
+    {
+      "from": {
+        "kind": "route",
+        "name": "POST"
+      },
+      "to": {
+        "kind": "model",
+        "name": "anthropic model"
+      }
+    },
+    {
+      "from": {
+        "kind": "prompt",
+        "name": "systemPrompt"
+      },
+      "to": {
+        "kind": "route",
+        "name": "POST"
+      },
+      "kind": "data_flow",
+      "optional": true
+    }
+  ],
+  "logic": {
+    "forbiddenTypes": [
+      "human_gate"
+    ],
+    "forbiddenLabels": [
+      "Send Message"
+    ]
+  },
+  "featureCount": {
+    "min": 1,
+    "max": 1
+  },
+  "features": [
+    {
+      "label": "Chat",
+      "health": "healthy",
+      "variantCount": {
+        "min": 1,
+        "max": 3
+      },
+      "variants": [
+        {
+          "orderedRoute": [
+            "POST /api/chat",
+            "Retrieve Context",
+            "AWS Bedrock Agent Runtime"
+          ]
+        }
+      ]
+    }
+  ]
+}

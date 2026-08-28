@@ -1,35 +1,132 @@
 {
-  "notes": "Hand-confirmed: factory-built agents, one statically-known dispatch (planner), one runtime dispatch that must produce a diagnostic and no edge, a vector store, and an external search API.",
-  "rawNodes": {
-    "required": [
-      { "kind": "agent", "name": "plannerAgent", "evidenceFile": "src/crew.ts" },
-      { "kind": "agent", "name": "writerAgent", "evidenceFile": "src/crew.ts" },
-      { "kind": "agent", "name": "criticAgent", "evidenceFile": "src/crew.ts" },
-      { "kind": "database", "name": "vector" },
-      { "kind": "external_api", "name": "api.tavily.example.com" }
-    ]
-  },
-  "rawEdges": {
-    "required": [
-      { "from": { "name": "runResearch" }, "to": { "kind": "agent", "name": "plannerAgent" } },
-      { "from": { "name": "runResearch" }, "to": { "kind": "database", "name": "vector" } },
-      { "from": { "name": "searchWeb" }, "to": { "name": "api.tavily.example.com" } },
-      { "from": { "name": "critiqueDraft" }, "to": { "kind": "agent", "name": "criticAgent" } }
-    ],
-    "forbidden": [
-      { "from": { "name": "runResearch" }, "to": { "kind": "agent", "name": "writerAgent" } },
-      { "from": { "name": "runResearch" }, "to": { "kind": "agent", "name": "criticAgent" } }
-    ]
-  },
+  "notes": "Hand-confirmed exact topology. makeAgent is a factory, not an agent; the runtime role dispatch must diagnose and never draw an edge to writer or critic from runResearch. Run Research legitimately enumerates up to three branch variants once searchWeb is retained as an integration step.",
+  "nodes": [
+    {
+      "kind": "agent",
+      "name": "plannerAgent",
+      "evidenceFile": "src/crew.ts"
+    },
+    {
+      "kind": "agent",
+      "name": "writerAgent",
+      "evidenceFile": "src/crew.ts"
+    },
+    {
+      "kind": "agent",
+      "name": "criticAgent",
+      "evidenceFile": "src/crew.ts"
+    },
+    {
+      "kind": "database",
+      "name": "vector"
+    },
+    {
+      "kind": "external_api",
+      "name": "api.tavily.example.com"
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "name": "runResearch"
+      },
+      "to": {
+        "kind": "agent",
+        "name": "plannerAgent"
+      }
+    },
+    {
+      "from": {
+        "name": "runResearch"
+      },
+      "to": {
+        "kind": "database",
+        "name": "vector"
+      },
+      "kind": "writes"
+    },
+    {
+      "from": {
+        "name": "searchWeb"
+      },
+      "to": {
+        "name": "api.tavily.example.com"
+      },
+      "kind": "requests"
+    },
+    {
+      "from": {
+        "name": "critiqueDraft"
+      },
+      "to": {
+        "kind": "agent",
+        "name": "criticAgent"
+      }
+    },
+    {
+      "from": {
+        "kind": "agent",
+        "name": "plannerAgent"
+      },
+      "to": {
+        "name": "parsePlan"
+      },
+      "kind": "data_flow"
+    }
+  ],
   "diagnostics": {
-    "required": [{ "code": "CALL_UNRESOLVED_DYNAMIC", "file": "src/pipeline.ts" }]
+    "required": [
+      {
+        "code": "CALL_UNRESOLVED_DYNAMIC",
+        "file": "src/pipeline.ts"
+      }
+    ]
   },
   "logic": {
-    "forbiddenLabels": ["Parse Plan"],
-    "featureCount": { "min": 2, "max": 2 },
-    "features": [
-      { "label": "Run Research", "health": "healthy", "routeIncludes": ["Planner"], "routeExcludes": ["Writer"] },
-      { "label": "Critique", "health": "healthy", "routeIncludes": ["Critic"] }
+    "forbiddenLabels": [
+      "Parse Plan",
+      "Make"
     ]
-  }
+  },
+  "featureCount": {
+    "min": 2,
+    "max": 2
+  },
+  "features": [
+    {
+      "label": "Run Research",
+      "health": "healthy",
+      "variantCount": {
+        "min": 1,
+        "max": 3
+      },
+      "variants": [
+        {
+          "orderedRoute": [
+            "Run Research",
+            "Planner"
+          ]
+        }
+      ],
+      "routeExcludes": [
+        "Writer"
+      ]
+    },
+    {
+      "label": "Critique",
+      "health": "healthy",
+      "variantCount": {
+        "min": 1,
+        "max": 1
+      },
+      "variants": [
+        {
+          "orderedRoute": [
+            "Critique Draft",
+            "Critic"
+          ]
+        }
+      ]
+    }
+  ]
 }

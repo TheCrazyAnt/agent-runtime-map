@@ -97,7 +97,9 @@ const DB_CLIENTS = new Set(["db", "prisma", "supabase", "drizzle", "knex", "mong
  * known client, and reported as such — the Python adapter already read these, and a
  * rule that means one thing in Python and another in TypeScript is not a rule.
  */
-const DB_RECEIVER = /^(database|sql|pool|conn|connection|cursor|session|repo|repository|collection|table|store|dao|entityManager|queryRunner)$|.(index|store|cache|db|repo)$/i;
+// The suffix match requires a camelCase boundary (`vectorIndex`, `docStore`) or
+// the exact word: a bare wildcard would swallow `restore` and `reindex`.
+const DB_RECEIVER = /^(database|sql|pool|conn|connection|cursor|session|repo|repository|collection|table|store|dao|entityManager|queryRunner|index|cache|db)$|[a-z0-9][_-]?(Index|Store|Cache|Db|Repo)$/;
 
 export interface TypeScriptAnalyzerOptions {
   maxFiles?: number;
@@ -216,11 +218,13 @@ export async function analyzeTypeScriptProject(
 
   // Registrations are read before calls so a literal-keyed lookup resolves no
   // matter which file the registration lives in.
-  reportedUnresolved.clear();
   const registryIndex = collectRegistryEntries(sourceFiles, declarations);
+  // Dedupe of unresolved-call diagnostics is scoped to THIS analysis: a shared
+  // module-level set would let concurrent analyses suppress each other's findings.
+  const reportedUnresolved = new Set<string>();
   for (const sourceFile of sourceFiles) {
     collectImports(sourceFile, root, fileNodeIds, edges);
-    collectCalls(sourceFile, root, declarations, nodes, edges, registryIndex, diagnostics);
+    collectCalls(sourceFile, root, declarations, nodes, edges, registryIndex, diagnostics, reportedUnresolved);
     collectSemanticRelations(sourceFile, root, declarations, nodes, edges);
     collectModelCalls(sourceFile, root, declarations, nodes, edges);
   }
@@ -378,12 +382,19 @@ function collectSemanticConstructs(
   declarations: Map<string, DeclarationRecord>,
 ): void {
   const relativeFile = relativePath(root, sourceFile.getFilePath());
-  for (const declaration of sourceFile.getVariableDeclarations()) {
+  // Prompts live where they are used: a `systemPrompt` template inside a route
+  // handler's body is a prompt as much as a top-level constant is, so the walk
+  // covers every variable declaration in the file, nested ones included.
+  for (const declaration of sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
     if (declarations.has(declarationKey(declaration))) continue;
     const initializer = declaration.getInitializer();
     if (!initializer) continue;
     const name = declaration.getName();
     const promptText = promptLiteral(name, initializer);
+    // Nested declarations participate only in prompt detection: a `tool`
+    // variable inside a handler body is a local, not a construct declaration.
+    const nested = declaration.getFirstAncestorByKind(SyntaxKind.Block) !== undefined;
+    if (nested && !promptText) continue;
     if (promptText) {
       const promptId = stableId("prompt", `${relativeFile}:${name}:${declaration.getStartLineNumber()}`);
       const promptEvidence = [evidence(relativeFile, declaration.getStartLineNumber(), "name_heuristic", "Prompt or instructions constant", 0.88, name, declaration.getEndLineNumber())];
@@ -737,6 +748,7 @@ function collectCalls(
   edges: RawCodeEdge[],
   registryIndex: RegistryIndex,
   diagnostics: Diagnostic[],
+  reportedUnresolved: Set<string>,
 ): void {
   const relativeFile = relativePath(root, sourceFile.getFilePath());
   for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
@@ -789,7 +801,7 @@ function collectCalls(
 
     if (internalRoute) edges.push(makeEdge(caller.node.id, internalRoute.id, "requests", callEvidence, { control, metadata: controlMetadata }));
 
-    const external = externalCall(call, expressionText);
+    const external = externalCall(call, expressionText) ?? awsSdkCall(call);
     if (external) {
       const externalId = stableId("external_api", external.key);
       const externalEvidence = [evidence(
@@ -1280,7 +1292,11 @@ function collectModelCalls(
     if (!caller) continue;
     const line = call.getStartLineNumber();
 
-    const model = modelIdentifier(options.getProperty("model"));
+    const model = modelIdentifier(options.getProperty("model"))
+      // The exact model is chosen at runtime, but that an LLM is called HERE, via
+      // THIS client, is static fact — losing the call site would hide the one
+      // step readers most want to see.
+      ?? runtimeModelIdentifier(call, expressionText);
     if (model) {
       const modelId = stableId("model", model.name);
       const modelEvidence = [evidence(relativeFile, line, "framework_convention", `${expressionText} requests model ${model.name}`, 0.96, caller.node.name)];
@@ -1324,6 +1340,16 @@ function collectModelCalls(
 }
 
 /** The model a request names, and the provider helper that produced it. */
+
+/** SDK roots whose `create`/`complete` calls are unmistakably LLM requests. */
+const MODEL_SDK_EXPRESSION = /(^|\.)(anthropic|openai|client)\.(messages|chat\.completions|completions|responses)\./;
+
+function runtimeModelIdentifier(call: CallExpression, expressionText: string): { name: string; provider?: string } | undefined {
+  if (!MODEL_SDK_EXPRESSION.test(expressionText)) return undefined;
+  const provider = /anthropic/i.test(expressionText) ? "anthropic" : /openai/i.test(expressionText) ? "openai" : undefined;
+  return { name: `${provider ? humanize(provider) : "LLM"} model (runtime-selected)`, provider };
+}
+
 function modelIdentifier(property: Node | undefined): { name: string; provider?: string } | undefined {
   if (!property || !Node.isPropertyAssignment(property)) return undefined;
   const value = property.getInitializer();
@@ -1405,9 +1431,6 @@ interface RegistryIndex {
 }
 
 const REGISTRY_WRITE_METHODS = new Set(["set", "register", "add"]);
-
-/** One diagnostic per unresolved site, however many passes revisit it. */
-const reportedUnresolved = new Set<string>();
 
 function collectRegistryEntries(
   sourceFiles: SourceFile[],
@@ -1748,6 +1771,43 @@ interface ExternalCall {
  * is worse than a narrow one that misses it.
  */
 const HTTP_CLIENTS = /^(fetch|nodeFetch|axios|got|ky|superagent|undici)(\.(get|post|put|patch|delete|head|request))?$/;
+
+
+/**
+ * `client.send(command)` on a client constructed from an `@aws-sdk/client-*`
+ * import is a boundary crossing into a named AWS service — a fact read from the
+ * import specifier, not guessed from the variable name.
+ */
+function awsSdkCall(call: CallExpression): ExternalCall | undefined {
+  const expression = call.getExpression();
+  if (!Node.isPropertyAccessExpression(expression) || expression.getName() !== "send") return undefined;
+  const clientDeclaration = variableDeclarationOf(expression.getExpression());
+  const initializer = clientDeclaration?.getInitializer();
+  if (!initializer || !Node.isNewExpression(initializer)) return undefined;
+  const classExpression = initializer.getExpression();
+  const classSymbol = classExpression.getSymbol();
+  // When the package is not installed, the aliased symbol exists but is
+  // "unknown" with zero declarations — an empty array, which `??` never
+  // falls through. Both symbol layers are searched instead.
+  const classDeclarations = [classSymbol, classSymbol?.getAliasedSymbol()]
+    .filter((symbol) => symbol !== undefined)
+    .flatMap((symbol) => symbol.getDeclarations());
+  for (const declaration of classDeclarations) {
+    const importDeclaration = declaration.getFirstAncestorByKind(SyntaxKind.ImportDeclaration);
+    const module = importDeclaration?.getModuleSpecifierValue();
+    const match = module?.match(/^@aws-sdk\/client-([a-z0-9-]+)$/);
+    if (match) {
+      const service = match[1]!;
+      return {
+        key: `aws:${service}`,
+        label: `AWS ${humanize(service).replace(/\b\w/g, (letter) => letter.toUpperCase())}`,
+        metadata: { provider: "aws", service },
+        confidence: 0.9,
+      };
+    }
+  }
+  return undefined;
+}
 
 function externalCall(call: CallExpression, expressionText: string): ExternalCall | undefined {
   const firstArgument = call.getArguments()[0];
