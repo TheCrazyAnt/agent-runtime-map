@@ -1,13 +1,23 @@
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 
+// The shape of `npm pack --json` differs by npm major: npm 10 prints a
+// one-element array, npm 12 prints an object keyed by package name. The publish
+// workflow runs npm@latest for OIDC support, so this script must read both.
+function packReport(stdout, packageName) {
+  const parsed = JSON.parse(stdout);
+  const report = Array.isArray(parsed) ? parsed[0] : parsed[packageName] ?? parsed;
+  if (!report?.files) throw new Error(`Unrecognized npm pack --json output for ${packageName}`);
+  return { entryCount: report.files.length, ...report };
+}
+
 const packed = spawnSync("npm", ["pack", "--workspace", "agent-runtime-map", "--dry-run", "--json", "--ignore-scripts"], {
   encoding: "utf8",
   stdio: ["ignore", "pipe", "inherit"],
 });
 if (packed.status !== 0) process.exit(packed.status ?? 1);
 
-const [report] = JSON.parse(packed.stdout);
+const report = packReport(packed.stdout, "agent-runtime-map");
 const paths = new Set(report.files.map((file) => file.path));
 for (const required of ["dist/cli.js", "dist/viewer/index.html", "dist/python/extract.py", "dist/licenses/elkjs.txt", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "package.json"]) {
   if (!paths.has(required)) throw new Error(`Publish package is missing ${required}`);
@@ -34,7 +44,7 @@ const componentPacked = spawnSync("npm", ["pack", "--workspace", "@agent-runtime
 });
 if (componentPacked.status !== 0) process.exit(componentPacked.status ?? 1);
 
-const [componentReport] = JSON.parse(componentPacked.stdout);
+const componentReport = packReport(componentPacked.stdout, "@agent-runtime-map/react");
 const componentPaths = new Set(componentReport.files.map((file) => file.path));
 for (const required of ["dist/index.js", "dist/index.d.ts", "dist/styles.css", "README.md", "package.json"]) {
   if (!componentPaths.has(required)) throw new Error(`React component package is missing ${required}`);
@@ -55,7 +65,7 @@ const mcpPacked = spawnSync("npm", ["pack", "--workspace", "@agent-runtime-map/m
   stdio: ["ignore", "pipe", "inherit"],
 });
 if (mcpPacked.status !== 0) process.exit(mcpPacked.status ?? 1);
-const [mcpReport] = JSON.parse(mcpPacked.stdout);
+const mcpReport = packReport(mcpPacked.stdout, "@agent-runtime-map/mcp");
 const mcpPaths = new Set(mcpReport.files.map((file) => file.path));
 for (const required of ["dist/index.js", "dist/python/extract.py", "README.md", "package.json"]) {
   if (!mcpPaths.has(required)) throw new Error(`MCP package is missing ${required}`);
