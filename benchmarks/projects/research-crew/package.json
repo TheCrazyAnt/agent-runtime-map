@@ -1,0 +1,5 @@
+{
+  "name": "benchmark-research-crew",
+  "private": true,
+  "description": "Benchmark sample: a factory-built agent crew with a plan/write/critique pipeline, web search, and a vector store."
+}

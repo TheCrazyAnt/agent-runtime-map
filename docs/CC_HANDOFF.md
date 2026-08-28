@@ -374,6 +374,43 @@ revoked). From then on, releases publish through OIDC Trusted Publishing:
 - READMEs now lead with `npm install --save-dev agent-runtime-map`; GitHub
   Release tarballs remain the registry-less fallback.
 
+## 8e. Map Accuracy Benchmark v1 (post-0.8.0)
+
+`benchmarks/projects/*` + `expected.json` are hand-confirmed golden answers;
+`tests/benchmark.test.ts` gates them, `scripts/benchmark-report.mjs` prints
+them. Never judge quality by node-type variety — checkout-flow is a negative
+control that fails if any AI construct is invented.
+
+Resolver gains shipped with it (all deterministic, all regression-tested in
+`tests/resolver-precision.test.ts`):
+- Registry `set("k", v)` / `get("k")` resolves across files (import-alias hop
+  in `variableDeclarationOf`); dynamic keys emit `CALL_UNRESOLVED_DYNAMIC`
+  (schema: `Diagnostic.metadata` carries reason/method/confidence) and never
+  an edge.
+- Literal object-member dispatch (`agents["writer"].run()`) resolves; computed
+  member access on a known container diagnoses instead of guessing.
+- Factory instances (`plannerAgent = makeAgent(...)`) become nodes when their
+  name classifies confidently; their construction call is NOT a flow edge
+  (suppressed only for calls evaluated during initialization — calls inside
+  member function bodies still count).
+- Named object-literal containers (`kbSearchTool = {...}`) register as one
+  construct when classification confidence ≥ 0.65; the weak business-verb
+  fallback keeps exposing members (`routeHandlers.createDraft`).
+- classifyDeclaration: human-approval names now outrank workflow/agent
+  *directory* conventions (still below name suffixes).
+- Template-literal URL heads name their external host; `*Index/*Store/*Db`
+  receivers with DB operations register as data stores.
+- logic-compiler: functions with flow edges into agent/workflow/tool/gate/model
+  are orchestration steps and survive compression (library projects get their
+  task entries back); documented-capability labels are only borrowed when
+  entry terms match or score ≥ 3.
+
+simple-agent's graph is byte-identical before/after — verified against the
+released 0.8.0 CLI. Known still-unresolved (by design or deferred): runtime
+member dispatch (diagnosed), wrapper functions returning registry lookups
+(`anyTool`), nested UI handlers (`submitCheckout` inside a component), factory
+functions named like agents (`makeAgent` classifies as agent).
+
 ## 9. High-value next work
 
 Work in this order unless product direction changes:

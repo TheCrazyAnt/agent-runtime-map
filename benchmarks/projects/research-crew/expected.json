@@ -1,0 +1,35 @@
+{
+  "notes": "Hand-confirmed: factory-built agents, one statically-known dispatch (planner), one runtime dispatch that must produce a diagnostic and no edge, a vector store, and an external search API.",
+  "rawNodes": {
+    "required": [
+      { "kind": "agent", "name": "plannerAgent", "evidenceFile": "src/crew.ts" },
+      { "kind": "agent", "name": "writerAgent", "evidenceFile": "src/crew.ts" },
+      { "kind": "agent", "name": "criticAgent", "evidenceFile": "src/crew.ts" },
+      { "kind": "database", "name": "vector" },
+      { "kind": "external_api", "name": "api.tavily.example.com" }
+    ]
+  },
+  "rawEdges": {
+    "required": [
+      { "from": { "name": "runResearch" }, "to": { "kind": "agent", "name": "plannerAgent" } },
+      { "from": { "name": "runResearch" }, "to": { "kind": "database", "name": "vector" } },
+      { "from": { "name": "searchWeb" }, "to": { "name": "api.tavily.example.com" } },
+      { "from": { "name": "critiqueDraft" }, "to": { "kind": "agent", "name": "criticAgent" } }
+    ],
+    "forbidden": [
+      { "from": { "name": "runResearch" }, "to": { "kind": "agent", "name": "writerAgent" } },
+      { "from": { "name": "runResearch" }, "to": { "kind": "agent", "name": "criticAgent" } }
+    ]
+  },
+  "diagnostics": {
+    "required": [{ "code": "CALL_UNRESOLVED_DYNAMIC", "file": "src/pipeline.ts" }]
+  },
+  "logic": {
+    "forbiddenLabels": ["Parse Plan"],
+    "featureCount": { "min": 2, "max": 2 },
+    "features": [
+      { "label": "Run Research", "health": "healthy", "routeIncludes": ["Planner"], "routeExcludes": ["Writer"] },
+      { "label": "Critique", "health": "healthy", "routeIncludes": ["Critic"] }
+    ]
+  }
+}

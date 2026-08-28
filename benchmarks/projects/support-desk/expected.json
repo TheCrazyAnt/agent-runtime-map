@@ -1,0 +1,192 @@
+{
+  "notes": "Hand-confirmed: Express service with a triage agent, a keyed tool registry, refunds behind human approval with a bounded retry, and helpers that must stay off the map. The refund chain is a branch of the ticket route; the dynamic tool-probe route keeps its code-derived name because no documented capability matches it.",
+  "rawNodes": {
+    "required": [
+      {
+        "kind": "route",
+        "name": "POST /api/tickets",
+        "evidenceFile": "src/server.ts"
+      },
+      {
+        "kind": "route",
+        "name": "GET /api/faq",
+        "evidenceFile": "src/server.ts"
+      },
+      {
+        "kind": "agent",
+        "name": "Triage",
+        "evidenceFile": "src/agents/triage.ts"
+      },
+      {
+        "kind": "agent",
+        "name": "Reply",
+        "evidenceFile": "src/agents/triage.ts"
+      },
+      {
+        "kind": "tool",
+        "name": "kbSearchTool",
+        "evidenceFile": "src/tools/kb.ts"
+      },
+      {
+        "kind": "human_gate",
+        "name": "approveRefund",
+        "evidenceFile": "src/workflows/refund.ts"
+      },
+      {
+        "kind": "workflow",
+        "name": "refundWorkflow",
+        "evidenceFile": "src/workflows/refund.ts"
+      },
+      {
+        "kind": "service",
+        "name": "refundOrder",
+        "evidenceFile": "src/services/billing.ts"
+      },
+      {
+        "kind": "database",
+        "name": "ticket"
+      },
+      {
+        "kind": "database",
+        "name": "refund"
+      },
+      {
+        "kind": "external_api",
+        "name": "api.stripe.com"
+      },
+      {
+        "kind": "external_api",
+        "name": "api.sendgrid.com"
+      },
+      {
+        "kind": "external_api",
+        "name": "kb.internal.example.com"
+      }
+    ]
+  },
+  "rawEdges": {
+    "required": [
+      {
+        "from": {
+          "name": "POST /api/tickets"
+        },
+        "to": {
+          "name": "handleTicket"
+        }
+      },
+      {
+        "from": {
+          "name": "handleTicket"
+        },
+        "to": {
+          "kind": "agent",
+          "name": "Triage"
+        }
+      },
+      {
+        "from": {
+          "name": "handleTicket"
+        },
+        "to": {
+          "kind": "tool",
+          "name": "kbSearchTool"
+        }
+      },
+      {
+        "from": {
+          "name": "handleFaq"
+        },
+        "to": {
+          "kind": "tool",
+          "name": "kbSearchTool"
+        }
+      },
+      {
+        "from": {
+          "name": "handleTicket"
+        },
+        "to": {
+          "kind": "workflow",
+          "name": "refundWorkflow"
+        }
+      },
+      {
+        "from": {
+          "name": "refundWorkflow"
+        },
+        "to": {
+          "kind": "human_gate",
+          "name": "approveRefund"
+        }
+      },
+      {
+        "from": {
+          "name": "refundWorkflow"
+        },
+        "to": {
+          "name": "refundOrder"
+        },
+        "control": "retry"
+      },
+      {
+        "from": {
+          "name": "refundOrder"
+        },
+        "to": {
+          "name": "api.stripe.com"
+        }
+      },
+      {
+        "from": {
+          "name": "refundOrder"
+        },
+        "to": {
+          "kind": "database",
+          "name": "refund"
+        }
+      }
+    ]
+  },
+  "diagnostics": {
+    "required": [
+      {
+        "code": "CALL_UNRESOLVED_DYNAMIC",
+        "file": "src/tools/registry.ts"
+      }
+    ]
+  },
+  "logic": {
+    "forbiddenLabels": [
+      "Is Ticket Body",
+      "Format Ticket"
+    ],
+    "featureCount": {
+      "min": 3,
+      "max": 3
+    },
+    "features": [
+      {
+        "label": "Submit Ticket",
+        "health": "healthy",
+        "routeIncludes": [
+          "Triage",
+          "Approve Refund",
+          "Refund Order"
+        ]
+      },
+      {
+        "label": "FAQ",
+        "health": "healthy",
+        "routeIncludes": [
+          "Kb Search"
+        ]
+      },
+      {
+        "label": "/api/tools",
+        "routeIncludes": [
+          "Any Tool"
+        ]
+      }
+    ]
+  }
+}

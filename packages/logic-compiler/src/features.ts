@@ -155,6 +155,10 @@ function matchDocumentedCapability(
       };
     }
   }
+  // A single incidental step-term is not a match: borrowing a documented label on
+  // that evidence renames a route after a capability it does not implement. Weak
+  // matches fall back to the code's own entrypoint name, which is always true.
+  if (best && best.matchedOn === "step_terms" && best.score < 3) return undefined;
   return best;
 }
 

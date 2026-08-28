@@ -1,0 +1,6 @@
+{
+  "name": "benchmark-checkout-flow",
+  "private": true,
+  "description": "Benchmark sample: a Next.js checkout with no agents or models — a negative control for invented AI nodes.",
+  "dependencies": { "next": "^15.0.0" }
+}

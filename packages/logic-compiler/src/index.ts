@@ -32,7 +32,8 @@ export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {
   const maxNodes = Math.max(4, options.maxNodes ?? 40);
   const diagnostics = [...raw.diagnostics];
   const flowDegree = calculateFlowDegree(raw.edges);
-  const candidates = raw.nodes.filter((node) => isLogicCandidate(node, flowDegree.get(node.id) ?? 0));
+  const orchestrators = findOrchestrators(raw);
+  const candidates = raw.nodes.filter((node) => isLogicCandidate(node, flowDegree.get(node.id) ?? 0, orchestrators));
   const ranked = rankCandidates(candidates, flowDegree);
   const kept = ranked.slice(0, maxNodes);
   const keptIds = new Set(kept.map((node) => node.id));
@@ -94,7 +95,7 @@ function isUtilityName(name: string): boolean {
   return UTILITY_NAME_PATTERN.test(camelCaseName);
 }
 
-function isLogicCandidate(node: RawCodeNode, flowDegree: number): boolean {
+function isLogicCandidate(node: RawCodeNode, flowDegree: number, orchestrators: ReadonlySet<string>): boolean {
   // A route is an entrypoint no matter what it is called.
   if (node.kind === "route" || node.kind === "database" || node.kind === "external_api") return true;
   if (["service", "agent", "workflow", "tool", "human_gate"].includes(node.kind)) {
@@ -104,9 +105,29 @@ function isLogicCandidate(node: RawCodeNode, flowDegree: number): boolean {
     if (flowDegree === 0 && maxEvidenceConfidence(node) <= 0.5) return false;
     return flowDegree > 0 || !isUtilityName(node.name);
   }
-  if (node.kind === "function") return /^(handle|on)(submit|click|upload|save|create|generate)|submit|upload/i.test(node.name);
+  if (node.kind === "function") {
+    // A function that dispatches to an agent, workflow, tool, gate, or model is an
+    // orchestration step — often the only entry a library-style project has.
+    // Dropping it beheads the chain: the agents it drives become parentless roots.
+    if (orchestrators.has(node.id)) return true;
+    return /^(handle|on)(submit|click|upload|save|create|generate)|submit|upload/i.test(node.name);
+  }
   if (["model", "prompt"].includes(node.kind)) return flowDegree > 0;
   return false;
+}
+
+const ORCHESTRATED_KINDS = new Set(["agent", "workflow", "tool", "human_gate", "model"]);
+
+/** Function nodes with an observed flow edge into something agentic. */
+function findOrchestrators(raw: RawCodeGraph): ReadonlySet<string> {
+  const kindById = new Map(raw.nodes.map((node) => [node.id, node.kind]));
+  const orchestrators = new Set<string>();
+  for (const edge of raw.edges) {
+    if (!FLOW_EDGE_KINDS.has(edge.kind)) continue;
+    if (kindById.get(edge.source) !== "function") continue;
+    if (ORCHESTRATED_KINDS.has(kindById.get(edge.target) ?? "")) orchestrators.add(edge.source);
+  }
+  return orchestrators;
 }
 
 function calculateFlowDegree(edges: RawCodeEdge[]): Map<string, number> {

@@ -1,0 +1,28 @@
+{
+  "notes": "Hand-confirmed negative control: a checkout with no agents, models, or prompts anywhere in the code — the map must not invent any.",
+  "rawNodes": {
+    "required": [
+      { "kind": "route", "name": "POST", "evidenceFile": "app/api/checkout/route.ts" },
+      { "kind": "service", "name": "createOrder", "evidenceFile": "src/services.ts" },
+      { "kind": "workflow", "name": "fulfillmentWorkflow", "evidenceFile": "src/fulfillment.ts" },
+      { "kind": "database", "name": "order" },
+      { "kind": "external_api", "name": "api.stripe.com" },
+      { "kind": "external_api", "name": "api.postmarkapp.com" }
+    ]
+  },
+  "rawEdges": {
+    "required": [
+      { "from": { "kind": "route", "name": "POST" }, "to": { "name": "createOrder" } },
+      { "from": { "kind": "route", "name": "POST" }, "to": { "name": "api.stripe.com" } },
+      { "from": { "name": "createOrder" }, "to": { "kind": "database", "name": "order" } },
+      { "from": { "name": "fulfillmentWorkflow" }, "to": { "name": "api.postmarkapp.com" } }
+    ]
+  },
+  "logic": {
+    "forbiddenTypes": ["ai_process", "model", "human_gate"],
+    "featureCount": { "min": 1, "max": 2 },
+    "features": [
+      { "label": "Checkout", "health": "healthy", "routeIncludes": ["Create Order"] }
+    ]
+  }
+}

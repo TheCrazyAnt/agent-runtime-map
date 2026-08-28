@@ -9,6 +9,7 @@ import {
   type ArrowFunction,
   type BindingElement,
   type CallExpression,
+  type ElementAccessExpression,
   type ExportAssignment,
   type Expression,
   type FunctionDeclaration,
@@ -96,7 +97,7 @@ const DB_CLIENTS = new Set(["db", "prisma", "supabase", "drizzle", "knex", "mong
  * known client, and reported as such — the Python adapter already read these, and a
  * rule that means one thing in Python and another in TypeScript is not a rule.
  */
-const DB_RECEIVER = /^(database|sql|pool|conn|connection|cursor|session|repo|repository|collection|table|store|dao|entityManager|queryRunner)$/i;
+const DB_RECEIVER = /^(database|sql|pool|conn|connection|cursor|session|repo|repository|collection|table|store|dao|entityManager|queryRunner)$|.(index|store|cache|db|repo)$/i;
 
 export interface TypeScriptAnalyzerOptions {
   maxFiles?: number;
@@ -213,9 +214,13 @@ export async function analyzeTypeScriptProject(
     collectDeclarativeWorkflow(sourceFile, root, declarations, nodes, edges);
   }
 
+  // Registrations are read before calls so a literal-keyed lookup resolves no
+  // matter which file the registration lives in.
+  reportedUnresolved.clear();
+  const registryIndex = collectRegistryEntries(sourceFiles, declarations);
   for (const sourceFile of sourceFiles) {
     collectImports(sourceFile, root, fileNodeIds, edges);
-    collectCalls(sourceFile, root, declarations, nodes, edges);
+    collectCalls(sourceFile, root, declarations, nodes, edges, registryIndex, diagnostics);
     collectSemanticRelations(sourceFile, root, declarations, nodes, edges);
     collectModelCalls(sourceFile, root, declarations, nodes, edges);
   }
@@ -730,17 +735,54 @@ function collectCalls(
   declarations: Map<string, DeclarationRecord>,
   nodes: RawCodeNode[],
   edges: RawCodeEdge[],
+  registryIndex: RegistryIndex,
+  diagnostics: Diagnostic[],
 ): void {
   const relativeFile = relativePath(root, sourceFile.getFilePath());
   for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const caller = findEnclosingDeclaration(call, declarations);
     if (!caller) continue;
-    const target = resolveCallTarget(call, declarations) ?? resolveAgentRunTarget(call, declarations);
+    // `const plannerAgent = makeAgent(...)`: the factory call constructs the
+    // instance; it is not the instance executing anything. Drawing it as a call
+    // edge gives every factory an inbound flow and every idle instance an outbound
+    // one, which turns dynamically-dispatched instances into phantom entry points.
+    if (
+      caller.node.kind !== "function"
+      && Node.isVariableDeclaration(caller.declaration)
+      && isDirectInitializerCall(call, caller.declaration)
+    ) continue;
     const expressionText = call.getExpression().getText();
+    let indirectDetail: string | undefined;
+    let target = resolveCallTarget(call, declarations) ?? resolveAgentRunTarget(call, declarations);
+    if (!target) {
+      const indirect = resolveIndirectTarget(call, declarations, registryIndex);
+      if (indirect?.target) {
+        target = indirect.target;
+        indirectDetail = indirect.detail;
+      } else if (indirect?.unresolved) {
+        const key = `${relativeFile}:${call.getStartLineNumber()}:${indirect.unresolved.expression}`;
+        if (!reportedUnresolved.has(key)) {
+          reportedUnresolved.add(key);
+          diagnostics.push({
+            level: "info",
+            code: "CALL_UNRESOLVED_DYNAMIC",
+            message: `The target of \`${indirect.unresolved.expression}\` is decided at runtime (${indirect.unresolved.reason}); no edge was drawn.`,
+            source: { file: relativeFile, startLine: call.getStartLineNumber() },
+            metadata: {
+              reason: indirect.unresolved.reason,
+              expression: indirect.unresolved.expression,
+              method: "ast",
+              confidence: 1,
+              caller: caller.node.name,
+            },
+          });
+        }
+      }
+    }
     const internalRoute = internalFetchRoute(call, expressionText, nodes);
     const control = target?.node.kind === "human_gate" ? "human_approval" : inferControlFlow(call, expressionText);
     const controlMetadata = inferControlMetadata(call, control);
-    const callEvidence = [evidence(relativeFile, call.getStartLineNumber(), "ast", `${control === "sequential" ? "Calls" : `${control} call to`} ${expressionText}`, target || internalRoute ? 0.96 : 0.8)];
+    const callEvidence = [evidence(relativeFile, call.getStartLineNumber(), "ast", `${control === "sequential" ? "Calls" : `${control} call to`} ${expressionText}${indirectDetail ? ` — ${indirectDetail.toLowerCase()}` : ""}`, indirectDetail ? 0.92 : target || internalRoute ? 0.96 : 0.8)];
     if (target) edges.push(makeEdge(caller.node.id, target.node.id, "calls", callEvidence, { control, metadata: controlMetadata }));
     if (target) collectArgumentDataFlows(call, target, declarations, relativeFile, edges);
     collectCallbackHandoffs(call, caller, target, declarations, relativeFile, control, edges);
@@ -785,6 +827,28 @@ function collectCalls(
       edges.push(makeEdge(caller.node.id, databaseId, database.edgeKind, databaseEvidence, { control, metadata: controlMetadata }));
     }
   }
+}
+
+
+/**
+ * True only for a call evaluated while the variable initializes — not for calls
+ * inside function bodies the initializer merely defines. `makeAgent(...)` runs at
+ * initialization; the `fetch` inside a tool's `execute` method runs later, when
+ * the tool does, and suppressing it would erase the tool's real behavior.
+ */
+function isDirectInitializerCall(call: CallExpression, declaration: VariableDeclaration): boolean {
+  let current: Node | undefined = call.getParent();
+  while (current) {
+    if (current === declaration) return true;
+    if (
+      Node.isArrowFunction(current)
+      || Node.isFunctionExpression(current)
+      || Node.isMethodDeclaration(current)
+      || Node.isFunctionDeclaration(current)
+    ) return false;
+    current = current.getParent();
+  }
+  return false;
 }
 
 function collectArgumentDataFlows(
@@ -1078,6 +1142,17 @@ function collectIndirectCallables(
     const owner = declaration.getName();
 
     if (Node.isObjectLiteralExpression(initializer)) {
+      // A named container is the unit other code refers to: `kbSearchTool` is one
+      // tool, and registering it as such lets registrations and property calls
+      // resolve to it. Its members stay implementation detail. This applies only
+      // to confident classifications — a suffix or directory convention — never
+      // to the weak business-verb fallback, where `routeHandlers` would swallow
+      // the individually-addressable members it merely groups.
+      const containerClass = classifyDeclaration(declarationFacts(relativeFile, owner, declaration));
+      if (containerClass.kind !== "function" && containerClass.confidence >= 0.65) {
+        register(declaration, owner, "Object literal named as a construct");
+        continue;
+      }
       for (const property of initializer.getProperties()) {
         if (Node.isMethodDeclaration(property)) {
           register(property, `${owner}.${property.getName()}`, "Callable member of an object literal");
@@ -1092,11 +1167,16 @@ function collectIndirectCallables(
     // the certainty of a declared function even when the type checker agrees. Asking
     // the checker is expensive, so a name nothing ever invokes is rejected first —
     // otherwise every `useMemo` result in a UI file pays for a full type resolution.
-    if (declarations.has(declarationKey(declaration)) || !invokedNames.has(owner)) continue;
+    // The exception is a name that classifies as something (an agent, a tool, a
+    // service): `plannerAgent = makeAgent(...)` is an instance other code reaches
+    // through containers, so "never invoked by name" proves nothing about it.
+    if (declarations.has(declarationKey(declaration))) continue;
+    const classified = classifyDeclaration(declarationFacts(relativeFile, owner, declaration)).kind !== "function";
+    if (!classified && !invokedNames.has(owner)) continue;
     const produced = Node.isAwaitExpression(initializer) ? initializer.getExpression() : initializer;
     if (!Node.isCallExpression(produced)) continue;
-    if (declaration.getType().getCallSignatures().length === 0) continue;
-    register(declaration, owner, `Callable produced by ${produced.getExpression().getText()}`, 0.9);
+    if (!classified && declaration.getType().getCallSignatures().length === 0) continue;
+    register(declaration, owner, `Instance produced by ${produced.getExpression().getText()}`, 0.9);
   }
 
   for (const assignment of sourceFile.getExportAssignments()) {
@@ -1310,6 +1390,183 @@ function resolveCallTarget(call: CallExpression, declarations: Map<string, Decla
   return undefined;
 }
 
+
+/**
+ * A registry maps string keys to callables at runtime; when both the `set` and the
+ * `get` use string literals on the same registry declaration, the connection is a
+ * static fact, not a guess. A dynamic key is the opposite: the honest output is an
+ * unresolved diagnostic, never an invented edge.
+ */
+interface RegistryIndex {
+  /** `${registryDeclarationKey}|${literalKey}` -> the registered callable. */
+  entries: Map<string, DeclarationRecord>;
+  /** Declaration keys of everything observed being registered into. */
+  registries: Set<string>;
+}
+
+const REGISTRY_WRITE_METHODS = new Set(["set", "register", "add"]);
+
+/** One diagnostic per unresolved site, however many passes revisit it. */
+const reportedUnresolved = new Set<string>();
+
+function collectRegistryEntries(
+  sourceFiles: SourceFile[],
+  declarations: Map<string, DeclarationRecord>,
+): RegistryIndex {
+  const index: RegistryIndex = { entries: new Map(), registries: new Set() };
+  for (const sourceFile of sourceFiles) {
+    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const expression = call.getExpression();
+      if (!Node.isPropertyAccessExpression(expression) || !REGISTRY_WRITE_METHODS.has(expression.getName())) continue;
+      const [keyArgument, valueArgument] = call.getArguments();
+      const key = literalKeyOf(keyArgument);
+      if (key === undefined || !valueArgument) continue;
+      if (!Node.isIdentifier(valueArgument) && !Node.isPropertyAccessExpression(valueArgument)) continue;
+      const registryDeclaration = variableDeclarationOf(expression.getExpression());
+      if (!registryDeclaration) continue;
+      const target = resolveSymbolTarget(valueArgument.getSymbol(), declarations);
+      index.registries.add(declarationKey(registryDeclaration));
+      if (target) index.entries.set(`${declarationKey(registryDeclaration)}|${key}`, target);
+    }
+  }
+  return index;
+}
+
+function literalKeyOf(node: Node | undefined): string | undefined {
+  if (!node) return undefined;
+  if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) return node.getLiteralValue();
+  return undefined;
+}
+
+function variableDeclarationOf(node: Node): VariableDeclaration | undefined {
+  const symbol = node.getSymbol();
+  if (!symbol) return undefined;
+  // An imported name is an alias; the declaration lives behind it. Without this
+  // hop, a registry defined in one file is invisible to every other file.
+  for (const candidate of [symbol, symbol.getAliasedSymbol()].filter((item) => item !== undefined)) {
+    for (const declaration of candidate.getDeclarations()) {
+      if (Node.isVariableDeclaration(declaration)) return declaration;
+    }
+  }
+  return undefined;
+}
+
+interface IndirectResolution {
+  target?: DeclarationRecord;
+  detail?: string;
+  unresolved?: { reason: string; expression: string };
+}
+
+/**
+ * Resolves calls that reach their target through a container: a registry `get`
+ * with a literal key, or an object member picked by a literal index. A dynamic
+ * key on a known container is reported, not guessed.
+ */
+function resolveIndirectTarget(
+  call: CallExpression,
+  declarations: Map<string, DeclarationRecord>,
+  registryIndex: RegistryIndex,
+): IndirectResolution | undefined {
+  const expression = call.getExpression();
+
+  // `registry.get(...)` as the call itself: with a literal key the retrieved
+  // callable is the data-flow target; with a computed key it is unresolved.
+  const selfLookup = registryLookup(call, registryIndex);
+  if (selfLookup) return selfLookup;
+
+  // `registry.get("key")(...)` — the lookup itself is invoked.
+  const directLookup = registryLookup(expression, registryIndex);
+  if (directLookup) return directLookup;
+
+  if (Node.isPropertyAccessExpression(expression)) {
+    let container: Node = expression.getExpression();
+
+    // `const tool = registry.get("key"); tool.execute(...)` — follow the variable
+    // back to the lookup that produced it.
+    if (Node.isIdentifier(container)) {
+      const producer = variableDeclarationOf(container)?.getInitializer();
+      if (producer) {
+        const viaVariable = registryLookup(producer, registryIndex);
+        if (viaVariable) return viaVariable;
+      }
+    }
+
+    // `registry.get("key").execute(...)` — the lookup is the receiver.
+    const viaReceiver = registryLookup(container, registryIndex);
+    if (viaReceiver) return viaReceiver;
+
+    // `agents["planner"].run(...)` / `agents[role].run(...)` — object member access.
+    if (Node.isElementAccessExpression(container)) {
+      return resolveElementAccess(container, declarations);
+    }
+    // Unwrap a non-null assertion: `registry.get("k")!.execute(...)`.
+    if (Node.isNonNullExpression(container)) {
+      const inner = container.getExpression();
+      const unwrapped = registryLookup(inner, registryIndex);
+      if (unwrapped) return unwrapped;
+      if (Node.isElementAccessExpression(inner)) return resolveElementAccess(inner, declarations);
+    }
+  }
+  if (Node.isElementAccessExpression(expression)) {
+    return resolveElementAccess(expression, declarations);
+  }
+  return undefined;
+}
+
+function registryLookup(node: Node, registryIndex: RegistryIndex): IndirectResolution | undefined {
+  let lookup: Node = node;
+  if (Node.isNonNullExpression(lookup)) lookup = lookup.getExpression();
+  if (Node.isAwaitExpression(lookup)) lookup = lookup.getExpression();
+  if (!Node.isCallExpression(lookup)) return undefined;
+  const expression = lookup.getExpression();
+  if (!Node.isPropertyAccessExpression(expression) || expression.getName() !== "get") return undefined;
+  const registryDeclaration = variableDeclarationOf(expression.getExpression());
+  if (!registryDeclaration || !registryIndex.registries.has(declarationKey(registryDeclaration))) return undefined;
+  const keyArgument = lookup.getArguments()[0];
+  const key = literalKeyOf(keyArgument);
+  if (key === undefined) {
+    return {
+      unresolved: {
+        reason: "the registry key is computed at runtime",
+        expression: lookup.getText().slice(0, 160),
+      },
+    };
+  }
+  const target = registryIndex.entries.get(`${declarationKey(registryDeclaration)}|${key}`);
+  if (!target) return undefined;
+  return { target, detail: `Resolved through registry key "${key}"` };
+}
+
+function resolveElementAccess(
+  access: ElementAccessExpression,
+  declarations: Map<string, DeclarationRecord>,
+): IndirectResolution | undefined {
+  const containerDeclaration = variableDeclarationOf(access.getExpression());
+  const initializer = containerDeclaration?.getInitializer();
+  if (!initializer || !Node.isObjectLiteralExpression(initializer)) return undefined;
+  // Only a container that actually holds known callables is worth reporting on.
+  const holdsKnown = initializer.getProperties().some((property) =>
+    Node.isPropertyAssignment(property) || Node.isShorthandPropertyAssignment(property)
+      ? resolveSymbolTarget(property.getSymbol(), declarations) !== undefined
+      : false);
+  const argument = access.getArgumentExpression();
+  const key = literalKeyOf(argument)
+    ?? (argument && Node.isAsExpression(argument) ? literalKeyOf(argument.getExpression()) : undefined);
+  if (key === undefined) {
+    if (!holdsKnown) return undefined;
+    return {
+      unresolved: {
+        reason: "the member is selected by a runtime value",
+        expression: access.getText().slice(0, 160),
+      },
+    };
+  }
+  const property = initializer.getProperty(key);
+  if (!property) return undefined;
+  const target = resolveSymbolTarget(property.getSymbol(), declarations);
+  return target ? { target, detail: `Resolved object member "${key}"` } : undefined;
+}
+
 function resolveAgentRunTarget(call: CallExpression, declarations: Map<string, DeclarationRecord>): DeclarationRecord | undefined {
   const expressionText = call.getExpression().getText().toLowerCase();
   if (!/(^|\.)(run|runstreamed|invoke|execute)$/.test(expressionText)) return undefined;
@@ -1496,7 +1753,15 @@ function externalCall(call: CallExpression, expressionText: string): ExternalCal
   const firstArgument = call.getArguments()[0];
   if (HTTP_CLIENTS.test(expressionText)) {
     const client = expressionText.split(".")[0]!;
-    const url = firstArgument && Node.isStringLiteral(firstArgument) ? firstArgument.getLiteralValue() : undefined;
+    // A template literal's head still names the host: `https://api.x.com/v1/${id}`
+    // is a fact about where the request goes, even though the path is computed.
+    const url = firstArgument === undefined
+      ? undefined
+      : Node.isStringLiteral(firstArgument) || Node.isNoSubstitutionTemplateLiteral(firstArgument)
+        ? firstArgument.getLiteralValue()
+        : Node.isTemplateExpression(firstArgument)
+          ? firstArgument.getHead().getLiteralText()
+          : undefined;
     if (url && /^https?:\/\//.test(url)) {
       const host = safeHost(url);
       return { key: `http:${host}`, label: host, metadata: { provider: client, url }, confidence: 0.92 };
