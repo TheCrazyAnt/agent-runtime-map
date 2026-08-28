@@ -96,11 +96,15 @@ workflow it generates — and from then on every push and pull request rebuilds 
 map on GitHub automatically.
 
 ```bash
-npm install --save-dev https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz
+npm install --save-dev agent-runtime-map
 npx agent-runtime-map init --github
 git add agent-runtime-map.config.json .github/workflows/agent-runtime-map.yml
 git commit -m "Add Agent Runtime Map"
 ```
+
+(No registry access? The same CI-validated package is attached to every
+[GitHub Release](https://github.com/TheCrazyAnt/agent-runtime-map/releases)
+as a direct-install tarball.)
 
 That's the whole setup. Afterwards:
 
@@ -267,6 +271,13 @@ tests                       Analyzer and viewer-server tests
 
 More detail is available in [Architecture](docs/ARCHITECTURE.md), [Graph Schema](docs/GRAPH_SCHEMA.md), [Project Context](docs/PROJECT_CONTEXT.md), [Visual Components](docs/VISUAL_COMPONENTS.md), the [Roadmap](docs/ROADMAP.md), and [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 For implementation continuation, see the detailed [CC handoff guide](docs/CC_HANDOFF.md).
+
+## Releasing
+
+npm releases go through npm Trusted Publishing (OIDC) — no tokens anywhere. A
+version tag or explicit manual dispatch is the only way anything publishes, and
+already-published versions are always skipped. See
+[docs/RELEASING.md](docs/RELEASING.md).
 
 ## Development
 

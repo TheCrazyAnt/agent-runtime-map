@@ -353,6 +353,27 @@ current with no local watcher.
   restores job 2's cache, edits the fixture, and asserts a non-initial diff
   with both SHAs recorded — plus asserts nothing was committed.
 
+## 8d. npm Trusted Publishing (post-0.8.0)
+
+0.8.0 was published to npm manually by the user (granular token, since
+revoked). From then on, releases publish through OIDC Trusted Publishing:
+
+- `.github/workflows/npm-publish.yml` — triggers ONLY on `vX.Y.Z` tags or
+  manual dispatch; permissions `contents: read` + `id-token: write`; runs
+  `release:check` before publishing; no token exists anywhere (test-enforced).
+- `scripts/publish-plan.mjs` (pure, tested) + `scripts/publish-npm.mjs`
+  (executor): three packages, one version, order react → mcp → cli;
+  registry-existing versions are skipped so re-runs are idempotent; a tag that
+  mismatches the package version is refused; after each publish the registry
+  is read back before continuing.
+- npm-side Trusted Publisher config (per package): org `TheCrazyAnt`, repo
+  `agent-runtime-map`, workflow `npm-publish.yml`, environment empty.
+- Version bumps must touch: root + three package.json, VERSION consts in
+  cli.ts and mcp/server.ts, action.yml default cli-version. Full procedure
+  and failure recovery: docs/RELEASING.md (bilingual).
+- READMEs now lead with `npm install --save-dev agent-runtime-map`; GitHub
+  Release tarballs remain the registry-less fallback.
+
 ## 9. High-value next work
 
 Work in this order unless product direction changes:

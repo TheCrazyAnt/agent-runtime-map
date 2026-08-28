@@ -62,11 +62,15 @@ Viewer 采用开源的工程蓝图视觉系统：细密网格画布、图标型�
 Request 都会在 GitHub 上自动重建地图。
 
 ```bash
-npm install --save-dev https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.8.0/agent-runtime-map-0.8.0.tgz
+npm install --save-dev agent-runtime-map
 npx agent-runtime-map init --github
 git add agent-runtime-map.config.json .github/workflows/agent-runtime-map.yml
 git commit -m "Add Agent Runtime Map"
 ```
+
+（无法访问 npm registry？每个
+[GitHub Release](https://github.com/TheCrazyAnt/agent-runtime-map/releases)
+都附有同一个通过 CI 校验的安装包，可直接以 tarball 地址安装。）
 
 设置到此为止。之后：
 
@@ -191,6 +195,12 @@ agent-runtime-map analyze [项目] [选项]  一次性：只生成 JSON
 Token、性能与 APM 仍不属于当前静态版本。
 
 启用联网语义能力前请阅读 [Project Context](docs/PROJECT_CONTEXT.md)。
+
+## 发布
+
+npm 发布走 npm Trusted Publishing（OIDC），全程无 token。只有版本标签或显式
+手动触发才会发布，已存在的版本一律跳过。详见
+[docs/RELEASING.md](docs/RELEASING.md)。
 
 ## 开发
 
