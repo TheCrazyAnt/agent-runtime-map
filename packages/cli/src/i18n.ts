@@ -25,6 +25,7 @@ export interface CliText {
   initCompleted(file: string, keys: string): string;
   initUnchanged(file: string): string;
   initScripts(scripts: string): string;
+  initIgnored(rule: string, file: string): string;
   configWarning(warning: string): string;
   buildUpdated(dir: string, buildId: string, ms: number): string;
   buildUnchanged(buildId: string): string;
@@ -67,6 +68,7 @@ const TEXT: Record<CliLocale, CliText> = {
     initCreated: (file) => `Created ${file}.`,
     initCompleted: (file, keys) => `Completed ${file} (added: ${keys}).`,
     initUnchanged: (file) => `${file} already has every continuous-map setting; nothing changed.`,
+    initIgnored: (rule: string, file: string) => `Added ${rule} to ${file}, so the generated map stays out of version control.`,
     initScripts: (scripts) => `Suggested package.json scripts (add them yourself if you want them):\n${scripts}`,
     configWarning: (warning) => `Warning: ${warning}`,
     buildUpdated: (dir, buildId, ms) => `Map updated in ${dir} (build ${buildId}, ${ms}ms).`,
@@ -108,6 +110,7 @@ const TEXT: Record<CliLocale, CliText> = {
     initCreated: (file) => `已创建 ${file}。`,
     initCompleted: (file, keys) => `已补全 ${file}（新增：${keys}）。`,
     initUnchanged: (file) => `${file} 已包含全部持续地图配置，未做修改。`,
+    initIgnored: (rule: string, file: string) => `已把 ${rule} 写入 ${file}，生成的地图不会进入版本库。`,
     initScripts: (scripts) => `建议添加到 package.json 的 scripts（需要请自行添加）：\n${scripts}`,
     configWarning: (warning) => `警告：${warning}`,
     buildUpdated: (dir, buildId, ms) => `地图已更新：${dir}（构建 ${buildId}，耗时 ${ms}ms）。`,

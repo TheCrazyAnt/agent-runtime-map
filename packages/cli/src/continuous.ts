@@ -30,6 +30,11 @@ export async function runInit(
   if (result.created) process.stdout.write(`${text.initCreated(result.configFile)}\n`);
   else if (result.addedKeys.length) process.stdout.write(`${text.initCompleted(result.configFile, result.addedKeys.join(", "))}\n`);
   else process.stdout.write(`${text.initUnchanged(result.configFile)}\n`);
+  // Both `init` and `init --github` come through here, so the ignore rule is
+  // handled once for both rather than in each command.
+  if (result.gitignore.outcome !== "already-ignored") {
+    process.stdout.write(`${text.initIgnored(result.gitignore.rule, result.gitignore.file)}\n`);
+  }
   const scripts = Object.entries(result.suggestedScripts)
     .map(([name, command]) => `  "${name}": "${command}"`)
     .join("\n");
