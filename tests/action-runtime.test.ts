@@ -27,6 +27,7 @@ const REQUIRED_MAJOR: Record<string, number> = {
   "actions/upload-artifact": 7,
   "actions/download-artifact": 8,
   "actions/upload-pages-artifact": 5,
+  "actions/configure-pages": 5,
   "actions/deploy-pages": 5,
 };
 

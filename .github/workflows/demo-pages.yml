@@ -1,0 +1,52 @@
+name: Public Demo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/demo-pages.yml"
+      - "examples/simple-agent/**"
+      - "package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: public-demo
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: https://thecrazyant.github.io/agent-runtime-map/
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build a map from the published package
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNNER_PACKAGE="$RUNNER_TEMP/agent-runtime-map-demo"
+          mkdir -p "$RUNNER_PACKAGE"
+          printf '%s\n' '{"name":"agent-runtime-map-demo","private":true}' > "$RUNNER_PACKAGE/package.json"
+          npm install --prefix "$RUNNER_PACKAGE" --no-save --no-audit --no-fund agent-runtime-map@latest
+          node "$RUNNER_PACKAGE/node_modules/agent-runtime-map/dist/cli.js" build examples/simple-agent
+          cp examples/simple-agent/.agent-runtime-map/current/report.html examples/simple-agent/.agent-runtime-map/current/index.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: examples/simple-agent/.agent-runtime-map/current
+
+      - uses: actions/deploy-pages@v5

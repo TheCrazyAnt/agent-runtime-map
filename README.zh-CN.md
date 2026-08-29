@@ -2,8 +2,18 @@
 
 简体中文 · [English](README.md)
 
+[![npm 版本](https://img.shields.io/npm/v/agent-runtime-map?color=1768ff)](https://www.npmjs.com/package/agent-runtime-map)
+[![CI](https://github.com/TheCrazyAnt/agent-runtime-map/actions/workflows/ci.yml/badge.svg)](https://github.com/TheCrazyAnt/agent-runtime-map/actions/workflows/ci.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-0aa88f.svg)](LICENSE)
+
 <p align="center">
   <img src="docs/assets/readme/agent-map-overview-zh.png" alt="Agent Runtime Map：选择产品功能并查看 Agent 执行链路" width="1104">
+</p>
+
+<p align="center">
+  <a href="https://thecrazyant.github.io/agent-runtime-map/?locale=zh-CN"><strong>打开在线 Demo</strong></a>
+  · <a href="#一次设置github-持续更新主路径">接入仓库</a>
+  · <a href="https://www.npmjs.com/package/agent-runtime-map">npm</a>
 </p>
 
 让 Agent 代码自己画出它的功能电路，并逐步检查每一条执行链路。
@@ -12,7 +22,7 @@ Agent Runtime Map 会读取 TypeScript / JavaScript / Python 项目，同时理�
 
 左侧是项目的全部功能。点击某个功能，就能在右侧全局图上播放、暂停、单步前进、重新检查、调整速度，并切换该功能的不同执行分支。
 
-> 当前为 **0.1 alpha**。支持范围是刻意收窄的，不会声称能理解所有代码项目。
+> 当前为 **公开 Alpha · v0.8.3**。在下文明确列出的支持范围内可直接使用；范围仍然刻意收窄，不会声称能理解所有代码项目。
 
 ## 先看图，再看说明
 
