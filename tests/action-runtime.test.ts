@@ -145,3 +145,95 @@ describe("the gate itself", () => {
     expect(assertCurrent("t", `      - uses: actions/labeler@v5`)[0]).toContain("not covered by this gate");
   });
 });
+
+describe("one version, stated in every place that states one", () => {
+  /**
+   * These drift silently and break at the worst moment: `action.yml` installs
+   * `agent-runtime-map@<cli-version>` from npm, so a stale default there points
+   * every consumer at a version that may not exist — which is exactly how the
+   * v0.8.1 release-asset break happened. A test is cheaper than that discovery.
+   */
+  it("agrees across the packages, the constants, and the action's default", async () => {
+    const read = async (file: string) => JSON.parse(await readFile(path.join(REPO, file), "utf8")).version as string;
+    const root = await read("package.json");
+    const cli = await read("packages/cli/package.json");
+    const react = await read("packages/react/package.json");
+    const mcp = await read("packages/mcp/package.json");
+    expect([cli, react, mcp, root].every((version) => version === root)).toBe(true);
+    expect(root).toMatch(/^\d+\.\d+\.\d+$/);
+
+    // What each program reports about itself.
+    const constantIn = async (file: string) =>
+      /const VERSION = "([^"]+)"/.exec(await readFile(path.join(REPO, file), "utf8"))?.[1];
+    expect(await constantIn("packages/cli/src/cli.ts")).toBe(cli);
+    expect(await constantIn("packages/mcp/src/server.ts")).toBe(mcp);
+
+    // The version the composite action installs for every consumer.
+    const action = parseYaml(await readFile(path.join(REPO, "action.yml"), "utf8")) as {
+      inputs: { "cli-version": { default: string } };
+    };
+    expect(action.inputs["cli-version"].default).toBe(cli);
+  });
+});
+
+describe("the Pages branch", () => {
+  /**
+   * Publishing a map makes a project's internal logic public, so the gate on it
+   * has to be exact: every Pages step opts in on the same input, and the default
+   * touches none of them. The E2E proves the artifact's contents; this proves
+   * the wiring, which is cheaper to check here than in a runner.
+   */
+  it("is opt-in on every step, and passes what each action expects", async () => {
+    const parsed = parseYaml(await readFile(path.join(REPO, "action.yml"), "utf8")) as {
+      inputs: { publish: { default: string } };
+      runs: { steps: Array<{ name?: string; uses?: string; if?: string; with?: Record<string, unknown> }> };
+    };
+    // Private by default: a map is published only when someone asks.
+    expect(parsed.inputs.publish.default).toBe("artifact");
+
+    const pagesSteps = parsed.runs.steps.filter((step) =>
+      step.uses?.startsWith("actions/upload-pages-artifact")
+      || step.uses?.startsWith("actions/deploy-pages")
+      || step.name?.includes("Pages"));
+    expect(pagesSteps.length).toBeGreaterThanOrEqual(3);
+    // Not one of them may run without the opt-in.
+    for (const step of pagesSteps) expect(step.if).toBe("inputs.publish == 'pages'");
+
+    // The warning is part of the opt-in, not a README footnote.
+    const warning = parsed.runs.steps.find((step) => step.name?.startsWith("Warn before publishing"));
+    expect(warning?.if).toBe("inputs.publish == 'pages'");
+
+    // upload-pages-artifact takes the map directory; deploy-pages takes the
+    // artifact it leaves behind, under the default name both agree on.
+    const upload = parsed.runs.steps.find((step) => step.uses?.startsWith("actions/upload-pages-artifact"));
+    expect(upload?.with?.path).toBe("${{ inputs.project-path }}/.agent-runtime-map/current");
+    const deploy = parsed.runs.steps.find((step) => step.uses?.startsWith("actions/deploy-pages"));
+    expect(deploy).toBeDefined();
+    // Passing no artifact_name means both sides use "github-pages"; naming one
+    // side only would silently deploy nothing.
+    expect(deploy?.with?.artifact_name).toBeUndefined();
+  });
+});
+
+describe("the runner requirement is stated where users look", () => {
+  /**
+   * Node 24 raises the floor to Actions Runner 2.327.1. GitHub-hosted runners
+   * are past it; a pinned self-hosted fleet is not, and it fails at the action's
+   * very first step. A requirement nobody wrote down is a mystery failure.
+   */
+  it("appears in both READMEs, the CLI package README, and action.yml", async () => {
+    // Each surface says it in its own language; the version number is the one
+    // token that must be identical everywhere.
+    const surfaces: Array<[string, RegExp]> = [
+      ["README.md", /self-hosted/i],
+      ["README.zh-CN.md", /自建\s*runner|自托管/],
+      ["packages/cli/README.md", /self-hosted/i],
+      ["action.yml", /self-hosted/i],
+    ];
+    for (const [file, whoIsAffected] of surfaces) {
+      const text = await readFile(path.join(REPO, file), "utf8");
+      expect(text, `${file} must name the minimum runner version`).toContain("2.327.1");
+      expect(whoIsAffected.test(text), `${file} must say which runners are affected`).toBe(true);
+    }
+  });
+});

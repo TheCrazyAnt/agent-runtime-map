@@ -106,6 +106,11 @@ git commit -m "Add Agent Runtime Map"
 [GitHub Release](https://github.com/TheCrazyAnt/agent-runtime-map/releases)
 as a direct-install tarball.)
 
+**Runner requirement.** The action runs on Node 24, which needs Actions Runner
+2.327.1 or newer. GitHub-hosted runners are already there and need nothing.
+A **self-hosted** runner pinned below that must be updated first, or the action
+fails at its first step.
+
 That's the whole setup. Afterwards:
 
 - **Every push and PR** re-analyzes the repository and rebuilds the map; a weekly
