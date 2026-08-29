@@ -97,3 +97,31 @@ process.stdout.write(`Component package check passed: ${componentReport.filename
   }
   process.stdout.write("Repository identity check passed: no retired slug in tracked files.\n");
 }
+
+// One release, one version. `action.yml` installs `agent-runtime-map@<cli-version>`
+// from npm for every consumer, so a stale default there is not a cosmetic
+// mismatch — it points the whole user base at a version that may not exist.
+{
+  const versionOf = async (file) => JSON.parse(await readFile(new URL(`../${file}`, import.meta.url), "utf8")).version;
+  const declared = {
+    "package.json": await versionOf("package.json"),
+    "packages/cli/package.json": await versionOf("packages/cli/package.json"),
+    "packages/react/package.json": await versionOf("packages/react/package.json"),
+    "packages/mcp/package.json": await versionOf("packages/mcp/package.json"),
+  };
+  const constantOf = async (file) => {
+    const source = await readFile(new URL(`../${file}`, import.meta.url), "utf8");
+    return /const VERSION = "([^"]+)"/.exec(source)?.[1];
+  };
+  declared["packages/cli/src/cli.ts"] = await constantOf("packages/cli/src/cli.ts");
+  declared["packages/mcp/src/server.ts"] = await constantOf("packages/mcp/src/server.ts");
+  const actionSource = await readFile(new URL("../action.yml", import.meta.url), "utf8");
+  declared["action.yml cli-version"] = /cli-version:[\s\S]*?default:\s*"([^"]+)"/.exec(actionSource)?.[1];
+
+  const distinct = [...new Set(Object.values(declared))];
+  if (distinct.length !== 1 || !/^\d+\.\d+\.\d+$/.test(distinct[0] ?? "")) {
+    const detail = Object.entries(declared).map(([where, value]) => `  ${where}: ${value}`).join("\n");
+    throw new Error(`Version declarations disagree:\n${detail}`);
+  }
+  process.stdout.write(`Version check passed: every declaration says ${distinct[0]}.\n`);
+}

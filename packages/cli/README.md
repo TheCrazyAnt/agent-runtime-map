@@ -6,12 +6,27 @@ Turn every Agent feature into an evidence-backed execution circuit you can inspe
 npx agent-runtime-map@latest .
 ```
 
-GitHub Release fallback:
+Install it into a project:
 
 ```bash
-npm install --save-dev https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v0.2.0/agent-runtime-map-0.2.0.tgz
+npm install --save-dev agent-runtime-map
 npx agent-runtime-map .
 ```
+
+## Keep the map current on GitHub
+
+```bash
+npx agent-runtime-map init --github
+```
+
+This writes `agent-runtime-map.config.json` and a workflow that rebuilds the map
+on every push and pull request. The workflow grants `contents: read` and nothing
+more, and never commits anything back to your branch.
+
+**Runner requirement.** The action runs on Node 24, which needs Actions Runner
+2.327.1 or newer. GitHub-hosted runners are already there and need nothing. A
+**self-hosted** runner pinned below that must be updated first, or the action
+fails at its first step.
 
 The command analyzes the selected project, writes `.logic-map/graph.json`, starts a local viewer, and opens it in the browser. Choose a feature from the left to play, pause, single-step, replay, or switch between its inferred branches on one global Agent graph. Chain Doctor marks verified steps green, uncertainty yellow, and deterministic failures red with source evidence and a suggested repair.
 

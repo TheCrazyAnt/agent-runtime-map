@@ -1,6 +1,6 @@
 {
   "name": "agent-runtime-map",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Inspect every Agent feature as an evidence-backed, step-through execution circuit.",
   "homepage": "https://github.com/TheCrazyAnt/agent-runtime-map#readme",
   "repository": {

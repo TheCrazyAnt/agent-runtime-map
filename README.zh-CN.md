@@ -72,6 +72,10 @@ git commit -m "Add Agent Runtime Map"
 [GitHub Release](https://github.com/TheCrazyAnt/agent-runtime-map/releases)
 都附有同一个通过 CI 校验的安装包，可直接以 tarball 地址安装。）
 
+**运行环境要求。** 本 Action 运行在 Node 24 上，需要 Actions Runner 2.327.1 或更高
+版本。**GitHub 托管的 runner** 已满足，无需任何操作；**自建 runner** 若固定在更低
+版本，需先升级，否则 Action 会在第一步就失败。
+
 设置到此为止。之后：
 
 - **每次 push 和 PR** 自动重新分析并重建地图；每周一次的定时任务保证即使近期

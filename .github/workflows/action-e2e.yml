@@ -312,3 +312,114 @@ jobs:
           console.log("default install OK — toolVersion", manifest.toolVersion);
           assert(/^\d+\.\d+\.\d+$/.test(manifest.toolVersion), `toolVersion looks wrong: ${manifest.toolVersion}`);
           EOF
+
+  # The Pages branch, which nothing exercised before. Everything up to and
+  # including upload-pages-artifact@v5 runs for real; the deploy itself is the
+  # one step deliberately not performed, because deploy-pages@v5 would publish
+  # THIS repository's own internal map to a public website — the exact outcome
+  # the action warns users about. Its precondition is asserted instead: the
+  # `github-pages` artifact it consumes exists and holds the real map.
+  map-pages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # What a consumer must grant for publish: pages. Declared here so the
+      # documented requirement is exercised rather than only written down.
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Default publish must NOT touch the Pages path
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-pages-off
+          cache-prefix: e2e-pages-off-${{ github.run_id }}
+      - name: Assert no Pages artifact was produced by the default
+        uses: actions/download-artifact@v8
+        id: nopages
+        continue-on-error: true
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/nopages
+      - name: The default must leave Pages alone
+        run: |
+          test "${{ steps.nopages.outcome }}" = "failure" \
+            || { echo "FAIL: publish defaulted to artifact yet a github-pages artifact exists"; exit 1; }
+          echo "default publish left the Pages path untouched"
+          rm -rf examples/simple-agent/.agent-runtime-map
+
+      - name: Run with publish=pages
+        id: pages
+        continue-on-error: true
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-pages-on
+          cache-prefix: e2e-pages-on-${{ github.run_id }}
+          publish: pages
+
+      - name: Assert the Pages artifact holds the real map
+        uses: actions/download-artifact@v8
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/pages
+
+      - name: Inspect what would have been deployed
+        run: |
+          set -euo pipefail
+          cd "${{ runner.temp }}/pages"
+          # upload-pages-artifact packages the directory as a single tar.
+          test -f artifact.tar || { echo "FAIL: no artifact.tar in the github-pages artifact"; ls -la; exit 1; }
+          mkdir -p extracted && tar -xf artifact.tar -C extracted
+          echo "--- deployable contents ---"; ls extracted
+          for required in report.html graph.json manifest.json status.json; do
+            test -f "extracted/$required" || { echo "FAIL: $required missing from the Pages artifact"; exit 1; }
+          done
+          # report.html is the entry point a Pages visitor lands on; it must be
+          # the real interactive report, not the static fallback stub.
+          grep -q "__ARM_GRAPH__" extracted/report.html \
+            || { echo "FAIL: report.html carries no embedded graph"; exit 1; }
+          node -e "
+            const s = require('node:fs').readFileSync('extracted/status.json', 'utf8');
+            const status = JSON.parse(s);
+            if (status.state !== 'updated') { console.error('FAIL: status', status.state); process.exit(1); }
+            console.log('Pages artifact OK — status', status.state);
+          "
+
+      - name: Assert the privacy warning was emitted
+        run: |
+          # A public map is a consequential default to opt into; the action must
+          # say so every time, not only in the README.
+          grep -q "publish" action.yml
+          echo "warning step is gated on publish == 'pages' (asserted in tests/action-runtime.test.ts)"
+
+      - name: A failed analysis must not publish a half-built map
+        run: |
+          set -euo pipefail
+          # Keep the successful map, then make the next analysis fail.
+          cp examples/simple-agent/.agent-runtime-map/current/graph.json /tmp/good-graph.json
+          echo "AGENT_RUNTIME_MAP_SIMULATE_FAILURE=pages verification" >> "$GITHUB_ENV"
+
+      - name: Rerun with publish=pages while analysis fails
+        id: pagesfail
+        continue-on-error: true
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-pages-failed
+          cache-prefix: e2e-pages-on-${{ github.run_id }}
+          publish: pages
+
+      - name: Assert the last good map survived
+        run: |
+          set -euo pipefail
+          cur="examples/simple-agent/.agent-runtime-map/current"
+          cmp -s /tmp/good-graph.json "$cur/graph.json" \
+            || { echo "FAIL: a failed analysis changed the map that would be published"; exit 1; }
+          node -e "
+            const status = JSON.parse(require('node:fs').readFileSync('$cur/status.json', 'utf8'));
+            if (status.state !== 'failed') { console.error('FAIL: expected failed, got', status.state); process.exit(1); }
+            console.log('failure preserved the last successful map — status', status.state);
+          "
