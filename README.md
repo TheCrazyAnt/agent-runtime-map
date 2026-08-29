@@ -2,11 +2,25 @@
 
 [简体中文](README.zh-CN.md) · English
 
+<p align="center">
+  <img src="docs/assets/readme/agent-map-overview-en.png" alt="Agent Runtime Map — an interactive map of an Agent feature route" width="1104">
+</p>
+
 Turn your Agent codebase into an evidence-backed circuit map you can inspect step by step.
 
 Agent Runtime Map reads a TypeScript, JavaScript, or Python repository together with its README, selected docs/PRD files, prompts, package metadata, and safe configuration. It extracts routes, calls, workflows, agents, tools, models, database operations, external services, and control flow, then compiles them into one global execution graph. A feature list on the left lets you play, pause, step through, replay, and switch between the inferred routes for each Agent capability.
 
 > Status: **0.1 alpha**. The supported scope is intentionally narrow and documented below. Agent Runtime Map does not claim to understand every codebase.
+
+## See it before you read it
+
+<p align="center">
+  <img src="docs/assets/readme/continuous-map-en.png" alt="Install once and keep the Agent Map updated from every code change" width="1104">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme/route-diagnosis-en.png" alt="Select a feature, simulate its execution route, and diagnose a failed node" width="1104">
+</p>
 
 ## Grounded, not authored
 

@@ -2,6 +2,10 @@
 
 简体中文 · [English](README.md)
 
+<p align="center">
+  <img src="docs/assets/readme/agent-map-overview-zh.png" alt="Agent Runtime Map：选择产品功能并查看 Agent 执行链路" width="1104">
+</p>
+
 让 Agent 代码自己画出它的功能电路，并逐步检查每一条执行链路。
 
 Agent Runtime Map 会读取 TypeScript / JavaScript / Python 项目，同时理解 README、docs/PRD、Prompt、依赖和安全配置；再通过 AST 与框架规则提取页面操作、API、工作流、Agent、工具、模型、数据库、外部服务与控制流，最后编译成一张全局 Agent 执行图。
@@ -9,6 +13,16 @@ Agent Runtime Map 会读取 TypeScript / JavaScript / Python 项目，同时理�
 左侧是项目的全部功能。点击某个功能，就能在右侧全局图上播放、暂停、单步前进、重新检查、调整速度，并切换该功能的不同执行分支。
 
 > 当前为 **0.1 alpha**。支持范围是刻意收窄的，不会声称能理解所有代码项目。
+
+## 先看图，再看说明
+
+<p align="center">
+  <img src="docs/assets/readme/continuous-map-zh.png" alt="一次安装，代码变化后 Agent Map 自动更新" width="1104">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme/route-diagnosis-zh.png" alt="选择一个产品功能，模拟执行链路并定位异常节点" width="1104">
+</p>
 
 ## 图是提取出来的，不是"写作"出来的
 
