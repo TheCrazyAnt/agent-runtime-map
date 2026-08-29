@@ -19,6 +19,10 @@ concurrency:
 jobs:
   build-cli:
     runs-on: ubuntu-latest
+    # Published so the jobs below name the packed file by what was actually
+    # built. Hardcoding it meant every release broke this workflow.
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,7 +31,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: cd packages/cli && npm pack
+      - id: pack
+        run: |
+          cd packages/cli && npm pack
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: e2e-cli-tarball
@@ -48,9 +55,11 @@ jobs:
         with:
           project-path: examples/simple-agent
           artifact-name: e2e-map-initial
-          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-${{ needs.build-cli.outputs.version }}.tgz
           cache-prefix: e2e-${{ github.run_id }}
       - name: Assert initial build semantics
+        env:
+          CLI_VERSION: ${{ needs.build-cli.outputs.version }}
         run: |
           node - <<'EOF'
           const { readFileSync, existsSync } = require("node:fs");
@@ -64,7 +73,7 @@ jobs:
           assert(manifest.commit.baselineSha === undefined, "no baseline SHA may be invented");
           assert(manifest.commit.baselineRestored === false, "baseline must be marked not restored");
           assert(status.state === "updated", "status must be updated");
-          assert(status.toolVersion === "0.8.0", `toolVersion recorded, got ${status.toolVersion}`);
+          assert(status.toolVersion === process.env.CLI_VERSION, `toolVersion recorded, got ${status.toolVersion}`);
           assert(existsSync(`${dir}/report.html`), "report.html must exist");
           console.log("initial build OK:", manifest.buildId);
           EOF
@@ -74,7 +83,7 @@ jobs:
           git diff --quiet && git diff --cached --quiet
 
   map-update:
-    needs: map-initial
+    needs: [build-cli, map-initial]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -91,7 +100,7 @@ jobs:
         with:
           project-path: examples/simple-agent
           artifact-name: e2e-map-updated
-          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-${{ needs.build-cli.outputs.version }}.tgz
           cache-prefix: e2e-${{ github.run_id }}
       - name: Assert continuity semantics
         run: |
@@ -141,7 +150,7 @@ jobs:
         with:
           project-path: examples/simple-agent
           artifact-name: e2e-git-a
-          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-${{ needs.build-cli.outputs.version }}.tgz
           cache-prefix: e2e-git-${{ github.run_id }}
 
       - name: "Commit B: real code change, committed"
@@ -159,7 +168,7 @@ jobs:
         with:
           project-path: examples/simple-agent
           artifact-name: e2e-git-b
-          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-${{ needs.build-cli.outputs.version }}.tgz
           cache-prefix: e2e-git-${{ github.run_id }}
 
       - name: "Assert B: cross-commit provenance and real trigger paths"
@@ -198,7 +207,7 @@ jobs:
         with:
           project-path: examples/simple-agent
           artifact-name: e2e-git-c
-          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-${{ needs.build-cli.outputs.version }}.tgz
           cache-prefix: e2e-git-${{ github.run_id }}
 
       - name: "Assert C: unchanged buildId, advanced commit"
@@ -238,7 +247,7 @@ jobs:
         with:
           project-path: examples/simple-agent
           artifact-name: e2e-git-d
-          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-0.8.0.tgz
+          cli-tarball: ${{ runner.temp }}/tarball/agent-runtime-map-${{ needs.build-cli.outputs.version }}.tgz
           cache-prefix: e2e-git-${{ github.run_id }}
 
       - name: "Assert D: failed run, preserved map, distinct commits"
