@@ -2,15 +2,25 @@
 
 [简体中文](README.zh-CN.md) · English
 
+[![npm version](https://img.shields.io/npm/v/agent-runtime-map?color=1768ff)](https://www.npmjs.com/package/agent-runtime-map)
+[![CI](https://github.com/TheCrazyAnt/agent-runtime-map/actions/workflows/ci.yml/badge.svg)](https://github.com/TheCrazyAnt/agent-runtime-map/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-0aa88f.svg)](LICENSE)
+
 <p align="center">
   <img src="docs/assets/readme/agent-map-overview-en.png" alt="Agent Runtime Map — an interactive map of an Agent feature route" width="1104">
+</p>
+
+<p align="center">
+  <a href="https://thecrazyant.github.io/agent-runtime-map/"><strong>Open the live demo</strong></a>
+  · <a href="#set-it-up-once-github-keeps-the-map-current">Install in a repository</a>
+  · <a href="https://www.npmjs.com/package/agent-runtime-map">npm</a>
 </p>
 
 Turn your Agent codebase into an evidence-backed circuit map you can inspect step by step.
 
 Agent Runtime Map reads a TypeScript, JavaScript, or Python repository together with its README, selected docs/PRD files, prompts, package metadata, and safe configuration. It extracts routes, calls, workflows, agents, tools, models, database operations, external services, and control flow, then compiles them into one global execution graph. A feature list on the left lets you play, pause, step through, replay, and switch between the inferred routes for each Agent capability.
 
-> Status: **0.1 alpha**. The supported scope is intentionally narrow and documented below. Agent Runtime Map does not claim to understand every codebase.
+> Status: **Public alpha · v0.8.3**. It is ready to use within the documented scope, which remains intentionally narrow. Agent Runtime Map does not claim to understand every codebase.
 
 ## See it before you read it
 

@@ -2,6 +2,51 @@
 
 All notable changes are documented here.
 
+## 0.8.3 - 2026-08-29
+
+### Fixed
+
+- `init` and `init --github` now add the configured map output directory to
+  `.gitignore`, append without rewriting a project's existing rules, and remain
+  idempotent across repeated runs. A local `build` followed by `git add -A` no
+  longer stages the generated Viewer, graph, or history files.
+
+## 0.8.2 - 2026-08-29
+
+### Added
+
+- Business labels and descriptions are compiled independently for Chinese and
+  English while technical symbols and `file:line` evidence remain unchanged.
+- The GitHub Action's optional Pages path is exercised end to end, including the
+  last-successful-map behavior when a later analysis fails.
+
+### Fixed
+
+- Consumer Actions run on maintained runtimes, and the CLI is installed from npm
+  rather than assuming that a matching GitHub Release asset exists.
+- Version consistency is enforced across the three packages, Action, and release
+  declarations before publishing.
+
+## 0.8.1 - 2026-08-29
+
+### Added
+
+- Hand-confirmed benchmark fixtures count every topology false positive and false
+  negative, including one real-world Agent repository reproduced offline in CI.
+- The Viewer reads one map at three semantic zoom levels and exposes Chinese,
+  English-business, and technical-evidence views of the same graph.
+- npm packages publish through Trusted Publishing with signed provenance.
+
+## 0.8.0 - 2026-08-27
+
+### Added
+
+- `init --github` generates a read-only workflow that rebuilds the map on pushes,
+  pull requests, manual dispatches, and a weekly compatibility run.
+- The `TheCrazyAnt/agent-runtime-map@v1` composite Action restores the previous
+  successful map, reports code-backed changes, verifies map-only artifacts, and
+  keeps public Pages publishing an explicit opt-in.
+
 ## 0.6.0 - 2026-08-27
 
 ### Added

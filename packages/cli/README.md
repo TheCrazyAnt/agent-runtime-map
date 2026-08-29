@@ -2,6 +2,8 @@
 
 Turn every Agent feature into an evidence-backed execution circuit you can inspect step by step.
 
+**[Open the live demo](https://thecrazyant.github.io/agent-runtime-map/)** · [GitHub](https://github.com/TheCrazyAnt/agent-runtime-map)
+
 ```bash
 npx agent-runtime-map@latest .
 ```

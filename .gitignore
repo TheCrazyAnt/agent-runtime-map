@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .logic-map/
+.agent-runtime-map/
 coverage/
 *.tsbuildinfo
 *.tgz
