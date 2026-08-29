@@ -611,7 +611,7 @@ export function localizeDiagnostic(
       suggestion: "增强逻辑压缩，或把功能拆分成明确的工作流。",
     },
     CHAIN_EXTERNAL_NO_FALLBACK: {
-      message: `${nodeLabel} 调用了外部系统，但没有识别到 fallback。`,
+      message: `${nodeLabel} 调用了外部系统，但没有识别到降级备选路径。`,
       suggestion: "为外部调用增加异常处理、重试上限或降级路径。",
     },
     CHAIN_RETRY_WITHOUT_LIMIT: {
