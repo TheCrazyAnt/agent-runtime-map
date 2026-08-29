@@ -283,3 +283,32 @@ jobs:
           # the working tree and index must be clean, and no push ever happened
           # (the job has contents: read, so a push would have failed loudly).
           test -z "$(git status --porcelain | grep -v '^??')"
+
+  # Every other job passes cli-tarball, so the default install path — the one
+  # every @v1 consumer actually takes — was never run. A published version that
+  # cannot be installed breaks all of them while the rest of this suite is green.
+  map-default-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the action with no cli-tarball, as a consumer does
+        uses: ./
+        with:
+          project-path: examples/simple-agent
+          artifact-name: e2e-default-install
+          cache-prefix: e2e-default-${{ github.run_id }}
+      - name: Assert the CLI came from npm and produced a map
+        run: |
+          node - <<'EOF'
+          const { readFileSync, existsSync } = require("node:fs");
+          const dir = "examples/simple-agent/.agent-runtime-map/current";
+          const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); process.exit(1); } };
+          assert(existsSync(`${dir}/graph.json`), "graph.json must exist");
+          assert(existsSync(`${dir}/report.html`), "report.html must exist");
+          const status = JSON.parse(readFileSync(`${dir}/status.json`, "utf8"));
+          assert(status.state === "updated", `status must be updated, got ${status.state}`);
+          // The version the action installed from npm is the one it declares.
+          const manifest = JSON.parse(readFileSync(`${dir}/manifest.json`, "utf8"));
+          console.log("default install OK — toolVersion", manifest.toolVersion);
+          assert(/^\d+\.\d+\.\d+$/.test(manifest.toolVersion), `toolVersion looks wrong: ${manifest.toolVersion}`);
+          EOF
