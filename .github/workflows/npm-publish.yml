@@ -28,12 +28,17 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
+          # A publish job holds `id-token: write`. Restoring a dependency cache
+          # into it would let a cache entry another workflow wrote influence what
+          # gets published under this repository's OIDC identity. `npm ci` here
+          # takes seconds; the guarantee is worth more than the seconds.
+          package-manager-cache: false
 
       # Trusted Publishing needs a current npm CLI; the one bundled with Node
       # may predate OIDC publish support. Pinned to the exact version this
