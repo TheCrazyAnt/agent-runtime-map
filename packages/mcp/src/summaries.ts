@@ -13,6 +13,25 @@ import type { FeatureScenario, LogicGraph, LogicNode } from "@agent-runtime-map/
  * as fact something nobody can check.
  */
 
+
+/**
+ * The name an agent should use for a step, and the one a person sees on the map.
+ *
+ * These must be the same string. When they were not, an agent reported
+ * `executeReviewWorkflow` while the human it was talking to was looking at
+ * 执行审核 — and neither could tell they meant the same step. The English
+ * business reading is the shared one, because that is the language of this
+ * protocol; the technical name is still shown beside it so a lookup by either
+ * one succeeds.
+ */
+function displayName(item: { label: string; semantic?: { label: { en: string }; technicalName: string } }): string {
+  const semantic = item.semantic;
+  if (!semantic) return item.label;
+  return semantic.label.en === semantic.technicalName
+    ? semantic.label.en
+    : `${semantic.label.en} (${semantic.technicalName})`;
+}
+
 const HEALTH_MARK: Record<string, string> = { healthy: "ok", warning: "needs review", error: "chain error" };
 
 export function summarizeProject(graph: LogicGraph, rawNodeCount: number): string {
@@ -44,7 +63,7 @@ export function summarizeFeatures(graph: LogicGraph): string {
     const steps = feature.variants[0]?.steps.length ?? 0;
     const branches = feature.variants.length > 1 ? `, ${feature.variants.length} variants` : "";
     const product = feature.product ? ` [name from ${feature.product.origin}]` : "";
-    return `  ${feature.label} — ${HEALTH_MARK[feature.health] ?? feature.health}, ${steps} steps${branches}${product}\n    id: ${feature.id}`;
+    return `  ${displayName(feature)} — ${HEALTH_MARK[feature.health] ?? feature.health}, ${steps} steps${branches}${product}\n    id: ${feature.id}`;
   });
   return [`Features (${graph.features.length}):`, ...rows].join("\n");
 }
@@ -56,11 +75,11 @@ export function summarizeFeatures(graph: LogicGraph): string {
 export function describeFeature(graph: LogicGraph, feature: FeatureScenario, variantId?: string): string {
   const variant = variantId ? feature.variants.find((item) => item.id === variantId) : feature.variants[0];
   if (!variant) {
-    return `Feature ${feature.label} has no variant ${variantId}. Variants: ${feature.variants.map((item) => item.id).join(", ")}`;
+    return `Feature ${displayName(feature)} has no variant ${variantId}. Variants: ${feature.variants.map((item) => item.id).join(", ")}`;
   }
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const lines = [
-    `${feature.label} — ${HEALTH_MARK[feature.health] ?? feature.health}`,
+    `${displayName(feature)} — ${HEALTH_MARK[feature.health] ?? feature.health}`,
     feature.description,
     "",
     `Route (${variant.label}), ${variant.steps.length} steps:`,
@@ -91,13 +110,13 @@ export function describeFeature(graph: LogicGraph, feature: FeatureScenario, var
 function describeStep(node: LogicNode): string {
   const source = node.sources[0];
   const where = source ? ` — ${source.file}:${source.startLine}` : "";
-  return `${node.label} [${node.type}] ${Math.round(node.confidence * 100)}%${where}\n     ${node.description}\n     id: ${node.id}`;
+  return `${displayName(node)} [${node.type}] ${Math.round(node.confidence * 100)}%${where}\n     ${node.description}\n     id: ${node.id}`;
 }
 
 /** Everything behind one step: where it was read, how, and what the project claims. */
 export function describeEvidence(node: LogicNode): string {
   const lines = [
-    `${node.label} [${node.type}]`,
+    `${displayName(node)} [${node.type}]`,
     node.description,
     "",
     `Code confidence: ${Math.round(node.confidence * 100)}% (${node.inference.method})`,
@@ -129,11 +148,16 @@ export function describeEvidence(node: LogicNode): string {
 export function findNode(graph: LogicGraph, idOrLabel: string): LogicNode | undefined {
   const normalized = idOrLabel.trim().toLowerCase();
   return graph.nodes.find((node) => node.id === idOrLabel)
-    ?? graph.nodes.find((node) => node.label.toLowerCase() === normalized);
+    ?? graph.nodes.find((node) => node.label.toLowerCase() === normalized)
+    ?? graph.nodes.find((node) => node.semantic?.technicalName.toLowerCase() === normalized)
+    ?? graph.nodes.find((node) => node.semantic?.label.en.toLowerCase() === normalized)
+    ?? graph.nodes.find((node) => node.semantic?.label["zh-CN"].toLowerCase() === normalized);
 }
 
 export function findFeature(graph: LogicGraph, idOrLabel: string): FeatureScenario | undefined {
   const normalized = idOrLabel.trim().toLowerCase();
   return graph.features.find((feature) => feature.id === idOrLabel)
-    ?? graph.features.find((feature) => feature.label.toLowerCase() === normalized);
+    ?? graph.features.find((feature) => feature.label.toLowerCase() === normalized)
+    ?? graph.features.find((feature) => feature.semantic?.label.en.toLowerCase() === normalized)
+    ?? graph.features.find((feature) => feature.semantic?.label["zh-CN"].toLowerCase() === normalized);
 }

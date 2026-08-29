@@ -1,5 +1,7 @@
 import type { OverviewLabels } from "@agent-runtime-map/react";
 import type {
+  RawEdgeKind,
+  RawNodeKind,
   ChainDiagnostic,
   ChainHealth,
   FeaturePathVariant,
@@ -442,7 +444,7 @@ export function groupLabels(locale: UiLocale): BlueprintGroupLabels {
   if (locale === "en") return DEFAULT_BLUEPRINT_GROUP_LABELS;
   return {
     runtime: "智能体运行时",
-    workflows: "AGENT 工作流",
+    workflows: "智能体工作流",
     systems: "数据与外部服务",
     nodeCount: (count) => `${count} 个节点`,
   };
@@ -544,7 +546,27 @@ export function localizeFeatureLabel(feature: FeatureScenario, graph: LogicGraph
   return translateSemanticName(feature.label) ?? feature.label;
 }
 
+/**
+ * A branch is named by where it ends, in the reader's language. The older path
+ * matched the analyzer's English label with a regular expression, which left
+ * "Path 2 · to saveGeneration" on a Chinese canvas whenever the pattern shifted.
+ */
 export function localizeVariantLabel(variant: FeaturePathVariant, graph: LogicGraph, locale: UiLocale): string {
+  // "All paths" and "Default path" name the whole route, not a destination:
+  // renaming them after their endpoint tells the reader the wrong thing about
+  // what they are looking at. Only a numbered branch is named by where it goes.
+  const index = variant.label.match(/^Path (\d+)/)?.[1];
+  const destination = index && variant.resultNodeId
+    ? graph.nodes.find((node) => node.id === variant.resultNodeId)
+    : undefined;
+  if (destination?.semantic) {
+    const name = resolveNodeText(destination, locale).label;
+    return locale === "zh-CN" ? `分支 ${index} · 至${name}` : `Path ${index} · to ${name}`;
+  }
+  return legacyVariantLabel(variant, graph, locale);
+}
+
+function legacyVariantLabel(variant: FeaturePathVariant, graph: LogicGraph, locale: UiLocale): string {
   if (locale === "en") return variant.label;
   if (variant.label === "All paths") return "全部路径";
   if (variant.label === "Default path") return "默认路径";
@@ -562,7 +584,7 @@ export function localizeDiagnostic(
 ): { message: string; suggestion: string } {
   if (locale === "en") return { message: diagnostic.message, suggestion: diagnostic.suggestion };
   const node = diagnostic.nodeId ? graph.nodes.find((candidate) => candidate.id === diagnostic.nodeId) : undefined;
-  const nodeLabel = node ? localizeNode(node, locale).label : "当前步骤";
+  const nodeLabel = node ? resolveNodeText(node, locale).label : "当前步骤";
   const localized: Record<ChainDiagnostic["code"], { message: string; suggestion: string }> = {
     CHAIN_BROKEN_REFERENCE: {
       message: `${nodeLabel} 引用了逻辑图中不存在的节点。`,
@@ -664,13 +686,13 @@ export function resolveFeatureText(
   feature: FeatureScenario,
   graph: LogicGraph,
   locale: UiLocale,
-): { label: string; description: string } {
+): { label: string; description: string; pending: boolean } {
   const semantic = feature.semantic;
   if (semantic) {
     const key: "zh-CN" | "en" = locale === "zh-CN" ? "zh-CN" : "en";
-    return { label: semantic.label[key], description: semantic.description[key] };
+    return { label: semantic.label[key], description: semantic.description[key], pending: semantic.pending };
   }
-  return { label: localizeFeatureLabel(feature, graph, locale), description: feature.description };
+  return { label: localizeFeatureLabel(feature, graph, locale), description: feature.description, pending: false };
 }
 
 /** What kind of connection an edge is, said in the reader's language. */
@@ -694,4 +716,46 @@ export function labelSourceLabel(source: string | undefined, locale: UiLocale): 
   };
   const table = locale === "zh-CN" ? zh : en;
   return table[source ?? ""] ?? (locale === "zh-CN" ? "未知来源" : "Unknown");
+}
+
+/**
+ * The words the map uses for what the code IS and how its parts relate.
+ *
+ * A symbol's own name stays exactly as written — that is the source layer, and
+ * translating an identifier would break the link to the file. But "agent" and
+ * "calls" are our vocabulary, not the code's, and leaving them in English put
+ * English words on a Chinese canvas at the level a reader zooms into most.
+ *
+ * Typed as a complete Record so a new kind is a compile error, not a silent leak.
+ */
+const RAW_KIND_LABELS: Record<UiLocale, Record<RawNodeKind, string>> = {
+  "zh-CN": {
+    entrypoint: "入口", file: "文件", function: "函数", class: "类", route: "路由",
+    service: "服务", agent: "智能体", workflow: "工作流", tool: "工具", model: "模型",
+    prompt: "提示词", human_gate: "人工确认", database: "数据存储", external_api: "外部服务",
+  },
+  en: {
+    entrypoint: "entrypoint", file: "file", function: "function", class: "class", route: "route",
+    service: "service", agent: "agent", workflow: "workflow", tool: "tool", model: "model",
+    prompt: "prompt", human_gate: "human gate", database: "data store", external_api: "external service",
+  },
+};
+
+const RAW_EDGE_LABELS: Record<UiLocale, Record<RawEdgeKind, string>> = {
+  "zh-CN": {
+    contains: "包含", imports: "导入", calls: "调用", data_flow: "数据流转",
+    handles: "处理", reads: "读取", writes: "写入", requests: "请求",
+  },
+  en: {
+    contains: "contains", imports: "imports", calls: "calls", data_flow: "data flow",
+    handles: "handles", reads: "reads", writes: "writes", requests: "requests",
+  },
+};
+
+export function rawKindLabel(kind: RawNodeKind, locale: UiLocale): string {
+  return RAW_KIND_LABELS[locale][kind] ?? kind;
+}
+
+export function rawEdgeLabel(kind: RawEdgeKind, locale: UiLocale): string {
+  return RAW_EDGE_LABELS[locale][kind] ?? kind;
 }

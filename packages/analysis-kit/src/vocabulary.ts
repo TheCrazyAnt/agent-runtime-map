@@ -35,7 +35,6 @@ const VERBS: Record<string, Term> = {
   calculate: { zhCN: "计算" },
   cancel: { zhCN: "取消" },
   capture: { zhCN: "采集" },
-  charge: { zhCN: "扣款" },
   check: { zhCN: "检查" },
   classify: { zhCN: "分类" },
   clean: { zhCN: "清理" },
@@ -52,7 +51,6 @@ const VERBS: Record<string, Term> = {
   dispatch: { zhCN: "派发" },
   download: { zhCN: "下载" },
   draft: { zhCN: "起草" },
-  enqueue: { zhCN: "入队" },
   enrich: { zhCN: "补全" },
   evaluate: { zhCN: "评估" },
   execute: { zhCN: "执行" },
@@ -94,7 +92,6 @@ const VERBS: Record<string, Term> = {
   receive: { zhCN: "接收" },
   record: { zhCN: "记录" },
   refresh: { zhCN: "刷新" },
-  refund: { zhCN: "退款" },
   register: { zhCN: "注册" },
   reject: { zhCN: "拒绝" },
   release: { zhCN: "发布" },
@@ -112,7 +109,6 @@ const VERBS: Record<string, Term> = {
   search: { zhCN: "搜索" },
   select: { zhCN: "选择" },
   send: { zhCN: "发送" },
-  ship: { zhCN: "发货" },
   split: { zhCN: "拆分" },
   store: { zhCN: "存储" },
   stream: { zhCN: "传输" },
@@ -132,14 +128,11 @@ const VERBS: Record<string, Term> = {
   write: { zhCN: "写入" },
   lookup: { zhCN: "查询" },
   probe: { zhCN: "探测" },
-  reconcile: { zhCN: "对账" },
   seed: { zhCN: "初始化" },
   serve: { zhCN: "服务" },
-  sign: { zhCN: "签名" },
   start: { zhCN: "启动" },
   stop: { zhCN: "停止" },
   subscribe: { zhCN: "订阅" },
-  tag: { zhCN: "打标" },
   test: { zhCN: "测试" },
   toggle: { zhCN: "切换" },
   unlock: { zhCN: "解锁" },
@@ -155,12 +148,10 @@ const NOUNS: Record<string, Term> = {
   api: { zhCN: "接口", enUS: "API" },
   approval: { zhCN: "审批" },
   article: { zhCN: "文章" },
-  asset: { zhCN: "素材" },
   attempt: { zhCN: "尝试" },
   audio: { zhCN: "音频" },
   batch: { zhCN: "批次" },
   billing: { zhCN: "计费" },
-  body: { zhCN: "请求体" },
   cache: { zhCN: "缓存" },
   campaign: { zhCN: "活动" },
   cart: { zhCN: "购物车" },
@@ -168,7 +159,6 @@ const NOUNS: Record<string, Term> = {
   chat: { zhCN: "对话" },
   checkout: { zhCN: "结算" },
   chunk: { zhCN: "分块" },
-  claim: { zhCN: "申诉" },
   comment: { zhCN: "评论" },
   config: { zhCN: "配置" },
   content: { zhCN: "内容" },
@@ -180,7 +170,6 @@ const NOUNS: Record<string, Term> = {
   decision: { zhCN: "决策" },
   detail: { zhCN: "详情" },
   digest: { zhCN: "摘要" },
-  director: { zhCN: "导演" },
   document: { zhCN: "文档" },
   draft: { zhCN: "草稿" },
   email: { zhCN: "邮件" },
@@ -191,7 +180,6 @@ const NOUNS: Record<string, Term> = {
   evidence: { zhCN: "证据" },
   feedback: { zhCN: "反馈" },
   file: { zhCN: "文件" },
-  frame: { zhCN: "分镜" },
   gate: { zhCN: "关卡" },
   idea: { zhCN: "创意" },
   image: { zhCN: "图片" },
@@ -206,7 +194,6 @@ const NOUNS: Record<string, Term> = {
   language: { zhCN: "语言" },
   layout: { zhCN: "布局" },
   lead: { zhCN: "线索" },
-  library: { zhCN: "素材库" },
   log: { zhCN: "日志" },
   message: { zhCN: "消息" },
   meta: { zhCN: "元信息" },
@@ -222,13 +209,11 @@ const NOUNS: Record<string, Term> = {
   pipeline: { zhCN: "流水线" },
   plan: { zhCN: "计划" },
   policy: { zhCN: "策略" },
-  post: { zhCN: "帖子" },
   price: { zhCN: "价格" },
   product: { zhCN: "商品" },
   profile: { zhCN: "档案" },
   project: { zhCN: "项目" },
   prompt: { zhCN: "提示词" },
-  provider: { zhCN: "供应商" },
   quality: { zhCN: "质量" },
   query: { zhCN: "查询" },
   question: { zhCN: "问题" },
@@ -245,10 +230,8 @@ const NOUNS: Record<string, Term> = {
   role: { zhCN: "角色" },
   route: { zhCN: "路由" },
   rule: { zhCN: "规则" },
-  scene: { zhCN: "场景" },
   schedule: { zhCN: "排期" },
   scope: { zhCN: "范围" },
-  script: { zhCN: "剧本" },
   search: { zhCN: "搜索" },
   section: { zhCN: "章节" },
   session: { zhCN: "会话" },
@@ -265,9 +248,7 @@ const NOUNS: Record<string, Term> = {
   task: { zhCN: "任务" },
   template: { zhCN: "模板" },
   text: { zhCN: "文本" },
-  thread: { zhCN: "话题" },
   ticket: { zhCN: "工单" },
-  token: { zhCN: "令牌" },
   tool: { zhCN: "工具" },
   topic: { zhCN: "主题" },
   transcript: { zhCN: "文字记录" },
@@ -289,9 +270,7 @@ const NOUNS: Record<string, Term> = {
   cost: { zhCN: "成本" },
   editor: { zhCN: "编辑器" },
   form: { zhCN: "表单" },
-  header: { zhCN: "请求头" },
   history: { zhCN: "历史" },
-  key: { zhCN: "密钥" },
   ledger: { zhCN: "台账" },
   limit: { zhCN: "上限" },
   link: { zhCN: "链接" },
@@ -304,16 +283,13 @@ const NOUNS: Record<string, Term> = {
   score: { zhCN: "评分" },
   segment: { zhCN: "片段" },
   server: { zhCN: "服务端" },
-  shot: { zhCN: "镜头" },
   slot: { zhCN: "档位" },
   snapshot: { zhCN: "快照" },
-  storyboard: { zhCN: "分镜脚本" },
-  subtitle: { zhCN: "字幕" },
   team: { zhCN: "团队" },
   thumbnail: { zhCN: "缩略图" },
   title: { zhCN: "标题" },
   track: { zhCN: "轨道" },
-  writer: { zhCN: "撰写器" },
+  writer: { zhCN: "写入器" },
 };
 
 /** Qualifiers: which one, or in what manner. */
@@ -351,7 +327,49 @@ const QUALIFIERS: Record<string, Term> = {
   total: { zhCN: "总计" },
 };
 
-export const VOCABULARY: Record<string, Term> = { ...NOUNS, ...QUALIFIERS, ...VERBS };
+/**
+ * Words that are a verb in the head position and a noun elsewhere. Spreading the
+ * tables silently let one sense win by declaration order — `draft` resolved to
+ * 起草 even in `draftList`. These are resolved by position instead, so both senses
+ * stay reachable and neither is decided by which table happens to come last.
+ */
+export const DUAL_SENSE: Record<string, { verb: Term; noun: Term }> = {
+  draft: { verb: { zhCN: "起草" }, noun: { zhCN: "草稿" } },
+  plan: { verb: { zhCN: "规划" }, noun: { zhCN: "计划" } },
+  schedule: { verb: { zhCN: "调度" }, noun: { zhCN: "排期" } },
+  stream: { verb: { zhCN: "传输" }, noun: { zhCN: "流" } },
+  track: { verb: { zhCN: "跟踪" }, noun: { zhCN: "轨道" } },
+  record: { verb: { zhCN: "记录" }, noun: { zhCN: "记录" } },
+  list: { verb: { zhCN: "列出" }, noun: { zhCN: "列表" } },
+  post: { verb: { zhCN: "发布" }, noun: { zhCN: "帖子" } },
+  review: { verb: { zhCN: "审核" }, noun: { zhCN: "审核" } },
+  score: { verb: { zhCN: "评分" }, noun: { zhCN: "分数" } },
+  process: { verb: { zhCN: "处理" }, noun: { zhCN: "流程" } },
+  request: { verb: { zhCN: "请求" }, noun: { zhCN: "请求" } },
+  search: { verb: { zhCN: "搜索" }, noun: { zhCN: "搜索" } },
+  refund: { verb: { zhCN: "退款" }, noun: { zhCN: "退款" } },
+  query: { verb: { zhCN: "查询" }, noun: { zhCN: "查询" } },
+  index: { verb: { zhCN: "索引" }, noun: { zhCN: "索引" } },
+};
+
+/**
+ * The lookup table. `Object.create(null)` is deliberate: a plain object literal
+ * inherits `Object.prototype`, so a token called `constructor` or `toString`
+ * resolved to a function and produced an invented name.
+ */
+export const VOCABULARY: Record<string, Term> = Object.assign(
+  Object.create(null) as Record<string, Term>,
+  NOUNS,
+  QUALIFIERS,
+  VERBS,
+);
+
+/** The reading of a token in the position it appears in. */
+export function termFor(token: string, position: "head" | "tail"): Term | undefined {
+  const dual = Object.prototype.hasOwnProperty.call(DUAL_SENSE, token) ? DUAL_SENSE[token] : undefined;
+  if (dual) return position === "head" ? dual.verb : dual.noun;
+  return Object.prototype.hasOwnProperty.call(VOCABULARY, token) ? VOCABULARY[token] : undefined;
+}
 
 /**
  * Words that describe an implementation shape rather than a business meaning.
@@ -363,16 +381,29 @@ export const STRUCTURAL_TOKENS = new Set([
   "service", "usecase", "util", "utils", "helper", "helpers", "wrapper",
 ]);
 
+/**
+ * Words whose stem is a real term but a different word. Stemming these produced
+ * confident nonsense: `news` became 新, `balancing` became 余额, `bed` became 是.
+ */
+const NEVER_STEM = new Set([
+  "news", "address", "business", "process", "access", "progress", "status", "class",
+  "balancing", "bed", "led", "red", "wed", "fed", "ted", "sting", "king", "ring",
+  "thing", "spring", "string", "during", "ceiling", "meeting", "series", "species",
+]);
+
+const has = (token: string) => Object.prototype.hasOwnProperty.call(VOCABULARY, token);
+
 /** Plural and tense forms resolve to the same term as their stem. */
 export function normalizeToken(token: string): string {
   const lower = token.toLowerCase();
-  if (VOCABULARY[lower]) return lower;
+  if (has(lower)) return lower;
+  if (NEVER_STEM.has(lower)) return lower;
   for (const [suffix, replacement] of [["ies", "y"], ["ses", "s"], ["es", ""], ["s", ""], ["ing", ""], ["ed", ""]] as const) {
     if (lower.length > suffix.length + 2 && lower.endsWith(suffix)) {
       const stem = lower.slice(0, -suffix.length) + replacement;
-      if (VOCABULARY[stem]) return stem;
+      if (has(stem)) return stem;
       // `applying` -> `apply`: a dropped `e` comes back with the `y`.
-      if (suffix === "ing" && VOCABULARY[`${stem}e`]) return `${stem}e`;
+      if (suffix === "ing" && has(`${stem}e`)) return `${stem}e`;
     }
   }
   return lower;

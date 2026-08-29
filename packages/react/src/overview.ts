@@ -101,6 +101,11 @@ export interface OverviewResolvers {
   featureLabel?: (featureId: string, fallback: string) => string;
 }
 
+/** Chinese sets words without a space; English needs one. */
+function joinLabel(qualifier: string, noun: string): string {
+  return /[\u3400-\u9fff]/.test(qualifier) ? `${qualifier}${noun}` : `${qualifier} ${noun.toLowerCase()}`;
+}
+
 export function buildOverviewModel(
   graph: LogicGraph,
   labels: Partial<OverviewLabels> = {},
@@ -152,7 +157,10 @@ export function buildOverviewModel(
       featureId: bucket.featureId,
       featureLabel: bucket.featureId ? featureLabelById.get(bucket.featureId) : undefined,
       singleNodeId: single?.id,
-      label: single ? nameOf(single) : shared ? `${text.shared} ${roleLabel.toLowerCase()}` : roleLabel,
+      // The host supplies both words already spelled for its language; joining
+      // them with a Latin space and lowercasing is an English typography rule
+      // that produces "共用 处理步骤" on a Chinese canvas.
+      label: single ? nameOf(single) : shared ? joinLabel(text.shared, roleLabel) : roleLabel,
       memberIds,
       types,
       routeCount: countRoutes(graph, memberIds),

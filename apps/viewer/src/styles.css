@@ -365,3 +365,4 @@ button { color: inherit; }
   background: rgba(148, 132, 90, .14); color: #7a6a45;
   font-size: 11.5px; font-style: normal; font-weight: 600;
 }
+.pending-flag--inline { margin-left: 6px; padding: 1px 6px; font-size: 10.5px; }

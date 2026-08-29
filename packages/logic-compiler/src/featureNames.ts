@@ -70,12 +70,24 @@ export function composeFeatureNames(
         const distinguishing = namedResult(item.result, locale)
           ?? (item.entry?.semantic?.labelSource[locale] === "route" ? nameOf(item.entry, locale) : undefined)
           ?? mainName(item, locale);
-        if (!distinguishing) continue;
         const current = base.get(feature.id)!;
-        if (distinguishing === current[locale]) continue;
-        current[locale] = locale === "zh-CN"
-          ? `${current[locale]} · ${distinguishing}`
-          : `${current[locale]} · ${distinguishing}`;
+        if (!distinguishing || distinguishing === current[locale]) continue;
+        current[locale] = `${current[locale]} · ${distinguishing}`;
+      }
+    }
+    // Features that collide *because* they share a result take the same suffix,
+    // so one more pass falls back to the entry — which is unique by construction.
+    const stillColliding = new Map<string, FeatureScenario[]>();
+    for (const feature of features) {
+      const name = base.get(feature.id)![locale];
+      stillColliding.set(name, [...(stillColliding.get(name) ?? []), feature]);
+    }
+    for (const [, group] of stillColliding) {
+      if (group.length < 2) continue;
+      for (const feature of group) {
+        const entry = nameOf(parts.get(feature.id)!.entry, locale) ?? feature.label;
+        const current = base.get(feature.id)!;
+        if (!current[locale].includes(entry)) current[locale] = `${current[locale]} · ${entry}`;
       }
     }
   }
@@ -83,6 +95,7 @@ export function composeFeatureNames(
   for (const feature of features) {
     const item = parts.get(feature.id)!;
     const names = base.get(feature.id)!;
+    const composedIn = (locale: LocaleTag) => baseName(item, locale) !== undefined;
     feature.semantic = {
       label: { "zh-CN": names["zh-CN"], en: names.en },
       description: {
@@ -90,7 +103,12 @@ export function composeFeatureNames(
         en: sentence("en", item) ?? feature.description,
       },
       technicalName: feature.label,
-      labelSource: { "zh-CN": "composed", en: "composed" },
+      // A feature that fell back to its raw technical label did not compose
+      // anything, and saying it did would make the fallback invisible.
+      labelSource: {
+        "zh-CN": composedIn("zh-CN") ? "composed" : "pending",
+        en: composedIn("en") ? "composed" : "pending",
+      },
       confidence: {
         "zh-CN": partsConfidence(item, "zh-CN"),
         en: partsConfidence(item, "en"),
@@ -140,11 +158,12 @@ function baseName(parts: Parts, locale: LocaleTag): string | undefined {
  * in the other.
  */
 function mainName(parts: Parts, locale: LocaleTag): string | undefined {
-  for (const candidate of parts.mains) {
-    const name = nameOf(candidate, locale);
-    if (name) return name;
-  }
-  return undefined;
+  return nameOf(namedMain(parts, locale), locale);
+}
+
+/** The first candidate this language can actually name. */
+function namedMain(parts: Parts, locale: LocaleTag): LogicNode | undefined {
+  return parts.mains.find((candidate) => nameOf(candidate, locale) !== undefined);
 }
 
 /**
@@ -170,7 +189,11 @@ function nameOf(node: LogicNode | undefined, locale: LocaleTag): string | undefi
 function sentence(locale: LocaleTag, parts: Parts): string | undefined {
   const entry = nameOf(parts.entry, locale);
   const main = mainName(parts, locale);
-  const result = nameOf(parts.result, locale);
+  // A route whose result IS its entry produced "从「X」开始…最终产出「X」" — a
+  // sentence that says the chain goes nowhere, in more words than saying nothing.
+  const result = parts.result && parts.result.id !== parts.entry?.id
+    ? nameOf(parts.result, locale)
+    : undefined;
   if (!entry) return undefined;
   if (locale === "zh-CN") {
     const middle = main ? `，经过「${main}」` : "";
@@ -183,7 +206,9 @@ function sentence(locale: LocaleTag, parts: Parts): string | undefined {
 }
 
 function partsConfidence(parts: Parts, locale: LocaleTag): number {
-  const scores = [parts.entry, parts.mains[0], parts.result]
+  // The steps the name was actually built from — not whichever candidate ranked
+  // first, which may have been skipped as unnameable in this language.
+  const scores = [parts.entry, namedMain(parts, locale), parts.result]
     .flatMap((node) => (node?.semantic ? [node.semantic.confidence[locale]] : []));
   if (!scores.length) return 0;
   return Math.round((scores.reduce((sum, value) => sum + value, 0) / scores.length) * 100) / 100;

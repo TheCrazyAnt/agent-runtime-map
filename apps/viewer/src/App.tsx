@@ -49,7 +49,7 @@ import type {
 import { applyLayoutPositions, buildCodeDetailExpansion, canFocusNode, captureLayout, collectFocusIds, compareVariants, matchingNodeIds, parseDetailNodeId, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
 import {
   chainHealthLabel, detectViewerLocale, groupLabels, overviewLabels, overviewCountsLabel,
-  labelSourceLabel, resolveEdgeText, resolveFeatureText, resolveNodeText, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
+  labelSourceLabel, rawEdgeLabel, rawKindLabel, resolveEdgeText, resolveFeatureText, resolveNodeText, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
   productMatchText, productOriginLabel,
   localizeGraphDescription, localizeGraphTitle, localizeNode, localizeVariantLabel, messages, nodeTypeLabel,
   rememberViewerLocale, sourceCountText, type UiLocale,
@@ -296,7 +296,11 @@ function LogicMapViewer() {
       if (!expandedLogicIds.has(logicNode.id)) return [];
       const parent = nodes.find((node) => node.id === logicNode.id);
       if (!parent) return [];
-      const expansion = buildCodeDetailExpansion(logicNode, parent, rawGraph, { expandedRawIds });
+      const expansion = buildCodeDetailExpansion(logicNode, parent, rawGraph, {
+        expandedRawIds,
+        kindLabel: (kind) => rawKindLabel(kind, locale),
+        relationLabel: (kind) => rawEdgeLabel(kind, locale),
+      });
       // The model stays pure; behaviour is attached here, where the state lives.
       return [{
         ...expansion,
@@ -626,14 +630,14 @@ function LogicMapViewer() {
     <aside className="sidebar">
       <div className="sidebar__intro"><span className="eyebrow">{text.projectMap}</span><h1>{localizeGraphTitle(graph, locale)}</h1><p>{localizeGraphDescription(graph, locale)}</p></div>
       <div className="stats"><Stat value={features.length} label={text.features} /><Stat value={graph.nodes.length} label={text.logicNodes} /><Stat value={graph.project.filesScanned} label={text.files} /></div>
-      <section className="feature-circuits" aria-label={text.featureCircuits}><div className="section-heading"><span className="eyebrow">{text.featureCircuits}</span><ListTree size={14} /></div><p className="section-hint">{text.featureHint}</p><button className={`feature-card feature-card--global ${selectedFeatureId === null ? "is-active" : ""}`} onClick={() => selectFeature(null)}><span className="feature-card__icon"><Activity size={14} /></span><span><strong>{text.wholeSystem}</strong><small>{text.globalView}</small></span></button><div className="feature-list">{features.map((feature) => <button className={`feature-card feature-card--${feature.health} ${feature.id === selectedFeatureId ? "is-active" : ""}`} data-feature-id={feature.id} data-health={feature.health} key={feature.id} onClick={() => selectFeature(feature.id)}><span className="feature-card__icon"><HealthIcon health={feature.health} /></span><span><strong>{resolveFeatureText(feature, graph, locale).label}</strong><small>{chainHealthLabel(feature.health, locale)} · {Math.round(feature.confidence * 100)}%</small></span><ChevronRight size={13} /></button>)}</div></section>
+      <section className="feature-circuits" aria-label={text.featureCircuits}><div className="section-heading"><span className="eyebrow">{text.featureCircuits}</span><ListTree size={14} /></div><p className="section-hint">{text.featureHint}</p><button className={`feature-card feature-card--global ${selectedFeatureId === null ? "is-active" : ""}`} onClick={() => selectFeature(null)}><span className="feature-card__icon"><Activity size={14} /></span><span><strong>{text.wholeSystem}</strong><small>{text.globalView}</small></span></button><div className="feature-list">{features.map((feature) => <button className={`feature-card feature-card--${feature.health} ${feature.id === selectedFeatureId ? "is-active" : ""}`} data-feature-id={feature.id} data-health={feature.health} key={feature.id} onClick={() => selectFeature(feature.id)}><span className="feature-card__icon"><HealthIcon health={feature.health} /></span><span><strong>{resolveFeatureText(feature, graph, locale).label}{resolveFeatureText(feature, graph, locale).pending && <em className="pending-flag pending-flag--inline">{text.pendingBadge}</em>}</strong><small>{chainHealthLabel(feature.health, locale)} · {Math.round(feature.confidence * 100)}%</small></span><ChevronRight size={13} /></button>)}</div></section>
       {selectedFeature && selectedVariant ? <FeatureInspector feature={selectedFeature} variant={selectedVariant} graph={graph} locale={locale} playing={playing} speed={speed} frame={frame} cameraFollow={cameraFollow} onVariant={selectVariant} onPlay={play} onPause={() => setPlaying(false)} onNext={next} onReset={reset} onSpeed={setSpeed} onSelectNode={setSelectedId} onResumeFollow={() => setCameraFollow(true)} /> : <div className="feature-empty"><CircleDotDashed size={16} /><span>{text.selectFeature}</span></div>}
       <div className="search-wrap"><label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchResults[0]) selectSearchResult(searchResults[0].id); }} placeholder={text.search} />{query && <button onClick={() => setQuery("")} aria-label={text.clearSearch}><X size={14} /></button>}</label>{query && <div className="search-results"><span className="eyebrow">{text.searchResults} · {searchResults.length}</span>{searchResults.length ? searchResults.map((node) => <button key={node.id} onClick={() => selectSearchResult(node.id)}><strong>{resolveNodeText(node, locale, nodesById).label}</strong><small>{node.sources[0]?.file ?? nodeTypeLabel(node.type, locale)}</small></button>) : <p>{text.noSearchResults}</p>}</div>}</div>
       <div className="sidebar__footer"><Braces size={14} /> {text.staticAnalysis}</div>
     </aside>
     <section className="canvas" aria-label={text.logicGraph} data-lod={overviewActive ? "overview" : focusedId ? "detail" : selectedFeature ? "feature" : "overview"} data-detail-level={detailLevel} data-navigating={navigating ? "true" : "false"} ref={canvasRef}>
       {focusedId
-        ? <div className="canvas-caption canvas-caption--focus"><button onClick={exitFocus} title={text.exitFocus}><ChevronLeft size={12} />{text.wholeSystem}</button><strong>{localizeNode(graph.nodes.find((node) => node.id === focusedId)!, locale, nodesById).label}</strong><small>{text.focusHint}</small></div>
+        ? <div className="canvas-caption canvas-caption--focus"><button onClick={exitFocus} title={text.exitFocus}><ChevronLeft size={12} />{text.wholeSystem}</button><strong>{resolveNodeText(graph.nodes.find((node) => node.id === focusedId)!, locale, nodesById).label}</strong><small>{text.focusHint}</small></div>
         : <div className="canvas-caption"><span className="canvas-caption__mark" /><strong>{selectedFeature ? resolveFeatureText(selectedFeature, graph, locale).label : text.wholeSystem}</strong><small>{selectedVariant ? localizeVariantLabel(selectedVariant, graph, locale) : overviewActive ? text.overviewHint : text.globalView}</small></div>}
       <div className="semantic-zoom" aria-live="polite"><span>{text.zoomLevel}</span><strong>{semanticZoomLabel(detailLevel, locale)}</strong><div className="semantic-zoom__levels" aria-hidden="true">{(["overview", "logic", "evidence"] as const).map((level) => <i className={level === detailLevel ? "is-active" : ""} key={level} />)}</div><small>{text.semanticZoomHint}</small></div>
       <div className="canvas-help"><Crosshair size={13} /><span>{text.detailHint}</span></div>
@@ -651,7 +655,7 @@ function LogicMapViewer() {
 }
 
 function FeatureInspector({ feature, variant, graph, locale, playing, speed, frame, cameraFollow, onVariant, onPlay, onPause, onNext, onReset, onSpeed, onSelectNode, onResumeFollow }: { feature: FeatureScenario; variant: FeaturePathVariant; graph: LogicGraph; locale: UiLocale; playing: boolean; speed: number; frame: SimulationFrame; cameraFollow: boolean; onVariant: (id: string) => void; onPlay: () => void; onPause: () => void; onNext: () => void; onReset: () => void; onSpeed: (speed: number) => void; onSelectNode: (id: string) => void; onResumeFollow: () => void; }) {
-  const text = messages(locale); const currentNames = [...frame.currentNodeIds].flatMap((id) => { const node = graph.nodes.find((candidate) => candidate.id === id); return node ? [localizeNode(node, locale).label] : []; }); const status = frame.outcome === "idle" ? text.ready : frame.outcome === "error" ? text.stopped : frame.outcome === "complete" ? text.completed : text.running;
+  const text = messages(locale); const currentNames = [...frame.currentNodeIds].flatMap((id) => { const node = graph.nodes.find((candidate) => candidate.id === id); return node ? [resolveNodeText(node, locale).label] : []; }); const status = frame.outcome === "idle" ? text.ready : frame.outcome === "error" ? text.stopped : frame.outcome === "complete" ? text.completed : text.running;
   return <section className="chain-inspector" data-outcome={frame.outcome}><div className="section-heading"><span className="eyebrow">{text.choosePath}</span><span>{feature.variants.length}</span></div><select value={variant.id} onChange={(event) => onVariant(event.target.value)} aria-label={text.choosePath}>{feature.variants.map((item) => <option value={item.id} key={item.id}>{localizeVariantLabel(item, graph, locale)}</option>)}</select><div className={`player-status player-status--${frame.outcome}`}><span className="player-status__pulse" /><span><strong>{status}</strong><small>{currentNames.join(" · ") || `${text.step} 0 / ${variant.steps.length}`}</small></span><b>{Math.max(0, frame.stepIndex + 1)}/{variant.steps.length}</b></div><div className="player-controls" aria-label={text.chainCheck}><button onClick={playing ? onPause : onPlay} title={playing ? text.pause : text.play} aria-label={playing ? text.pause : text.play}>{playing ? <Pause size={14} /> : <Play size={14} />}</button><button onClick={onNext} title={text.nextStep} aria-label={text.nextStep}><SkipForward size={14} /></button><button onClick={onReset} title={text.replay} aria-label={text.replay}><RotateCcw size={14} /></button><div className="speed-control"><span>{text.speed}</span>{[0.5, 1, 2].map((value) => <button className={speed === value ? "is-active" : ""} onClick={() => onSpeed(value)} key={value}>{value}×</button>)}</div></div><button className={`camera-follow ${cameraFollow ? "is-active" : ""}`} onClick={onResumeFollow}><Crosshair size={12} /><span>{cameraFollow ? text.cameraFollowing : text.resumeFollow}</span></button><div className="diagnostics"><div className="section-heading"><span className="eyebrow">{text.diagnostics}</span><span>{feature.diagnostics.length}</span></div>{!feature.diagnostics.length && <div className="diagnostics__clear"><CheckCircle2 size={13} />{text.noDiagnostics}</div>}{feature.diagnostics.map((diagnostic) => { const localized = localizeDiagnostic(diagnostic, graph, locale); return <button className={`diagnostic diagnostic--${diagnostic.severity}`} data-diagnostic-code={diagnostic.code} key={diagnostic.id} onClick={() => diagnostic.nodeId && graph.nodes.some((node) => node.id === diagnostic.nodeId) && onSelectNode(diagnostic.nodeId)}><AlertTriangle size={13} /><span><strong>{localized.message}</strong><small>{text.recommendation}：{localized.suggestion}</small></span></button>; })}</div></section>;
 }
 
@@ -710,8 +714,11 @@ function nodePresentation(node: LogicGraphNode, locale: UiLocale, nodesById: Rea
     confidence: node.confidence,
     pending: !technical && text.pending,
     sourceText: sourceCountText(node.sources.length, locale),
-    sourceDetail,
-    inferenceText: inferenceMethodLabel(node.inference.method, locale),
+    // A file path and a symbol are the technical view's whole subject; on a
+    // business card they are the English-identifier leak this pass exists to end.
+    // The evidence is a click away in the drawer either way.
+    sourceDetail: technical ? sourceDetail : undefined,
+    inferenceText: technical ? inferenceMethodLabel(node.inference.method, locale) : undefined,
   };
 }
 function semanticZoomLabel(level: BlueprintDetailLevel, locale: UiLocale): string { return locale === "zh-CN" ? { overview: "全局层", logic: "逻辑层", evidence: "证据层" }[level] : { overview: "Overview", logic: "Logic", evidence: "Evidence" }[level]; }
@@ -726,10 +733,10 @@ function toFlowEdge(edge: LogicGraph["edges"][number], state: EdgeVisualState, g
   const color = stateColoured ? appearance.color : control.color ?? appearance.color;
   return {
     id: edge.id, source: edge.source, target: edge.target, type: "playback", animated: false,
-    // The compiler now says what kind of connection this is, in the reader's
-    // language. `edge.label` is the older English string and only stands in for a
-    // graph compiled before that existed.
-    label: resolveEdgeText(edge, locale) ?? edge.label ?? edgeFlowLabel(edge, graph, locale),
+    // The compiler says what kind of connection this is, in the reader's language.
+    // `edge.label` is the analyzer's English string and must NOT outrank it — doing
+    // so made the localized wording unreachable on every edge that had one.
+    label: resolveEdgeText(edge, locale) ?? edgeFlowLabel(edge, graph, locale),
     className: `chain-edge chain-edge--${state}${edge.control ? ` chain-edge--${edge.control}` : ""}${branchClass ? ` ${branchClass}` : ""}`,
     markerEnd: { type: MarkerType.ArrowClosed, width: 17, height: 17, color },
     style: {

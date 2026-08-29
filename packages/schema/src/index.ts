@@ -238,6 +238,8 @@ export type LabelSource =
   | "vendor"
   | "identifier"
   | "composed"
+  /** An optional model filled a slot the deterministic pass declined. */
+  | "llm"
   | "pending";
 
 /** One identifier token and how it was rendered. */

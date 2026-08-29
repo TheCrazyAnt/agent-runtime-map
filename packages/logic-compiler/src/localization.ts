@@ -1,7 +1,7 @@
 import {
   STRUCTURAL_TOKENS,
-  VOCABULARY,
   normalizeToken,
+  termFor,
   tokenizeIdentifier,
   type Term,
 } from "@agent-runtime-map/analysis-kit";
@@ -64,8 +64,33 @@ const CONFIG_SOURCE: SourceLocation = { file: "agent-runtime-map.config.json", s
 /** Acronyms that are the same word in both languages; translating them loses meaning. */
 const ACRONYMS = new Set(["api", "url", "id", "http", "https", "html", "json", "csv", "pdf", "sql", "ui", "ux", "ai", "llm", "rag", "sdk", "jwt", "cdn", "dns", "ip", "db", "io", "rpc", "crud", "otp", "sms", "pii"]);
 
-/** Connectives that reorder a name rather than adding a word to it. */
-const CONNECTIVES = new Set(["by", "for", "from", "to", "of", "with", "in", "on", "and", "or", "a", "an", "the"]);
+/**
+ * Connectives change what a name MEANS, so they cannot simply be dropped:
+ * `getUserById` with `by` removed reads 读取用户ID — "fetch the user's id" — which
+ * is the opposite of looking a user up by id. Each one states how the words on
+ * either side of it relate, in both languages.
+ */
+const CONNECTIVES: Record<string, { zh: (left: string, right: string) => string; en: (left: string, right: string) => string }> = {
+  by: { zh: (left, right) => `按${right}${left}`, en: (left, right) => `${left} by ${right}` },
+  from: { zh: (left, right) => `从${right}${left}`, en: (left, right) => `${left} from ${right}` },
+  to: { zh: (left, right) => `${left}为${right}`, en: (left, right) => `${left} to ${right}` },
+  for: { zh: (left, right) => `面向${right}的${left}`, en: (left, right) => `${left} for ${right}` },
+  of: { zh: (left, right) => `${right}的${left}`, en: (left, right) => `${left} of ${right}` },
+  with: { zh: (left, right) => `携带${right}${left}`, en: (left, right) => `${left} with ${right}` },
+  in: { zh: (left, right) => `在${right}中${left}`, en: (left, right) => `${left} in ${right}` },
+  on: { zh: (left, right) => `在${right}上${left}`, en: (left, right) => `${left} on ${right}` },
+  and: { zh: (left, right) => `${left}并${right}`, en: (left, right) => `${left} and ${right}` },
+  or: { zh: (left, right) => `${left}或${right}`, en: (left, right) => `${left} or ${right}` },
+};
+
+/** Articles carry no meaning in an identifier and are simply dropped. */
+const ARTICLES = new Set(["a", "an", "the"]);
+
+/**
+ * Chinese verbs that already contain their object: 退款 is "return the money".
+ * Appending another noun makes a compound noun, so the object moves in front.
+ */
+const SELF_CONTAINED_VERBS = new Set(["refund", "score"]);
 
 // ---------------------------------------------------------------------------
 // Node naming
@@ -110,7 +135,12 @@ export function localizeNodeSemantics(
     }
     // 3. A route and a vendor name are already the clearest thing they can be:
     //    translating `POST /api/tickets` or `api.stripe.com` destroys the address.
-    if (rawKind === "route" || node.type === "entrypoint") {
+    // An address is already the clearest thing it can be: translating
+    // `POST /api/tickets` into 发布API工单 destroys the one string a reader would
+    // paste into a terminal. Judged by the label's own shape rather than by the
+    // node's type, so a CLI entrypoint named `runMigrations` is still read as a
+    // name while a route stays an address.
+    if (rawKind === "route" || isAddress(node.label)) {
       label[locale] = node.label;
       labelSource[locale] = "route";
       confidence[locale] = 1;
@@ -125,11 +155,20 @@ export function localizeNodeSemantics(
       continue;
     }
     // 4. Read the identifier through the shared vocabulary plus project terms.
-    const read = readIdentifier(technicalName, locale, input.overrides?.terms, redundantSuffixFor(node));
+    const read = readIdentifier(
+      technicalName,
+      locale,
+      input.overrides?.terms,
+      redundantSuffixFor(node),
+      node.type === "data" || node.type === "result" ? "thing" : "action",
+    );
     label[locale] = read.text;
     labelSource[locale] = read.source;
     confidence[locale] = read.confidence;
-    if (locale === "en" && read.tokens.length) glossary = read.tokens.slice(0, MAX_GLOSSARY);
+    // The declaration IS the evidence for a name read off its identifier. Naming
+    // it makes the claim checkable instead of merely confident.
+    if (read.source === "identifier" && node.sources[0] && !evidence.length) evidence.push(node.sources[0]);
+    if (read.tokens.length && !glossary) glossary = read.tokens.slice(0, MAX_GLOSSARY);
   }
 
   const pending = LOCALES.some((locale) => labelSource[locale] === "pending");
@@ -171,65 +210,109 @@ export function readIdentifier(
   locale: LocaleTag,
   terms?: LocalizationOverrides["terms"],
   redundantSuffix?: string,
+  /** A store is named by what it holds; a step by what it does. */
+  reading: "action" | "thing" = "action",
 ): { text: string; source: LabelSource; confidence: number; tokens: SemanticToken[] } {
   const raw = tokenizeIdentifier(identifier);
-  const meaningful = raw.filter((token) => !STRUCTURAL_TOKENS.has(token.toLowerCase()));
-  let tokens = (meaningful.length ? meaningful : raw).filter((token) => !CONNECTIVES.has(token.toLowerCase()));
+  const meaningful = raw.filter((token) => !STRUCTURAL_TOKENS.has(token.toLowerCase()) && !ARTICLES.has(token.toLowerCase()));
+  let tokens = meaningful.length ? meaningful : raw;
   // `generateIdeasAgent` on a node already drawn as an Agent says "agent" twice.
-  // Dropped only as a trailing word, and only when the node's kind already says it.
-  if (redundantSuffix && tokens.length > 1 && tokens.at(-1)!.toLowerCase() === redundantSuffix) {
-    tokens = tokens.slice(0, -1);
+  // Dropped only when a word remains that is not itself the connective glue —
+  // otherwise `selectAgent` becomes a bare 选择 with nothing to select.
+  if (redundantSuffix && tokens.at(-1)?.toLowerCase() === redundantSuffix) {
+    const remaining = tokens.slice(0, -1).filter((token) => !(token.toLowerCase() in CONNECTIVES));
+    // Dropping is safe when what remains still stands on its own: two words, or
+    // one that already carries its object (退款). A single bare transitive verb
+    // does not — `selectAgent` must not become 选择 with nothing to select.
+    const standsAlone = remaining.length >= 2
+      || (remaining.length === 1 && SELF_CONTAINED_VERBS.has(normalizeToken(remaining[0]!.toLowerCase())));
+    if (standsAlone) tokens = tokens.slice(0, -1);
   }
   if (!tokens.length) {
     return { text: identifier, source: "pending", confidence: 0, tokens: [] };
   }
 
+  // Split on the first connective: everything before it is what the step does,
+  // everything after is what it does it with.
+  const pivot = tokens.findIndex((token, index) => index > 0 && index < tokens.length - 1 && token.toLowerCase() in CONNECTIVES);
+  const connective = pivot > 0 ? CONNECTIVES[tokens[pivot]!.toLowerCase()]! : undefined;
+  const headIsSelfContained = !connective
+    && tokens.length > 1
+    && reading === "action"
+    && SELF_CONTAINED_VERBS.has(normalizeToken(tokens[0]!.toLowerCase()));
+  const leftTokens = connective ? tokens.slice(0, pivot) : headIsSelfContained ? tokens.slice(0, 1) : tokens;
+  const rightTokens = connective ? tokens.slice(pivot + 1) : headIsSelfContained ? tokens.slice(1) : [];
+
   const rendered: SemanticToken[] = [];
   let resolved = 0;
-  for (const token of tokens) {
-    const lower = token.toLowerCase();
-    const configured = terms?.[lower];
-    if (configured?.[locale] || configured?.en) {
-      rendered.push({ token: lower, en: configured.en ?? capitalize(token), "zh-CN": configured["zh-CN"], via: "config" });
-      resolved += 1;
-      continue;
+  const render = (group: string[], startsPhrase: boolean): { zh: string; en: string } | undefined => {
+    const parts: SemanticToken[] = [];
+    for (const [index, token] of group.entries()) {
+      const lower = token.toLowerCase();
+      const configured = terms?.[lower];
+      // A term stated for only one language resolves only that language: counting
+      // it for both put an English word inside a Chinese name at confidence 1.
+      if (configured?.[locale]) {
+        parts.push({ token: lower, en: configured.en ?? capitalize(token), "zh-CN": configured["zh-CN"], via: "config" });
+        resolved += 1;
+        continue;
+      }
+      if (ACRONYMS.has(lower)) {
+        parts.push({ token: lower, en: lower.toUpperCase(), "zh-CN": lower.toUpperCase(), via: "acronym" });
+        resolved += 1;
+        continue;
+      }
+      if (/^\d+$/.test(lower)) {
+        parts.push({ token: lower, en: lower, "zh-CN": lower, via: "literal" });
+        resolved += 1;
+        continue;
+      }
+      // Position decides the sense: the first word of a phrase is the verb.
+      const position = startsPhrase && index === 0 ? "head" : "tail";
+      const term: Term | undefined = termFor(normalizeToken(lower), position);
+      if (term) {
+        parts.push({ token: lower, en: term.enUS ?? capitalize(token), "zh-CN": term.zhCN, via: "vocabulary" });
+        resolved += 1;
+        continue;
+      }
+      parts.push({ token: lower, en: capitalize(token), via: "unresolved" });
     }
-    if (ACRONYMS.has(lower)) {
-      rendered.push({ token: lower, en: lower.toUpperCase(), "zh-CN": lower.toUpperCase(), via: "acronym" });
-      resolved += 1;
-      continue;
-    }
-    if (/^\d+$/.test(lower)) {
-      rendered.push({ token: lower, en: lower, "zh-CN": lower, via: "literal" });
-      resolved += 1;
-      continue;
-    }
-    const term: Term | undefined = VOCABULARY[normalizeToken(lower)];
-    if (term) {
-      rendered.push({ token: lower, en: term.enUS ?? capitalize(token), "zh-CN": term.zhCN, via: "vocabulary" });
-      resolved += 1;
-      continue;
-    }
-    // Unknown: kept exactly as written, and counted against the reading.
-    rendered.push({ token: lower, en: capitalize(token), via: "unresolved" });
-  }
+    rendered.push(...parts);
+    if (parts.some((part) => part.via === "unresolved") && locale === "zh-CN") return undefined;
+    return {
+      zh: parts.map((part) => part["zh-CN"] ?? part.en).join(""),
+      en: parts.map((part, index) => (index === 0 ? capitalize(part.en) : lowerUnlessAcronym(part.en))).join(" "),
+    };
+  };
 
-  const ratio = resolved / tokens.length;
+  const left = render(leftTokens, reading === "action");
+  // A verb that already carries its own object cannot take a second one directly:
+  // 退款订单 names a refund record, where the code performs a refund ON an order.
+  const selfContained = leftTokens.length === 1 && SELF_CONTAINED_VERBS.has(normalizeToken(leftTokens[0]!.toLowerCase()));
+  const right = rightTokens.length ? render(rightTokens, false) : undefined;
+  const total = leftTokens.length + rightTokens.length;
+  const ratio = total ? resolved / total : 0;
+
   if (locale === "zh-CN") {
     // Chinese cannot absorb a stray English word without becoming the mixed state
     // this feature exists to end, so a partial reading is not offered as a name.
-    if (ratio < 1) return { text: "", source: "pending", confidence: round(ratio), tokens: rendered };
-    return { text: rendered.map((item) => item["zh-CN"] ?? item.en).join(""), source: "identifier", confidence: 1, tokens: rendered };
+    if (!left || (rightTokens.length && !right)) {
+      return { text: "", source: "pending", confidence: round(ratio), tokens: rendered };
+    }
+    const text = connective && right
+      ? connective.zh(left.zh, right.zh)
+      : selfContained && right ? `为${right.zh}${left.zh}` : left.zh;
+    return { text, source: "identifier", confidence: 1, tokens: rendered };
   }
-  // English reads the identifier as words, which is a real improvement over the
-  // raw camelCase even when a token is not in the vocabulary.
   if (ratio < PENDING_THRESHOLD) return { text: "", source: "pending", confidence: round(ratio), tokens: rendered };
-  return {
-    text: rendered.map((item, index) => (index === 0 ? capitalize(item.en) : item.en.toLowerCase() === item.en ? item.en : lowerUnlessAcronym(item.en))).join(" "),
-    source: "identifier",
-    confidence: round(ratio),
-    tokens: rendered,
-  };
+  const leftEn = left?.en ?? leftTokens.map(capitalize).join(" ");
+  const rightEn = right?.en ?? rightTokens.map(capitalize).join(" ");
+  // The split above exists for Chinese word order; English simply reads on, and
+  // dropping the right-hand words there lost the object entirely.
+  const text = connective && rightTokens.length
+    ? connective.en(leftEn, rightEn.toLowerCase())
+    : rightTokens.length ? `${leftEn} ${rightEn.toLowerCase()}` : leftEn;
+  return { text, source: "identifier", confidence: round(ratio), tokens: rendered };
 }
 
 function lowerUnlessAcronym(value: string): string {
@@ -238,6 +321,11 @@ function lowerUnlessAcronym(value: string): string {
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** An HTTP method, a path, or a host: something a reader would copy verbatim. */
+function isAddress(label: string): boolean {
+  return /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s/i.test(label) || label.startsWith("/");
 }
 
 /** Whether a documented string is written in the locale it would be shown in. */
@@ -270,7 +358,12 @@ function documentedCapability(
   // `approveRefund`, where dropping "approve" would rename a gate after the thing
   // it gates — and would leave the same node reading 批准退款 in one language and
   // "Refund" in the other.
-  const covered = identifierTokens.length > 0 && identifierTokens.every((token) => capabilityTokens.has(token));
+  // Set equality, not containment: "Draft and send reply" contains the words of
+  // both `draftReply` and `sendReply`, and containment let one capability rename
+  // both of them to the same thing.
+  const covered = identifierTokens.length > 0
+    && identifierTokens.every((token) => capabilityTokens.has(token))
+    && capabilityTokens.size === new Set(identifierTokens).size;
   return covered ? match : undefined;
 }
 

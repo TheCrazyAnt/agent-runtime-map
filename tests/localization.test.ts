@@ -94,14 +94,31 @@ describe("reading an identifier as business language", () => {
     expect(model.labelSource.en).toBe("vendor");
   });
 
-  it("says the same thing in both languages", () => {
-    // A step must not read as one concept in Chinese and another in English.
-    for (const name of ["approveRefund", "handleTicket", "buildScriptAgent", "indexKnowledge"]) {
+  it("says the same thing in both languages when both can be read", () => {
+    // The two languages are allowed to disagree about whether a name is READABLE:
+    // English can render an unknown token as a word, Chinese cannot without
+    // becoming the mixed state this exists to end. What they must never do is
+    // describe two different concepts.
+    for (const name of ["approveRefund", "handleTicket", "createStory", "generateIdeas"]) {
       const semantic = semanticsOf(node("n", "process", name));
-      const zhTokens = tokenizeIdentifier(name).length;
       expect(semantic.labelSource["zh-CN"]).toBe(semantic.labelSource.en);
+      const zhTokens = tokenizeIdentifier(name).length;
       expect(semantic.label.en.split(" ").length).toBeLessThanOrEqual(zhTokens);
     }
+  });
+
+  it("lets English read a name Chinese must withhold, without either inventing", () => {
+    // `script` is one industry's word, deliberately absent from the shared
+    // vocabulary. English still reads it as a word; Chinese declines.
+    const semantic = semanticsOf(node("n", "ai_process", "buildScriptAgent"));
+    expect(semantic.labelSource.en).toBe("identifier");
+    expect(semantic.label.en).toBe("Build script");
+    expect(semantic.labelSource["zh-CN"]).toBe("pending");
+    expect(semantic.label["zh-CN"]).toMatch(/^待确认 · /);
+    // Marked pending overall, so no surface presents it as settled.
+    expect(semantic.pending).toBe(true);
+    // And the unresolved token is named, so a config line can settle it.
+    expect(semantic.glossary?.some((token) => token.token === "script" && token.via === "unresolved")).toBe(true);
   });
 
   it("produces the same answer twice for the same input", () => {

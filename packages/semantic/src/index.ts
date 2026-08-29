@@ -162,10 +162,30 @@ export function applySemanticPatch(graph: LogicGraph, patch: SemanticPatch, mode
   const nodes = graph.nodes.map((node) => {
     const semantic = nodePatches.get(node.id);
     if (!semantic) return node;
+    // A model may only fill a slot the deterministic pass declined. Overwriting a
+    // name that was read from evidence would replace a checkable conclusion with
+    // an unverifiable one — and since the Viewer reads `semantic`, patching only
+    // `label` would have made the model's output invisible while its confidence
+    // still landed on the node.
+    const canRename = node.semantic?.pending !== false;
+    const patchedSemantic = node.semantic && canRename
+      ? {
+        ...node.semantic,
+        label: { "zh-CN": semantic.label.trim(), en: semantic.label.trim() },
+        description: { "zh-CN": semantic.description.trim(), en: semantic.description.trim() },
+        labelSource: { "zh-CN": "llm" as const, en: "llm" as const },
+        confidence: {
+          "zh-CN": boundedConfidence(semantic.confidence),
+          en: boundedConfidence(semantic.confidence),
+        },
+        pending: false,
+      }
+      : node.semantic;
     return {
       ...node,
-      label: semantic.label.trim(),
-      description: semantic.description.trim(),
+      label: canRename ? semantic.label.trim() : node.label,
+      description: canRename ? semantic.description.trim() : node.description,
+      semantic: patchedSemantic,
       confidence: Math.min(node.confidence, boundedConfidence(semantic.confidence)),
       inference: {
         method: "mixed" as const,
