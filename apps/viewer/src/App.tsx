@@ -6,6 +6,7 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  useNodesInitialized,
   useReactFlow,
   type Edge,
   type Node,
@@ -20,8 +21,14 @@ import {
   blueprintEdgeAppearance,
   BLUEPRINT_NODE_HEIGHT,
   BLUEPRINT_NODE_WIDTH,
+  blueprintControlAppearance,
   blueprintSemanticZoomProgress,
+  BlueprintOverviewNode,
   buildBlueprintGroupNodes,
+  buildOverviewModel,
+  shouldShowEdgeLabel,
+  type BlueprintOverviewNodeData,
+  type OverviewModel,
   measureBlueprintBounds,
   buildSimulationFrame,
   layoutGraph,
@@ -41,13 +48,16 @@ import type {
 } from "@agent-runtime-map/schema";
 import { applyLayoutPositions, buildCodeDetailExpansion, canFocusNode, captureLayout, collectFocusIds, compareVariants, matchingNodeIds, parseDetailNodeId, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
 import {
-  chainHealthLabel, detectViewerLocale, groupLabels, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
+  chainHealthLabel, detectViewerLocale, groupLabels, overviewLabels, overviewCountsLabel, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
   productMatchText, productOriginLabel,
   localizeGraphDescription, localizeGraphTitle, localizeNode, localizeVariantLabel, messages, nodeTypeLabel,
   rememberViewerLocale, sourceCountText, type UiLocale,
 } from "./i18n";
 
-const nodeTypes = { logic: BlueprintLogicNode, blueprintGroup: BlueprintGroupNode, codeDetail: BlueprintCodeNode };
+const nodeTypes = { logic: BlueprintLogicNode, blueprintGroup: BlueprintGroupNode, codeDetail: BlueprintCodeNode, overview: BlueprintOverviewNode };
+/** Overview aggregates are wider than a step node: they carry counts as well as a name. */
+const OVERVIEW_NODE_WIDTH = 250;
+const OVERVIEW_NODE_HEIGHT = 108;
 const edgeTypes = { playback: BlueprintPlaybackEdge };
 const LAYOUT_PREFIX = "agent-runtime-map.layout.v1";
 
@@ -83,6 +93,9 @@ function LogicMapViewer() {
   const [detailLevel, setDetailLevel] = useState<BlueprintDetailLevel>("logic");
   const [navigating, setNavigating] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [overviewNodes, setOverviewNodes] = useState<Node<BlueprintOverviewNodeData>[]>([]);
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string>();
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
   const [layoutHistory, setLayoutHistory] = useState<LayoutPositions[]>([]);
   const [layoutRevision, setLayoutRevision] = useState(0);
   const canvasRef = useRef<HTMLElement>(null);
@@ -94,6 +107,9 @@ function LogicMapViewer() {
   const spotlightTimerRef = useRef<number | undefined>(undefined);
   const reduceMotion = useMemo(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
   const { fitView, getNode, setCenter } = useReactFlow();
+  // React Flow measures asynchronously; framing before it finishes computes bounds
+  // over unmeasured nodes and parks the camera off the map.
+  const nodesInitialized = useNodesInitialized();
   const text = messages(locale);
   const features = graph?.features ?? [];
   const selectedFeature = features.find((feature) => feature.id === selectedFeatureId);
@@ -224,6 +240,14 @@ function LogicMapViewer() {
     return () => window.clearTimeout(timer);
   }, [playing, selectedFeature, selectedVariant, speed, stepIndex]);
 
+  // "Everything" must not mean "every edge". The Overview level aggregates the
+  // same graph — every aggregate names the real nodes it stands for, every bus
+  // names the real edges it merges — so nothing is hidden, only folded.
+  const overviewModel: OverviewModel | undefined = useMemo(
+    () => (graph ? buildOverviewModel(graph, overviewLabels(locale)) : undefined),
+    [graph, locale],
+  );
+  const overviewActive = Boolean(overviewModel && selectedFeatureId === null && !focusedId);
   const nodesById = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node])), [graph]);
   const matchingIds = useMemo(
     () => matchingNodeIds(graph?.nodes ?? [], query, (node) => localizeNode(node, locale, nodesById)),
@@ -256,6 +280,62 @@ function LogicMapViewer() {
       }];
     }).reduce((all, current) => ({ nodes: [...all.nodes, ...current.nodes], edges: [...all.edges, ...current.edges] }), { nodes: [] as Node[], edges: [] as Edge[] });
   }, [expandedLogicIds, expandedRawIds, graph, nodes, rawGraph, text, toggleRawDetail]);
+  useEffect(() => {
+    if (!overviewModel || !overviewActive) return;
+    const flowNodes: Node<BlueprintOverviewNodeData>[] = overviewModel.nodes.map((item) => ({
+      id: item.id,
+      type: "overview",
+      position: { x: 0, y: 0 },
+      width: OVERVIEW_NODE_WIDTH,
+      height: OVERVIEW_NODE_HEIGHT,
+      data: {
+        label: item.label,
+        role: item.role,
+        memberCount: item.memberIds.length,
+        routeCount: item.routeCount,
+        types: item.types,
+        featureLabel: item.featureLabel,
+        singleNodeId: item.singleNodeId,
+        countsLabel: overviewCountsLabel(locale, item.memberIds.length, item.routeCount),
+        openLabel: text.openAggregate,
+      },
+    }));
+    const flowEdges = overviewModel.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target }));
+    let active = true;
+    void layoutGraph(flowNodes, flowEdges).then((laid) => {
+      if (active) setOverviewNodes(laid as Node<BlueprintOverviewNodeData>[]);
+    });
+    return () => { active = false; };
+  }, [locale, overviewActive, overviewModel, text.openAggregate]);
+
+  useEffect(() => {
+    if (!overviewActive || !overviewNodes.length || !nodesInitialized) return;
+    // React Flow adopts a new node array over several frames. Framing on the first
+    // one computes bounds the store has not finished updating, which parks the
+    // camera off the map; a second pass after the layout settles is what makes the
+    // switch reliable rather than usually-right.
+    // The layout's own coordinates are the ground truth here — this component
+    // computed them. Framing from them instead of from React Flow's asynchronous
+    // measurements makes the switch deterministic: fitView run before every node
+    // is measured frames a subset, which reads as "half the map is missing".
+    const bounds = measureBlueprintBounds(overviewNodes.map((node) => ({
+      position: node.position,
+      width: node.width ?? OVERVIEW_NODE_WIDTH,
+      height: node.height ?? OVERVIEW_NODE_HEIGHT,
+    })), 60);
+    if (!bounds) return;
+    const viewport = canvasRef.current?.getBoundingClientRect();
+    const zoom = viewport && bounds.width > 0 && bounds.height > 0
+      ? Math.max(0.2, Math.min(1.1, Math.min(viewport.width / bounds.width, viewport.height / bounds.height)))
+      : 0.7;
+    const timer = window.setTimeout(() => setCenter(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+      { zoom, duration: reduceMotion || document.hidden ? 0 : 360 },
+    ), 40);
+    return () => window.clearTimeout(timer);
+  }, [nodesInitialized, overviewActive, overviewNodes, reduceMotion, setCenter]);
+
   const enterFocus = useCallback((nodeId: string) => {
     // Remember where the reader was, so leaving focus returns them to it rather
     // than to a blank global view they did not ask for.
@@ -289,7 +369,27 @@ function LogicMapViewer() {
       focusLabel: text.focusStep,
     },
   })), [enterFocus, expandedLogicIds, focusedId, frame, graph, matchingIds, nodes, pinnedIds, selectedFeature, selectedVariant, spotlightId, text.focusStep, transition]);
+  const openAggregate = useCallback((item: OverviewModel["nodes"][number]) => {
+    // Opening a bundle is navigation, not a new view of its own: a feature
+    // aggregate selects that feature, and a shared bundle focuses the step it
+    // holds, so the reader always lands on real, evidence-backed nodes.
+    if (item.featureId) { setSelectedFeatureId(item.featureId); return; }
+    const first = item.singleNodeId ?? item.memberIds[0];
+    if (first) enterFocus(first);
+  }, [enterFocus]);
+
   const visibleNodes = useMemo(() => {
+    if (overviewActive && overviewModel) {
+      const byId = new Map(overviewModel.nodes.map((item) => [item.id, item]));
+      return overviewNodes.map((node) => {
+        const item = byId.get(node.id);
+        return {
+          ...node,
+          selected: node.id === selectedId,
+          data: { ...node.data, onOpen: item ? () => openAggregate(item) : undefined },
+        };
+      });
+    }
     if (!graph) return [...visibleLogicNodes, ...detailExpansion.nodes];
     const activeNodeIds = focusedIds ?? (selectedVariant ? new Set(selectedVariant.nodeIds) : undefined);
     // Hidden rather than removed. Taking a node out of the flow drops React Flow's
@@ -299,8 +399,34 @@ function LogicMapViewer() {
     const groups = buildBlueprintGroupNodes(framed, graph, activeNodeIds, groupLabels(locale));
     const logic = visibleLogicNodes.map((node) => (focusedIds && !focusedIds.has(node.id) ? { ...node, hidden: true } : node));
     return [...groups, ...logic, ...detailExpansion.nodes];
-  }, [detailExpansion.nodes, focusedIds, graph, locale, nodes, selectedVariant, visibleLogicNodes]);
+  }, [detailExpansion.nodes, focusedIds, graph, locale, nodes, openAggregate, overviewActive, overviewModel, overviewNodes, selectedId, selectedVariant, visibleLogicNodes]);
   const visibleEdges = useMemo(() => {
+    if (overviewActive && overviewModel) {
+      return overviewModel.edges.map((edge) => {
+        const control = blueprintControlAppearance(edge.control);
+        const appearance = blueprintEdgeAppearance("global", edge.dataFlow);
+        const color = control.color ?? appearance.color;
+        const merged = edge.edgeIds.length;
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: "playback",
+          className: `chain-edge chain-edge--bus${edge.control ? ` chain-edge--${edge.control}` : ""}`,
+          label: merged > 1 ? `×${merged}` : undefined,
+          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color },
+          style: {
+            stroke: color,
+            // A bus carrying more real edges is drawn heavier, so weight on the
+            // Overview means what it looks like it means.
+            strokeWidth: Math.min(4.2, 1.8 + Math.log2(merged + 1) * 0.8) * control.widthScale,
+            opacity: 0.9,
+            strokeDasharray: control.dash ?? appearance.dash,
+          },
+          data: { labelVisible: hoveredEdgeId === edge.id || selectedEdgeId === edge.id, loopback: control.loopback },
+        } satisfies Edge;
+      });
+    }
     const graphEdges = graph?.edges.map((edge) => {
       let state: EdgeVisualState = "global";
       if (selectedVariant) {
@@ -311,13 +437,19 @@ function LogicMapViewer() {
         if (frame.errorEdgeIds.has(edge.id) || (frame.errorNodeIds.has(edge.target) && frame.reachedEdgeIds.has(edge.id))) state = "error";
       }
       const branchClass = !transition ? undefined : transition.enteringEdgeIds.has(edge.id) ? "is-branch-entering" : transition.exitingEdgeIds.has(edge.id) ? "is-branch-exiting" : transition.sharedEdgeIds.has(edge.id) ? "is-branch-shared" : undefined;
-      return toFlowEdge(edge, state, graph!, locale, branchClass, !reduceMotion && state === "current", speed);
+      const labelVisible = shouldShowEdgeLabel({
+        hovered: hoveredEdgeId === edge.id,
+        selected: selectedEdgeId === edge.id,
+        playing: stepIndex >= 0,
+        state,
+      });
+      return toFlowEdge(edge, state, graph!, locale, branchClass, !reduceMotion && state === "current", speed, labelVisible);
     }) ?? [];
     const focused = focusedIds
       ? graphEdges.map((edge) => (focusedIds.has(edge.source) && focusedIds.has(edge.target) ? edge : { ...edge, hidden: true }))
       : graphEdges;
     return [...focused, ...detailExpansion.edges];
-  }, [detailExpansion.edges, focusedIds, frame, graph, locale, reduceMotion, selectedVariant, speed, transition]);
+  }, [detailExpansion.edges, focusedIds, frame, graph, hoveredEdgeId, locale, overviewActive, overviewModel, reduceMotion, selectedEdgeId, selectedVariant, speed, stepIndex, transition]);
 
   useEffect(() => {
     // The feature fit above bails without a variant, and focus deliberately has no
@@ -349,10 +481,15 @@ function LogicMapViewer() {
     if (baseLayout) setPinnedIds(new Set(positionedNodes.filter((node) => movedFromBase(node, baseLayout)).map((node) => node.id)));
   }, []);
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes((current) => applyNodeChanges(
-      changes.filter((change) => "id" in change && current.some((node) => node.id === change.id)),
-      current,
-    ) as Node<BlueprintLogicNodeData>[]);
+    const forSet = <T extends Node>(current: T[]) =>
+      changes.filter((change) => "id" in change && current.some((node) => node.id === change.id));
+    setNodes((current) => applyNodeChanges(forSet(current), current) as Node<BlueprintLogicNodeData>[]);
+    // Overview aggregates live in their own array. Without this they never receive
+    // their measurements, and React Flow refuses to draw an edge between two nodes
+    // whose bounds it does not know — the aggregates appeared with no buses at all.
+    setOverviewNodes((current) => (current.length
+      ? applyNodeChanges(forSet(current), current) as Node<BlueprintOverviewNodeData>[]
+      : current));
   }, []);
   const onNodeDragStart = useCallback((_event: MouseEvent | TouchEvent, node: Node) => {
     if (nodesRef.current.some((item) => item.id === node.id)) dragStartLayoutRef.current = captureLayout(nodesRef.current);
@@ -447,14 +584,14 @@ function LogicMapViewer() {
       <div className="search-wrap"><label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchResults[0]) selectSearchResult(searchResults[0].id); }} placeholder={text.search} />{query && <button onClick={() => setQuery("")} aria-label={text.clearSearch}><X size={14} /></button>}</label>{query && <div className="search-results"><span className="eyebrow">{text.searchResults} · {searchResults.length}</span>{searchResults.length ? searchResults.map((node) => <button key={node.id} onClick={() => selectSearchResult(node.id)}><strong>{localizeNode(node, locale).label}</strong><small>{node.sources[0]?.file ?? nodeTypeLabel(node.type, locale)}</small></button>) : <p>{text.noSearchResults}</p>}</div>}</div>
       <div className="sidebar__footer"><Braces size={14} /> {text.staticAnalysis}</div>
     </aside>
-    <section className="canvas" aria-label={text.logicGraph} data-detail-level={detailLevel} data-navigating={navigating ? "true" : "false"} ref={canvasRef}>
+    <section className="canvas" aria-label={text.logicGraph} data-lod={overviewActive ? "overview" : focusedId ? "detail" : selectedFeature ? "feature" : "overview"} data-detail-level={detailLevel} data-navigating={navigating ? "true" : "false"} ref={canvasRef}>
       {focusedId
         ? <div className="canvas-caption canvas-caption--focus"><button onClick={exitFocus} title={text.exitFocus}><ChevronLeft size={12} />{text.wholeSystem}</button><strong>{localizeNode(graph.nodes.find((node) => node.id === focusedId)!, locale, nodesById).label}</strong><small>{text.focusHint}</small></div>
-        : <div className="canvas-caption"><span className="canvas-caption__mark" /><strong>{selectedFeature ? localizeFeatureLabel(selectedFeature, graph, locale) : text.wholeSystem}</strong><small>{selectedVariant ? localizeVariantLabel(selectedVariant, graph, locale) : text.globalView}</small></div>}
+        : <div className="canvas-caption"><span className="canvas-caption__mark" /><strong>{selectedFeature ? localizeFeatureLabel(selectedFeature, graph, locale) : text.wholeSystem}</strong><small>{selectedVariant ? localizeVariantLabel(selectedVariant, graph, locale) : overviewActive ? text.overviewHint : text.globalView}</small></div>}
       <div className="semantic-zoom" aria-live="polite"><span>{text.zoomLevel}</span><strong>{semanticZoomLabel(detailLevel, locale)}</strong><div className="semantic-zoom__levels" aria-hidden="true">{(["overview", "logic", "evidence"] as const).map((level) => <i className={level === detailLevel ? "is-active" : ""} key={level} />)}</div><small>{text.semanticZoomHint}</small></div>
       <div className="canvas-help"><Crosshair size={13} /><span>{text.detailHint}</span></div>
       <div className="layout-toolbar" aria-label={text.layout}><span><Pin size={12} /> {pinnedIds.size} {text.pinnedNodes}</span><button onClick={undoLayout} disabled={!layoutHistory.length} title={text.undoLayout}><Undo2 size={13} /></button><button onClick={resetLayout} title={text.resetLayout}><RotateCcw size={13} /></button></div>
-      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={selectNode} onNodeDoubleClick={toggleDetails} onPaneClick={() => { setSelectedId(undefined); setSelectedRaw(undefined); }} onMoveStart={(event) => { setNavigating(true); if (event) setCameraFollow(false); }} onMove={(_event, viewport) => updateSemanticZoom(viewport.zoom)} onMoveEnd={() => setNavigating(false)} nodesDraggable nodesConnectable={false} elementsSelectable minZoom={0.2} maxZoom={2.2} fitView proOptions={{ hideAttribution: true }}><Controls showInteractive={false} position="bottom-left" /><MiniMap position="bottom-right" pannable zoomable nodeStrokeWidth={2} maskColor="rgba(240, 244, 248, 0.7)" /></ReactFlow>
+      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={selectNode} onNodeDoubleClick={toggleDetails} onEdgeMouseEnter={(_event, edge) => setHoveredEdgeId(edge.id)} onEdgeMouseLeave={() => setHoveredEdgeId(undefined)} onEdgeClick={(_event, edge) => setSelectedEdgeId(edge.id)} onPaneClick={() => { setSelectedId(undefined); setSelectedRaw(undefined); setSelectedEdgeId(undefined); }} onMoveStart={(event) => { setNavigating(true); if (event) setCameraFollow(false); }} onMove={(_event, viewport) => updateSemanticZoom(viewport.zoom)} onMoveEnd={() => setNavigating(false)} nodesDraggable nodesConnectable={false} elementsSelectable minZoom={0.2} maxZoom={2.2} fitView proOptions={{ hideAttribution: true }}><Controls showInteractive={false} position="bottom-left" /><MiniMap position="bottom-right" pannable zoomable nodeStrokeWidth={2} maskColor="rgba(240, 244, 248, 0.7)" /></ReactFlow>
     </section>
     {selectedRawNode
       ? <RawEvidencePanel rawNode={selectedRawNode} parent={selected} locale={locale} onParent={() => setSelectedRaw(undefined)} onClose={() => { setSelectedRaw(undefined); setSelectedId(undefined); }} />
@@ -495,7 +632,28 @@ function ProductContext({ product, locale }: { product?: ProductEvidence; locale
 function toFlowNode(node: LogicGraphNode, locale: UiLocale, nodesById?: ReadonlyMap<string, LogicGraphNode>): Node<BlueprintLogicNodeData> { const localized = localizeNode(node, locale, nodesById); const primarySource = node.sources[0]; return { id: node.id, type: "logic", position: { x: 0, y: 0 }, data: { label: localized.label, description: localized.description, nodeType: node.type, typeLabel: nodeTypeLabel(node.type, locale), confidence: node.confidence, sourceText: sourceCountText(node.sources.length, locale), sourceDetail: primarySource ? `${primarySource.file}:${primarySource.startLine}${primarySource.symbol ? ` · ${primarySource.symbol}` : ""}` : undefined, inferenceText: inferenceMethodLabel(node.inference.method, locale) } }; }
 function semanticZoomLabel(level: BlueprintDetailLevel, locale: UiLocale): string { return locale === "zh-CN" ? { overview: "全局层", logic: "逻辑层", evidence: "证据层" }[level] : { overview: "Overview", logic: "Logic", evidence: "Evidence" }[level]; }
 type EdgeVisualState = BlueprintEdgeState;
-function toFlowEdge(edge: LogicGraph["edges"][number], state: EdgeVisualState, graph: LogicGraph, locale: UiLocale, branchClass?: string, showToken = false, speed = 1): Edge { const dataFlow = edge.type === "data_flow"; const appearance = blueprintEdgeAppearance(state, dataFlow); return { id: edge.id, source: edge.source, target: edge.target, type: "playback", animated: false, label: edge.label ?? edgeFlowLabel(edge, graph, locale), className: `chain-edge chain-edge--${state}${branchClass ? ` ${branchClass}` : ""}`, markerEnd: { type: MarkerType.ArrowClosed, width: 17, height: 17, color: appearance.color }, style: { stroke: appearance.color, strokeWidth: appearance.width, opacity: appearance.opacity, strokeDasharray: appearance.dash }, data: { showToken, tokenColor: appearance.color, tokenDuration: 0.9 / speed } }; }
+function toFlowEdge(edge: LogicGraph["edges"][number], state: EdgeVisualState, graph: LogicGraph, locale: UiLocale, branchClass?: string, showToken = false, speed = 1, labelVisible = false): Edge {
+  const dataFlow = edge.type === "data_flow";
+  const appearance = blueprintEdgeAppearance(state, dataFlow);
+  const control = blueprintControlAppearance(edge.control);
+  // State colour wins while a simulation is running — the reader is watching the
+  // route, not the control kinds — and the control colour speaks otherwise.
+  const stateColoured = state === "current" || state === "reached" || state === "error" || state === "warning";
+  const color = stateColoured ? appearance.color : control.color ?? appearance.color;
+  return {
+    id: edge.id, source: edge.source, target: edge.target, type: "playback", animated: false,
+    label: edge.label ?? edgeFlowLabel(edge, graph, locale),
+    className: `chain-edge chain-edge--${state}${edge.control ? ` chain-edge--${edge.control}` : ""}${branchClass ? ` ${branchClass}` : ""}`,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 17, height: 17, color },
+    style: {
+      stroke: color,
+      strokeWidth: appearance.width * control.widthScale,
+      opacity: appearance.opacity,
+      strokeDasharray: control.dash ?? appearance.dash,
+    },
+    data: { showToken, tokenColor: color, tokenDuration: 0.9 / speed, labelVisible, loopback: control.loopback },
+  };
+}
 function edgeFlowLabel(edge: LogicGraph["edges"][number], graph: LogicGraph, locale: UiLocale): string { const source = graph.nodes.find((node) => node.id === edge.source); const target = graph.nodes.find((node) => node.id === edge.target); if (source?.type === "user_action" && target?.type === "entrypoint") return "HTTPS"; if (edge.type === "data_flow" && target?.type === "data") return locale === "zh-CN" ? "读 / 写" : "read / write"; if (target?.type === "external_system") return "API"; if (target?.type === "model") return locale === "zh-CN" ? "模型" : "model"; if (target?.type === "tool") return locale === "zh-CN" ? "工具" : "tool"; if (target?.type === "human_gate") return locale === "zh-CN" ? "人工确认" : "approve"; if (target?.type === "workflow" || target?.type === "ai_process") return locale === "zh-CN" ? "调用" : "invoke"; if (target?.type === "result") return locale === "zh-CN" ? "返回" : "return"; return locale === "zh-CN" ? "执行" : "flow"; }
 function HealthIcon({ health }: { health: ChainHealth }) { return health === "healthy" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />; }
 

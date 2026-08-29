@@ -1,3 +1,4 @@
+import type { OverviewLabels } from "@agent-runtime-map/react";
 import type {
   ChainDiagnostic,
   ChainHealth,
@@ -76,6 +77,12 @@ const EN = {
   recommendation: "Suggested fix",
   selectFeature: "Select a feature to inspect its execution route.",
   globalView: "All nodes and dependencies",
+  overviewHint: "Grouped view · open a group for its real steps",
+  openAggregate: "Open",
+  overviewStage: "Steps",
+  overviewCapability: "Agents & tools",
+  overviewIo: "Data & services",
+  overviewShared: "Shared",
   zoomLevel: "VIEW LEVEL",
   semanticZoomHint: "Scroll to move between overview, logic, and source evidence.",
   expandDetails: "Expand code details",
@@ -157,6 +164,12 @@ const ZH: Record<keyof typeof EN, string> = {
   recommendation: "修复建议",
   selectFeature: "请选择一个功能，检查它的执行路线。",
   globalView: "显示全部节点与依赖",
+  overviewHint: "聚合视图 · 展开分组查看真实步骤",
+  openAggregate: "展开",
+  overviewStage: "处理步骤",
+  overviewCapability: "智能体与工具",
+  overviewIo: "数据与外部服务",
+  overviewShared: "共用",
   zoomLevel: "查看层级",
   semanticZoomHint: "滚轮缩放可切换全局、逻辑与源码证据。",
   expandDetails: "展开代码细节",
@@ -365,6 +378,22 @@ export function localizeNode(
  * Boundary titles for the shared visual package, which is locale-neutral by design
  * so an embedder can label the frames in its own product language.
  */
+/** Bucket names for the Overview aggregates, in the reader's language. */
+export function overviewLabels(locale: UiLocale): OverviewLabels {
+  const text = messages(locale);
+  return {
+    stage: text.overviewStage,
+    capability: text.overviewCapability,
+    io: text.overviewIo,
+    shared: text.overviewShared,
+  };
+}
+
+/** "3 steps · 2 routes", said the way each language says it. */
+export function overviewCountsLabel(locale: UiLocale, steps: number, routes: number): string {
+  return locale === "zh-CN" ? `${steps} 个步骤 · ${routes} 条路线` : `${steps} steps · ${routes} routes`;
+}
+
 export function groupLabels(locale: UiLocale): BlueprintGroupLabels {
   if (locale === "en") return DEFAULT_BLUEPRINT_GROUP_LABELS;
   return {

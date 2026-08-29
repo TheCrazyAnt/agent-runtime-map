@@ -323,3 +323,21 @@ button { color: inherit; }
   .layout-toolbar { right: 12px; bottom: 58px; }
   .evidence-panel { top: 52px; width: min(344px, 90vw); }
 }
+
+/* ---- Level of detail ----------------------------------------------------- */
+/* Selecting a feature dims what is not on it rather than deleting it: the reader
+   keeps the surrounding shape of the system while reading one chain. */
+.canvas[data-lod="feature"] .react-flow__node.is-outside-path { opacity: .11; filter: grayscale(.85); }
+.canvas[data-lod="feature"] .react-flow__node:not(.is-outside-path),
+.canvas[data-lod="feature"] .react-flow__edge:not(.chain-edge--outside) { transition: opacity 320ms ease, transform 320ms ease; }
+.canvas .react-flow__node { transition: transform 320ms ease, opacity 320ms ease; }
+.canvas .react-flow__edge path { transition: stroke 260ms ease, stroke-width 260ms ease, opacity 260ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .canvas .react-flow__node,
+  .canvas .react-flow__edge path { transition: none; }
+}
+/* Control kinds a reader learns once: dashes mean the step may not happen,
+   a colour break means retry, loop, fallback, or approval. */
+.chain-edge--retry path { stroke-linecap: round; }
+.chain-edge--loop path { stroke-linecap: round; }
+.chain-edge--bus path { stroke-linejoin: round; }

@@ -19,13 +19,32 @@ export async function layoutGraph(nodes: Node[], edges: Edge[]): Promise<Node[]>
     layoutOptions: {
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
-      "elk.spacing.nodeNode": "70",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "118",
+      // Spacing is what keeps edges out of node bodies: ELK routes orthogonally
+      // in the gaps it is given, so a gap too small forces a line across a node.
+      "elk.spacing.nodeNode": "88",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "150",
+      "elk.spacing.edgeNode": "42",
+      "elk.spacing.edgeEdge": "22",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "38",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "18",
       "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+      // Thoroughness over speed: these graphs are tens of nodes, not thousands,
+      // and a crossing a reader has to untangle costs far more than the layout.
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+      "elk.layered.thoroughness": "40",
+      "elk.layered.cycleBreaking.strategy": "GREEDY",
+      "elk.layered.mergeEdges": "true",
+      "elk.edgeRouting": "ORTHOGONAL",
+      // Ports stay on the left and right faces, so flow always reads rightward.
+      "elk.portConstraints": "FIXED_SIDE",
       "elk.padding": "[top=90,left=90,bottom=90,right=90]",
     },
-    children: nodes.map((node) => ({ id: node.id, width: BLUEPRINT_NODE_WIDTH, height: BLUEPRINT_NODE_HEIGHT })),
+    children: nodes.map((node) => ({
+      id: node.id,
+      width: (node.width as number | undefined) ?? BLUEPRINT_NODE_WIDTH,
+      height: (node.height as number | undefined) ?? BLUEPRINT_NODE_HEIGHT,
+      layoutOptions: { "elk.portConstraints": "FIXED_SIDE" },
+    })),
     edges: edges.map((edge) => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })),
   });
 
