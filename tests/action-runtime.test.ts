@@ -30,20 +30,34 @@ const REQUIRED_MAJOR: Record<string, number> = {
   "actions/deploy-pages": 5,
 };
 
-/** Every `uses: actions/... @vN` in a file, as [action, major]. */
-function actionUsages(source: string): Array<{ action: string; major: number; raw: string }> {
-  return [...source.matchAll(/uses:\s*(actions\/[\w/-]+)@v(\d+)/g)].map((match) => ({
+/**
+ * Every `uses:` of an official action, with the ref it is pinned to.
+ *
+ * Quoting and SHA pinning both used to slip past this: `uses: 'actions/checkout@v4'`
+ * matched nothing because the quote sat where the action name was expected, and a
+ * commit SHA has no `@vN` to read — so GitHub's own hardening advice silently
+ * disabled the gate. The ref is captured as written and judged afterwards.
+ */
+function actionUsages(source: string): Array<{ action: string; ref: string; raw: string }> {
+  return [...source.matchAll(/uses:\s*["']?(actions\/[\w/-]+)@([^\s"'#]+)["']?/g)].map((match) => ({
     action: match[1]!,
-    major: Number(match[2]),
-    raw: match[0],
+    ref: match[2]!,
+    raw: match[0].trim(),
   }));
 }
 
 function assertCurrent(label: string, source: string): string[] {
-  return actionUsages(source).flatMap(({ action, major, raw }) => {
+  return actionUsages(source).flatMap(({ action, ref, raw }) => {
     const required = REQUIRED_MAJOR[action];
     if (required === undefined) return [`${label}: ${action} is not covered by this gate — add it to REQUIRED_MAJOR`];
-    return major < required ? [`${label}: ${raw} is behind the current major (v${required})`] : [];
+    const major = /^v(\d+)/.exec(ref)?.[1];
+    if (major === undefined) {
+      // A SHA or a branch ref carries no version to compare, so this gate cannot
+      // judge it. Saying so beats passing silently: someone must state which
+      // version that SHA is, in a comment the next reader can check.
+      return [`${label}: ${raw} is not pinned to a version tag, so its runtime cannot be checked`];
+    }
+    return Number(major) < required ? [`${label}: ${raw} is behind the current major (v${required})`] : [];
   });
 }
 
@@ -109,5 +123,25 @@ describe("action runtimes stay current", () => {
     const used = new Set(sources.flatMap((source) => actionUsages(source).map((item) => item.action)));
     expect(used.size).toBeGreaterThan(0);
     for (const action of used) expect(REQUIRED_MAJOR[action]).toBeDefined();
+  });
+});
+
+describe("the gate itself", () => {
+  it("sees through quoting and refuses a ref it cannot judge", () => {
+    // Both of these used to pass silently.
+    expect(assertCurrent("t", `      - uses: 'actions/checkout@v4'`)).toHaveLength(1);
+    expect(assertCurrent("t", `      - uses: "actions/checkout@v4"`)).toHaveLength(1);
+    expect(assertCurrent("t", `      - uses: actions/checkout@a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2`)[0])
+      .toContain("not pinned to a version tag");
+    expect(assertCurrent("t", `      - uses: actions/checkout@main`)[0]).toContain("not pinned to a version tag");
+
+    // A current pin passes, quoted or not.
+    expect(assertCurrent("t", `      - uses: actions/checkout@v7`)).toEqual([]);
+    expect(assertCurrent("t", `      - uses: "actions/checkout@v7"`)).toEqual([]);
+    // A sub-path action still resolves to its own entry.
+    expect(assertCurrent("t", `      - uses: actions/cache/restore@v6`)).toEqual([]);
+    expect(assertCurrent("t", `      - uses: actions/cache/restore@v4`)).toHaveLength(1);
+    // An action nobody listed is reported rather than skipped.
+    expect(assertCurrent("t", `      - uses: actions/labeler@v5`)[0]).toContain("not covered by this gate");
   });
 });

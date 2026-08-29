@@ -1,3 +1,6 @@
+# The actions used below run on Node 24, which requires Actions Runner 2.327.1
+# or newer. GitHub-hosted runners are already there; a self-hosted fleet pinned
+# below that must be updated before using this action.
 name: "Agent Runtime Map"
 description: >-
   Build an evidence-backed runtime map of this repository, publish it as a private
@@ -29,10 +32,10 @@ inputs:
       pages: write and id-token: write permissions.
     default: "artifact"
   cli-version:
-    description: "agent-runtime-map release version to run. Updated with every compatible action release."
+    description: "agent-runtime-map version to install from npm. Updated with every compatible action release."
     default: "0.8.1"
   cli-tarball:
-    description: "Advanced: path or URL of an agent-runtime-map npm tarball to run instead of the release download."
+    description: "Advanced: path or URL of an agent-runtime-map npm tarball to run instead of installing from npm."
     default: ""
   cache-prefix:
     description: "Advanced: namespace for the baseline cache. Change it to keep several maps (for example per monorepo package) from sharing a baseline."
@@ -68,10 +71,19 @@ runs:
         if [ -n "$CLI_TARBALL" ]; then
           SOURCE="$CLI_TARBALL"
         else
-          SOURCE="https://github.com/TheCrazyAnt/agent-runtime-map/releases/download/v${CLI_VERSION}/agent-runtime-map-${CLI_VERSION}.tgz"
+          # npm, not a GitHub Release asset. A release asset only exists if
+          # someone remembered to attach it: v0.8.1 was tagged and published to
+          # npm with no Release created, so this URL 404'd and would have broken
+          # every consumer the moment the v1 tag moved onto it. The registry is
+          # where the version actually lives, and publishing is what puts it there.
+          SOURCE="agent-runtime-map@${CLI_VERSION}"
         fi
         DIR="$RUNNER_TEMP/agent-runtime-map-cli"
         mkdir -p "$DIR"
+        # Without a package.json of its own, npm walks up looking for one and can
+        # install into an ancestor instead — leaving this directory empty and the
+        # next line pointing at nothing. A private manifest keeps the install here.
+        [ -f "$DIR/package.json" ] || echo '{"name":"agent-runtime-map-runner","private":true}' > "$DIR/package.json"
         ( cd "$DIR" && npm install --no-save --no-audit --no-fund --loglevel=error "$SOURCE" )
         echo "cli=$DIR/node_modules/agent-runtime-map/dist/cli.js" >> "$GITHUB_OUTPUT"
 

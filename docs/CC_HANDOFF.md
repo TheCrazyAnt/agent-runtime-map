@@ -345,7 +345,9 @@ current with no local watcher.
   (`manifest.commit.baselineSha`). No baseline → changes.json says `initial`.
 - Versioning contract: users reference `@v1`; v1 = compatible changes only,
   breaking → v2; exact tool version recorded in manifest + status. The `v1`
-  tag is NOT yet published — the user wants to confirm before it moves.
+  tag is published and points at v0.8.0 (605376a); it has NOT been moved since,
+   so consumers on `@v1` are running the 0.8.0 action. Moving it is a deliberate
+   step the user confirms each time.
 - Privacy defaults: private artifact + Step Summary only; `publish: pages` is
   an explicit opt-in with a loud warning. `contents: read` only; never commits.
 - Real-action proof lives in `.github/workflows/action-e2e.yml`: job 1 packs
