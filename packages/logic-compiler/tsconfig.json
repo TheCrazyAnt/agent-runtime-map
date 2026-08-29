@@ -5,6 +5,15 @@
     "outDir": "dist",
     "composite": true
   },
-  "include": ["src/**/*.ts"],
-  "references": [{ "path": "../schema" }]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../schema"
+    },
+    {
+      "path": "../analysis-kit"
+    }
+  ]
 }

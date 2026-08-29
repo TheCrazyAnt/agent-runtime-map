@@ -57,7 +57,13 @@ export interface ProjectReaderOptions {
 interface ReaderConfig {
   description?: string;
   features?: Record<string, { label?: string; description?: string; keywords?: string[] }>;
+  /** One lowercased identifier token to the words this project uses for it. */
+  terms?: Record<string, { "zh-CN"?: string; en?: string }>;
+  /** Whole-name overrides, keyed by the technical name or the logic node id. */
+  nodes?: Record<string, { label?: LocalePair; description?: LocalePair }>;
 }
+
+type LocalePair = { "zh-CN"?: string; en?: string };
 
 interface CandidateFile {
   absolute: string;
@@ -140,6 +146,7 @@ export async function readProjectContext(
     prompts,
     configurationFiles: await discoverConfigurationFiles(root),
     capabilityHints,
+    localization: config.terms || config.nodes ? { terms: config.terms, nodes: config.nodes } : undefined,
     diagnostics,
   };
 }
@@ -488,7 +495,37 @@ function sanitizeReaderConfig(value: unknown): ReaderConfig {
   return {
     description: stringValue(input.description, 600),
     features,
+    terms: sanitizeTerms(input.terms),
+    nodes: sanitizeNodeOverrides(input.nodes),
   };
+}
+
+/** A term is one lowercased token; anything else could not match an identifier. */
+function sanitizeTerms(value: unknown): ReaderConfig["terms"] {
+  const entries = Object.entries(objectValue(value)).flatMap(([token, rawTerm]) => {
+    const key = token.trim().toLowerCase().slice(0, 64);
+    const pair = localePair(rawTerm, 80);
+    return key && pair ? [[key, pair] as const] : [];
+  }).slice(0, 500);
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function sanitizeNodeOverrides(value: unknown): ReaderConfig["nodes"] {
+  const entries = Object.entries(objectValue(value)).flatMap(([name, rawOverride]) => {
+    const override = objectValue(rawOverride);
+    const label = localePair(override.label, 80);
+    const description = localePair(override.description, 600);
+    if (!label && !description) return [];
+    return [[name.trim().slice(0, 200), { label, description }] as const];
+  }).slice(0, 500);
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function localePair(value: unknown, limit: number): LocalePair | undefined {
+  const pair = objectValue(value);
+  const zh = stringValue(pair["zh-CN"], limit);
+  const en = stringValue(pair.en, limit);
+  return zh || en ? { ...(zh ? { "zh-CN": zh } : {}), ...(en ? { en } : {}) } : undefined;
 }
 
 function stringValue(value: unknown, maxLength: number): string | undefined {

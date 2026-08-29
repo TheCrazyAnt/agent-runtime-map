@@ -426,6 +426,41 @@ member dispatch (diagnosed), wrapper functions returning registry lookups
 (`anyTool`), nested UI handlers (`submitCheckout` inside a component), factory
 functions named like agents (`makeAgent` classifies as agent).
 
+## 8f. Bilingual business semantics (post-0.8.0)
+
+Naming is a **compile-time pass**, not a render-time translation: only the
+compiler has the evidence (project documents, config, the identifier, the node's
+place in the graph), so only the compiler can produce a name that carries its own
+provenance. The Viewer became a selector with no way left to guess.
+
+- `packages/analysis-kit/src/vocabulary.ts` — generic software/business
+  vocabulary, never one project's jargon. A token it does not know is kept
+  verbatim and reported.
+- `packages/logic-compiler/src/localization.ts` — per-locale derivation, in
+  priority order: config override → documented capability (only when the
+  document's words cover the WHOLE identifier) → route/vendor kept verbatim →
+  identifier read through the vocabulary. Chinese requires every token to
+  resolve; a partial reading is `pending`, never half-translated.
+- `packages/logic-compiler/src/featureNames.ts` — feature names composed from
+  entry + main step + result, deduplicated minimally, each locale picking the
+  first step it can actually name. `FeatureScenario.label` is NOT touched: it is
+  hashed into `feature.id`.
+- Schema: `SemanticLabel` on node/edge/variant/feature, all OPTIONAL, so an old
+  `graph.json` still renders through the Viewer's legacy path.
+- `agent-runtime-map.config.json` gains `terms` (one token → its reading) and
+  `nodes` (whole-name overrides). Both outrank every derivation.
+- Viewer: `resolveNodeText`/`resolveFeatureText`/`resolveEdgeText`; a
+  business/technical canvas toggle; the detail drawer shows both. `locale` and
+  `viewMode` are deliberately NOT layout dependencies — text must never move a
+  node. Verified in-browser: 28 nodes, 28 edges, byte-identical positions across
+  both views.
+- `--localize false` / `CompileOptions.localize: false` emits exactly the old
+  graph.
+
+Known and deliberate: a Chinese name is withheld when any token is unknown
+(`kbSearchTool` without a `kb` term), a person's prose is never machine
+translated between languages, and routes/vendor ids stay verbatim.
+
 ## 9. High-value next work
 
 Work in this order unless product direction changes:

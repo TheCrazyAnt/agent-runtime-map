@@ -5,12 +5,15 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": "./dist/index.js",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@agent-runtime-map/schema": "*"
+    "@agent-runtime-map/schema": "*",
+    "@agent-runtime-map/analysis-kit": "*"
   }
 }

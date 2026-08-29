@@ -1,4 +1,7 @@
+import type { OverviewLabels } from "@agent-runtime-map/react";
 import type {
+  RawEdgeKind,
+  RawNodeKind,
   ChainDiagnostic,
   ChainHealth,
   FeaturePathVariant,
@@ -76,6 +79,18 @@ const EN = {
   recommendation: "Suggested fix",
   selectFeature: "Select a feature to inspect its execution route.",
   globalView: "All nodes and dependencies",
+  viewMode: "How to read the map",
+  businessView: "Business",
+  technicalView: "Technical",
+  pendingBadge: "Unconfirmed",
+  nameSource: "Name derived from",
+  technicalDetails: "Technical details",
+  overviewHint: "Grouped view · open a group for its real steps",
+  openAggregate: "Open",
+  overviewStage: "Steps",
+  overviewCapability: "Agents & tools",
+  overviewIo: "Data & services",
+  overviewShared: "Shared",
   zoomLevel: "VIEW LEVEL",
   semanticZoomHint: "Scroll to move between overview, logic, and source evidence.",
   expandDetails: "Expand code details",
@@ -157,6 +172,18 @@ const ZH: Record<keyof typeof EN, string> = {
   recommendation: "修复建议",
   selectFeature: "请选择一个功能，检查它的执行路线。",
   globalView: "显示全部节点与依赖",
+  viewMode: "阅读方式",
+  businessView: "业务",
+  technicalView: "技术",
+  pendingBadge: "待确认",
+  nameSource: "名称来源",
+  technicalDetails: "技术详情",
+  overviewHint: "聚合视图 · 展开分组查看真实步骤",
+  openAggregate: "展开",
+  overviewStage: "处理步骤",
+  overviewCapability: "智能体与工具",
+  overviewIo: "数据与外部服务",
+  overviewShared: "共用",
   zoomLevel: "查看层级",
   semanticZoomHint: "滚轮缩放可切换全局、逻辑与源码证据。",
   expandDetails: "展开代码细节",
@@ -275,20 +302,52 @@ const ZH_WORDS: Record<string, string> = {
   workflow: "工作流",
 };
 
-export function detectViewerLocale(): UiLocale {
-  if (typeof window !== "undefined") {
-    const requested = new URLSearchParams(window.location.search).get("locale");
-    const fromQuery = normalizeLocale(requested);
-    if (fromQuery) return fromQuery;
-    const saved = normalizeLocale(window.localStorage.getItem(STORAGE_KEY));
-    if (saved) return saved;
-  }
-  const languages = typeof navigator === "undefined" ? [] : navigator.languages;
-  return languages.some((language) => language.toLowerCase().startsWith("zh")) ? "zh-CN" : "en";
+/** What the reader asked for, in priority order. Injectable so it can be tested. */
+export interface LocaleSignals {
+  /** The `?locale=` query string, if any. */
+  search?: string;
+  /** What was stored the last time they chose. */
+  stored?: string | null;
+  /** The browser's or system's languages. */
+  languages?: readonly string[];
 }
 
-export function rememberViewerLocale(locale: UiLocale): void {
-  if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, locale);
+/**
+ * An explicit choice outranks a remembered one, which outranks the system's
+ * language. Reading the globals is the default; passing signals in is what makes
+ * the precedence testable without a browser.
+ */
+export function detectViewerLocale(signals?: LocaleSignals): UiLocale {
+  const input: LocaleSignals = signals ?? {
+    search: typeof window === "undefined" ? undefined : window.location.search,
+    stored: typeof window === "undefined" ? null : safeRead(STORAGE_KEY),
+    languages: typeof navigator === "undefined" ? [] : navigator.languages,
+  };
+  const fromQuery = normalizeLocale(new URLSearchParams(input.search ?? "").get("locale"));
+  if (fromQuery) return fromQuery;
+  const saved = normalizeLocale(input.stored ?? null);
+  if (saved) return saved;
+  return (input.languages ?? []).some((language) => language.toLowerCase().startsWith("zh")) ? "zh-CN" : "en";
+}
+
+/** Storage throws in private browsing; a language preference is not worth a crash. */
+function safeRead(key: string): string | null {
+  try { return window.localStorage.getItem(key); } catch { return null; }
+}
+
+export function rememberViewerLocale(locale: UiLocale, storage?: Pick<Storage, "setItem">): void {
+  const target = storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
+  try { target?.setItem(STORAGE_KEY, locale); } catch { /* private browsing */ }
+}
+
+/**
+ * Writes the choice into the URL so a shared link carries it — and so a stale
+ * `?locale=` from someone else's link cannot outrank what this reader just picked.
+ */
+export function localeUrl(href: string, locale: UiLocale): string {
+  const url = new URL(href);
+  url.searchParams.set("locale", locale);
+  return url.toString();
 }
 
 export function messages(locale: UiLocale): typeof EN {
@@ -365,11 +424,27 @@ export function localizeNode(
  * Boundary titles for the shared visual package, which is locale-neutral by design
  * so an embedder can label the frames in its own product language.
  */
+/** Bucket names for the Overview aggregates, in the reader's language. */
+export function overviewLabels(locale: UiLocale): OverviewLabels {
+  const text = messages(locale);
+  return {
+    stage: text.overviewStage,
+    capability: text.overviewCapability,
+    io: text.overviewIo,
+    shared: text.overviewShared,
+  };
+}
+
+/** "3 steps · 2 routes", said the way each language says it. */
+export function overviewCountsLabel(locale: UiLocale, steps: number, routes: number): string {
+  return locale === "zh-CN" ? `${steps} 个步骤 · ${routes} 条路线` : `${steps} steps · ${routes} routes`;
+}
+
 export function groupLabels(locale: UiLocale): BlueprintGroupLabels {
   if (locale === "en") return DEFAULT_BLUEPRINT_GROUP_LABELS;
   return {
     runtime: "智能体运行时",
-    workflows: "AGENT 工作流",
+    workflows: "智能体工作流",
     systems: "数据与外部服务",
     nodeCount: (count) => `${count} 个节点`,
   };
@@ -471,7 +546,27 @@ export function localizeFeatureLabel(feature: FeatureScenario, graph: LogicGraph
   return translateSemanticName(feature.label) ?? feature.label;
 }
 
+/**
+ * A branch is named by where it ends, in the reader's language. The older path
+ * matched the analyzer's English label with a regular expression, which left
+ * "Path 2 · to saveGeneration" on a Chinese canvas whenever the pattern shifted.
+ */
 export function localizeVariantLabel(variant: FeaturePathVariant, graph: LogicGraph, locale: UiLocale): string {
+  // "All paths" and "Default path" name the whole route, not a destination:
+  // renaming them after their endpoint tells the reader the wrong thing about
+  // what they are looking at. Only a numbered branch is named by where it goes.
+  const index = variant.label.match(/^Path (\d+)/)?.[1];
+  const destination = index && variant.resultNodeId
+    ? graph.nodes.find((node) => node.id === variant.resultNodeId)
+    : undefined;
+  if (destination?.semantic) {
+    const name = resolveNodeText(destination, locale).label;
+    return locale === "zh-CN" ? `分支 ${index} · 至${name}` : `Path ${index} · to ${name}`;
+  }
+  return legacyVariantLabel(variant, graph, locale);
+}
+
+function legacyVariantLabel(variant: FeaturePathVariant, graph: LogicGraph, locale: UiLocale): string {
   if (locale === "en") return variant.label;
   if (variant.label === "All paths") return "全部路径";
   if (variant.label === "Default path") return "默认路径";
@@ -489,7 +584,7 @@ export function localizeDiagnostic(
 ): { message: string; suggestion: string } {
   if (locale === "en") return { message: diagnostic.message, suggestion: diagnostic.suggestion };
   const node = diagnostic.nodeId ? graph.nodes.find((candidate) => candidate.id === diagnostic.nodeId) : undefined;
-  const nodeLabel = node ? localizeNode(node, locale).label : "当前步骤";
+  const nodeLabel = node ? resolveNodeText(node, locale).label : "当前步骤";
   const localized: Record<ChainDiagnostic["code"], { message: string; suggestion: string }> = {
     CHAIN_BROKEN_REFERENCE: {
       message: `${nodeLabel} 引用了逻辑图中不存在的节点。`,
@@ -516,7 +611,7 @@ export function localizeDiagnostic(
       suggestion: "增强逻辑压缩，或把功能拆分成明确的工作流。",
     },
     CHAIN_EXTERNAL_NO_FALLBACK: {
-      message: `${nodeLabel} 调用了外部系统，但没有识别到 fallback。`,
+      message: `${nodeLabel} 调用了外部系统，但没有识别到降级备选路径。`,
       suggestion: "为外部调用增加异常处理、重试上限或降级路径。",
     },
     CHAIN_RETRY_WITHOUT_LIMIT: {
@@ -549,4 +644,135 @@ function translateSemanticName(value: string): string | undefined {
     .filter((token) => token && !["agent", "controller", "handler", "service"].includes(token));
   if (!tokens.length || tokens.some((token) => !ZH_WORDS[token])) return undefined;
   return tokens.map((token) => ZH_WORDS[token]).join("");
+}
+
+/**
+ * Reads a node's business name and one-sentence behavior, in the reader's language.
+ *
+ * The compiler derives these from project evidence and writes them into the graph,
+ * so this is a selector, not a translator: there is nowhere here to guess. A graph
+ * compiled before that existed carries no `semantic`, and only then does the older
+ * viewer-side reading run — which is what keeps an old `graph.json` rendering.
+ */
+/**
+ * Whether THIS language failed to read the name.
+ *
+ * `SemanticLabel.pending` is true when either language failed, which is the right
+ * summary for a compiler deciding whether a node needs attention — but the wrong
+ * thing to show a reader. English read `kbSearchTool` as "Kb search" perfectly
+ * well; marking it Unconfirmed because Chinese could not resolve `kb` tells that
+ * reader their own view is unreliable when it is not.
+ *
+ * `labelSource` is per-locale and already carries the answer. The flat flag is
+ * consulted only for a graph compiled before `labelSource` existed.
+ */
+function pendingIn(semantic: NonNullable<LogicNode["semantic"]>, key: "zh-CN" | "en"): boolean {
+  const source = semantic.labelSource?.[key];
+  return source === undefined ? semantic.pending === true : source === "pending";
+}
+
+export function resolveNodeText(
+  node: LogicNode,
+  locale: UiLocale,
+  nodesById?: ReadonlyMap<string, LogicNode>,
+): { label: string; description: string; technicalName: string; pending: boolean; confidence: number; source?: string } {
+  const semantic = node.semantic;
+  if (semantic) {
+    const key: "zh-CN" | "en" = locale === "zh-CN" ? "zh-CN" : "en";
+    return {
+      label: semantic.label[key],
+      description: semantic.description[key],
+      technicalName: semantic.technicalName,
+      pending: pendingIn(semantic, key),
+      confidence: semantic.confidence[key],
+      source: semantic.labelSource?.[key],
+    };
+  }
+  const legacy = localizeNode(node, locale, nodesById);
+  return {
+    label: legacy.label,
+    description: legacy.description,
+    technicalName: typeof node.metadata?.rawName === "string" ? node.metadata.rawName : node.label,
+    pending: false,
+    confidence: node.confidence,
+  };
+}
+
+/** A feature's composed business name, or the older localization for an old graph. */
+export function resolveFeatureText(
+  feature: FeatureScenario,
+  graph: LogicGraph,
+  locale: UiLocale,
+): { label: string; description: string; pending: boolean } {
+  const semantic = feature.semantic;
+  if (semantic) {
+    const key: "zh-CN" | "en" = locale === "zh-CN" ? "zh-CN" : "en";
+    return { label: semantic.label[key], description: semantic.description[key], pending: pendingIn(semantic, key) };
+  }
+  return { label: localizeFeatureLabel(feature, graph, locale), description: feature.description, pending: false };
+}
+
+/** What kind of connection an edge is, said in the reader's language. */
+export function resolveEdgeText(edge: LogicGraph["edges"][number], locale: UiLocale): string | undefined {
+  const semantic = edge.semantic;
+  if (semantic) return semantic.label[locale === "zh-CN" ? "zh-CN" : "en"];
+  return undefined;
+}
+
+/** How a name was arrived at, for the detail panel. */
+export function labelSourceLabel(source: string | undefined, locale: UiLocale): string {
+  const zh: Record<string, string> = {
+    config: "项目配置指定", documented: "项目文档描述", docstring: "代码注释",
+    route: "路由地址", vendor: "外部服务名称", identifier: "代码标识符",
+    composed: "由链路组合", pending: "证据不足，待确认",
+  };
+  const en: Record<string, string> = {
+    config: "Stated in project config", documented: "Documented capability", docstring: "Code docstring",
+    route: "Route address", vendor: "Vendor name", identifier: "Read from the identifier",
+    composed: "Composed from the chain", pending: "Not enough evidence",
+  };
+  const table = locale === "zh-CN" ? zh : en;
+  return table[source ?? ""] ?? (locale === "zh-CN" ? "未知来源" : "Unknown");
+}
+
+/**
+ * The words the map uses for what the code IS and how its parts relate.
+ *
+ * A symbol's own name stays exactly as written — that is the source layer, and
+ * translating an identifier would break the link to the file. But "agent" and
+ * "calls" are our vocabulary, not the code's, and leaving them in English put
+ * English words on a Chinese canvas at the level a reader zooms into most.
+ *
+ * Typed as a complete Record so a new kind is a compile error, not a silent leak.
+ */
+const RAW_KIND_LABELS: Record<UiLocale, Record<RawNodeKind, string>> = {
+  "zh-CN": {
+    entrypoint: "入口", file: "文件", function: "函数", class: "类", route: "路由",
+    service: "服务", agent: "智能体", workflow: "工作流", tool: "工具", model: "模型",
+    prompt: "提示词", human_gate: "人工确认", database: "数据存储", external_api: "外部服务",
+  },
+  en: {
+    entrypoint: "entrypoint", file: "file", function: "function", class: "class", route: "route",
+    service: "service", agent: "agent", workflow: "workflow", tool: "tool", model: "model",
+    prompt: "prompt", human_gate: "human gate", database: "data store", external_api: "external service",
+  },
+};
+
+const RAW_EDGE_LABELS: Record<UiLocale, Record<RawEdgeKind, string>> = {
+  "zh-CN": {
+    contains: "包含", imports: "导入", calls: "调用", data_flow: "数据流转",
+    handles: "处理", reads: "读取", writes: "写入", requests: "请求",
+  },
+  en: {
+    contains: "contains", imports: "imports", calls: "calls", data_flow: "data flow",
+    handles: "handles", reads: "reads", writes: "writes", requests: "requests",
+  },
+};
+
+export function rawKindLabel(kind: RawNodeKind, locale: UiLocale): string {
+  return RAW_KIND_LABELS[locale][kind] ?? kind;
+}
+
+export function rawEdgeLabel(kind: RawEdgeKind, locale: UiLocale): string {
+  return RAW_EDGE_LABELS[locale][kind] ?? kind;
 }

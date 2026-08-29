@@ -28,6 +28,9 @@ export interface CodeDetailOptions {
    * protect. Reaching further is a breadcrumb's job, not a bigger expansion's.
    */
   expandedRawIds?: ReadonlySet<string>;
+  /** How to say a raw node's kind and an edge's relation in the reader's language. */
+  kindLabel?: (kind: RawCodeGraph["nodes"][number]["kind"]) => string;
+  relationLabel?: (kind: RawCodeGraph["edges"][number]["kind"]) => string;
   secondLevelLimit?: number;
 }
 
@@ -39,6 +42,10 @@ export function buildCodeDetailExpansion(
   rawGraph: RawCodeGraph,
   options: CodeDetailOptions = {},
 ): CodeDetailExpansion {
+  // A symbol's name is the code's; the words for its kind and its relations are
+  // ours, and must be said in the reader's language.
+  const kindWord = options.kindLabel ?? ((kind: string) => kind);
+  const relationWord = options.relationLabel ?? ((kind: string) => kind);
   const limit = options.limit ?? 9;
   const secondLevelLimit = options.secondLevelLimit ?? 5;
   const rawById = new Map(rawGraph.nodes.map((node) => [node.id, node]));
@@ -65,7 +72,7 @@ export function buildCodeDetailExpansion(
   const relations = new Map<string, string>();
   for (const edge of rawGraph.edges) {
     if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
-    if (!relations.has(edge.target)) relations.set(edge.target, edge.label ?? edge.kind);
+    if (!relations.has(edge.target)) relations.set(edge.target, relationWord(edge.kind));
   }
 
   const nodes = rankedIds.flatMap((rawId, index) => {
@@ -83,7 +90,7 @@ export function buildCodeDetailExpansion(
       },
       data: {
         label: rawNode.name,
-        kind: rawNode.kind,
+        kind: kindWord(rawNode.kind),
         source: sourceLabel(rawNode),
         relation: relations.get(rawId),
         depth,
@@ -111,7 +118,7 @@ export function buildCodeDetailExpansion(
       source: detailNodeId(logicNode.id, edge.source),
       target: detailNodeId(logicNode.id, edge.target),
       type: "smoothstep",
-      label: edge.label ?? edge.kind,
+      label: relationWord(edge.kind),
       className: "detail-edge detail-edge-enter",
       style: { stroke: "#8293a2", strokeWidth: 1.15, strokeDasharray: "4 5", opacity: 0.72 },
       labelStyle: { fill: "#7b8794", fontSize: 7 },

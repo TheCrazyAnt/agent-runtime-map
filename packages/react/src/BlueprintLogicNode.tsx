@@ -41,6 +41,12 @@ export interface BlueprintLogicNodeData extends Record<string, unknown> {
   typeLabel: string;
   confidence: number;
   sourceText: string;
+  /**
+   * True when the analyzer could not read this step's business meaning from
+   * evidence. Marked rather than guessed: a reader who sees the badge knows the
+   * tool declined, and the name it was given in code is in the detail panel.
+   */
+  pending?: boolean;
   sourceDetail?: string;
   inferenceText?: string;
   detailLevel?: BlueprintDetailLevel;
@@ -75,7 +81,7 @@ export function BlueprintLogicNode({ data, selected }: NodeProps) {
   const detailClass = value.detailLevel ? ` blueprint-node--detail-${value.detailLevel}` : "";
   return (
     <article
-      className={`blueprint-node blueprint-node--${value.nodeType}${detailClass}${selected ? " is-selected" : ""}`}
+      className={`blueprint-node blueprint-node--${value.nodeType}${detailClass}${selected ? " is-selected" : ""}${value.pending ? " is-pending" : ""}`}
       data-detail-level={value.detailLevel}
     >
       <Handle type="target" position={Position.Left} className="blueprint-handle" />

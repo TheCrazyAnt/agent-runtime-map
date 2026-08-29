@@ -6,6 +6,7 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  useNodesInitialized,
   useReactFlow,
   type Edge,
   type Node,
@@ -20,8 +21,14 @@ import {
   blueprintEdgeAppearance,
   BLUEPRINT_NODE_HEIGHT,
   BLUEPRINT_NODE_WIDTH,
+  blueprintControlAppearance,
   blueprintSemanticZoomProgress,
+  BlueprintOverviewNode,
   buildBlueprintGroupNodes,
+  buildOverviewModel,
+  shouldShowEdgeLabel,
+  type BlueprintOverviewNodeData,
+  type OverviewModel,
   measureBlueprintBounds,
   buildSimulationFrame,
   layoutGraph,
@@ -41,15 +48,23 @@ import type {
 } from "@agent-runtime-map/schema";
 import { applyLayoutPositions, buildCodeDetailExpansion, canFocusNode, captureLayout, collectFocusIds, compareVariants, matchingNodeIds, parseDetailNodeId, parseLayoutPositions, type LayoutPositions } from "./interactionModel";
 import {
-  chainHealthLabel, detectViewerLocale, groupLabels, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
+  chainHealthLabel, detectViewerLocale, groupLabels, overviewLabels, overviewCountsLabel,
+  labelSourceLabel, rawEdgeLabel, rawKindLabel, resolveEdgeText, resolveFeatureText, resolveNodeText, inferenceMethodLabel, localizeDiagnostic, localizeFeatureLabel,
   productMatchText, productOriginLabel,
   localizeGraphDescription, localizeGraphTitle, localizeNode, localizeVariantLabel, messages, nodeTypeLabel,
   rememberViewerLocale, sourceCountText, type UiLocale,
 } from "./i18n";
 
-const nodeTypes = { logic: BlueprintLogicNode, blueprintGroup: BlueprintGroupNode, codeDetail: BlueprintCodeNode };
+const nodeTypes = { logic: BlueprintLogicNode, blueprintGroup: BlueprintGroupNode, codeDetail: BlueprintCodeNode, overview: BlueprintOverviewNode };
+/** Overview aggregates are wider than a step node: they carry counts as well as a name. */
+const OVERVIEW_NODE_WIDTH = 250;
+const OVERVIEW_NODE_HEIGHT = 108;
 const edgeTypes = { playback: BlueprintPlaybackEdge };
 const LAYOUT_PREFIX = "agent-runtime-map.layout.v1";
+const VIEW_STORAGE_KEY = "agent-runtime-map.view.v1";
+
+/** What the canvas says about each node. Never what it draws or where. */
+export type ViewMode = "business" | "technical";
 
 export function App() {
   return <ReactFlowProvider><LogicMapViewer /></ReactFlowProvider>;
@@ -83,6 +98,13 @@ function LogicMapViewer() {
   const [detailLevel, setDetailLevel] = useState<BlueprintDetailLevel>("logic");
   const [navigating, setNavigating] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [overviewNodes, setOverviewNodes] = useState<Node<BlueprintOverviewNodeData>[]>([]);
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string>();
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "business";
+    return window.localStorage.getItem(VIEW_STORAGE_KEY) === "technical" ? "technical" : "business";
+  });
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
   const [layoutHistory, setLayoutHistory] = useState<LayoutPositions[]>([]);
   const [layoutRevision, setLayoutRevision] = useState(0);
   const canvasRef = useRef<HTMLElement>(null);
@@ -94,6 +116,9 @@ function LogicMapViewer() {
   const spotlightTimerRef = useRef<number | undefined>(undefined);
   const reduceMotion = useMemo(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
   const { fitView, getNode, setCenter } = useReactFlow();
+  // React Flow measures asynchronously; framing before it finishes computes bounds
+  // over unmeasured nodes and parks the camera off the map.
+  const nodesInitialized = useNodesInitialized();
   const text = messages(locale);
   const features = graph?.features ?? [];
   const selectedFeature = features.find((feature) => feature.id === selectedFeatureId);
@@ -163,7 +188,7 @@ function LogicMapViewer() {
   useEffect(() => {
     if (!graph) return;
     const byId = new Map(graph.nodes.map((item) => [item.id, item]));
-    const flowNodes = graph.nodes.map((node) => toFlowNode(node, locale, byId));
+    const flowNodes = graph.nodes.map((node) => toFlowNode(node, locale, byId, viewMode));
     const flowEdges = graph.edges.map((edge) => toFlowEdge(edge, "global", graph, locale));
     void layoutGraph(flowNodes, flowEdges).then((layouted) => {
       const baseLayout = captureLayout(layouted);
@@ -175,7 +200,11 @@ function LogicMapViewer() {
       setLayoutRevision((revision) => revision + 1);
       window.setTimeout(() => fitView({ padding: 0.14, duration: reduceMotion ? 0 : 500 }), 20);
     });
-  }, [fitView, graph, layoutStorageKey, locale, reduceMotion]);
+    // Neither `locale` nor `viewMode` belongs here: they change what a node says,
+    // never where it sits. Listing them would re-run ELK and throw away the
+    // reader's viewport every time they switched language.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitView, graph, layoutStorageKey, reduceMotion]);
   useEffect(() => {
     if (!graph || selectedFeatureId !== undefined) return;
     setSelectedFeatureId(graph.features.find((feature) => feature.health === "healthy")?.id ?? graph.features[0]?.id ?? null);
@@ -224,9 +253,40 @@ function LogicMapViewer() {
     return () => window.clearTimeout(timer);
   }, [playing, selectedFeature, selectedVariant, speed, stepIndex]);
 
+  // Declared before every memo that reads it: a `const` used above its own
+  // declaration throws at runtime only on the render that touches it, which is
+  // how a search box once blanked the whole Viewer on its first keystroke.
   const nodesById = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node])), [graph]);
+
+  // "Everything" must not mean "every edge". The Overview level aggregates the
+  // same graph — every aggregate names the real nodes it stands for, every bus
+  // names the real edges it merges — so nothing is hidden, only folded.
+  const overviewModel: OverviewModel | undefined = useMemo(
+    () => (graph
+      ? buildOverviewModel(graph, overviewLabels(locale), {
+        // An aggregate standing for exactly one step follows the chosen view, so
+        // the technical view is technical everywhere rather than only at the
+        // levels that happen to render logic nodes.
+        nodeLabel: (node) => {
+          const text = resolveNodeText(node, locale, nodesById);
+          return viewMode === "technical" ? text.technicalName : text.label;
+        },
+        featureLabel: (featureId, fallback) => {
+          const feature = graph.features.find((item) => item.id === featureId);
+          return feature ? resolveFeatureText(feature, graph, locale).label : fallback;
+        },
+      })
+      : undefined),
+    [graph, locale, nodesById, viewMode],
+  );
+  const overviewActive = Boolean(overviewModel && selectedFeatureId === null && !focusedId);
   const matchingIds = useMemo(
-    () => matchingNodeIds(graph?.nodes ?? [], query, (node) => localizeNode(node, locale, nodesById)),
+    () => matchingNodeIds(graph?.nodes ?? [], query, (node) => {
+      const text = resolveNodeText(node, locale, nodesById);
+      // The technical name is searchable in both views: a developer who knows the
+      // function name should find the step without switching language first.
+      return { label: `${text.label} ${text.technicalName}`, description: text.description };
+    }),
     [graph, locale, nodesById, query],
   );
   const searchResults = useMemo(() => graph?.nodes.filter((node) => matchingIds.has(node.id)).slice(0, 7) ?? [], [graph, matchingIds]);
@@ -236,7 +296,11 @@ function LogicMapViewer() {
       if (!expandedLogicIds.has(logicNode.id)) return [];
       const parent = nodes.find((node) => node.id === logicNode.id);
       if (!parent) return [];
-      const expansion = buildCodeDetailExpansion(logicNode, parent, rawGraph, { expandedRawIds });
+      const expansion = buildCodeDetailExpansion(logicNode, parent, rawGraph, {
+        expandedRawIds,
+        kindLabel: (kind) => rawKindLabel(kind, locale),
+        relationLabel: (kind) => rawEdgeLabel(kind, locale),
+      });
       // The model stays pure; behaviour is attached here, where the state lives.
       return [{
         ...expansion,
@@ -256,6 +320,67 @@ function LogicMapViewer() {
       }];
     }).reduce((all, current) => ({ nodes: [...all.nodes, ...current.nodes], edges: [...all.edges, ...current.edges] }), { nodes: [] as Node[], edges: [] as Edge[] });
   }, [expandedLogicIds, expandedRawIds, graph, nodes, rawGraph, text, toggleRawDetail]);
+  useEffect(() => {
+    if (!overviewModel || !overviewActive) return;
+    const flowNodes: Node<BlueprintOverviewNodeData>[] = overviewModel.nodes.map((item) => ({
+      id: item.id,
+      type: "overview",
+      position: { x: 0, y: 0 },
+      width: OVERVIEW_NODE_WIDTH,
+      height: OVERVIEW_NODE_HEIGHT,
+      data: {
+        label: item.label,
+        role: item.role,
+        memberCount: item.memberIds.length,
+        routeCount: item.routeCount,
+        types: item.types,
+        featureLabel: item.featureLabel,
+        singleNodeId: item.singleNodeId,
+        countsLabel: overviewCountsLabel(locale, item.memberIds.length, item.routeCount),
+        openLabel: text.openAggregate,
+      },
+    }));
+    const flowEdges = overviewModel.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target }));
+    let active = true;
+    void layoutGraph(flowNodes, flowEdges).then((laid) => {
+      if (active) setOverviewNodes(laid as Node<BlueprintOverviewNodeData>[]);
+    });
+    return () => { active = false; };
+  }, [locale, overviewActive, overviewModel, text.openAggregate]);
+
+  useEffect(() => {
+    if (!overviewActive || !overviewNodes.length || !nodesInitialized) return;
+    // React Flow adopts a new node array over several frames. Framing on the first
+    // one computes bounds the store has not finished updating, which parks the
+    // camera off the map; a second pass after the layout settles is what makes the
+    // switch reliable rather than usually-right.
+    // The layout's own coordinates are the ground truth here — this component
+    // computed them. Framing from them instead of from React Flow's asynchronous
+    // measurements makes the switch deterministic: fitView run before every node
+    // is measured frames a subset, which reads as "half the map is missing".
+    const bounds = measureBlueprintBounds(overviewNodes.map((node) => ({
+      position: node.position,
+      width: node.width ?? OVERVIEW_NODE_WIDTH,
+      height: node.height ?? OVERVIEW_NODE_HEIGHT,
+    })), 60);
+    if (!bounds) return;
+    const viewport = canvasRef.current?.getBoundingClientRect();
+    const zoom = viewport && bounds.width > 0 && bounds.height > 0
+      ? Math.max(0.2, Math.min(1.1, Math.min(viewport.width / bounds.width, viewport.height / bounds.height)))
+      : 0.7;
+    const timer = window.setTimeout(() => setCenter(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+      { zoom, duration: reduceMotion || document.hidden ? 0 : 360 },
+    ), 40);
+    return () => window.clearTimeout(timer);
+  }, [nodesInitialized, overviewActive, overviewNodes, reduceMotion, setCenter]);
+
+  const selectView = useCallback((next: ViewMode) => {
+    setViewMode(next);
+    try { window.localStorage.setItem(VIEW_STORAGE_KEY, next); } catch { /* private browsing */ }
+  }, []);
+
   const enterFocus = useCallback((nodeId: string) => {
     // Remember where the reader was, so leaving focus returns them to it rather
     // than to a blank global view they did not ask for.
@@ -279,17 +404,43 @@ function LogicMapViewer() {
     () => (focusedId && graph ? collectFocusIds(graph.edges, focusedId) : undefined),
     [focusedId, graph],
   );
-  const visibleLogicNodes = useMemo(() => nodes.map((node) => ({
+  const visibleLogicNodes = useMemo(() => nodes.map((node) => {
+    const logicNode = nodesById.get(node.id);
+    return ({
     ...node,
     className: nodeClassName(node.id, matchingIds, selectedFeature, selectedVariant, frame, transition, spotlightId, pinnedIds, expandedLogicIds),
     data: {
       ...node.data,
+      // Recomputed here rather than in the layout effect, so language and view
+      // change the words without moving a single node.
+      ...(logicNode ? nodePresentation(logicNode, locale, nodesById, viewMode) : {}),
       // Offered only where narrowing would actually show something.
       onFocus: !focusedId && graph && canFocusNode(graph.edges, node.id) ? () => enterFocus(node.id) : undefined,
       focusLabel: text.focusStep,
     },
-  })), [enterFocus, expandedLogicIds, focusedId, frame, graph, matchingIds, nodes, pinnedIds, selectedFeature, selectedVariant, spotlightId, text.focusStep, transition]);
+  });
+  }), [enterFocus, expandedLogicIds, focusedId, frame, graph, locale, matchingIds, nodes, nodesById, pinnedIds, selectedFeature, selectedVariant, spotlightId, text.focusStep, transition, viewMode]);
+  const openAggregate = useCallback((item: OverviewModel["nodes"][number]) => {
+    // Opening a bundle is navigation, not a new view of its own: a feature
+    // aggregate selects that feature, and a shared bundle focuses the step it
+    // holds, so the reader always lands on real, evidence-backed nodes.
+    if (item.featureId) { setSelectedFeatureId(item.featureId); return; }
+    const first = item.singleNodeId ?? item.memberIds[0];
+    if (first) enterFocus(first);
+  }, [enterFocus]);
+
   const visibleNodes = useMemo(() => {
+    if (overviewActive && overviewModel) {
+      const byId = new Map(overviewModel.nodes.map((item) => [item.id, item]));
+      return overviewNodes.map((node) => {
+        const item = byId.get(node.id);
+        return {
+          ...node,
+          selected: node.id === selectedId,
+          data: { ...node.data, onOpen: item ? () => openAggregate(item) : undefined },
+        };
+      });
+    }
     if (!graph) return [...visibleLogicNodes, ...detailExpansion.nodes];
     const activeNodeIds = focusedIds ?? (selectedVariant ? new Set(selectedVariant.nodeIds) : undefined);
     // Hidden rather than removed. Taking a node out of the flow drops React Flow's
@@ -299,8 +450,34 @@ function LogicMapViewer() {
     const groups = buildBlueprintGroupNodes(framed, graph, activeNodeIds, groupLabels(locale));
     const logic = visibleLogicNodes.map((node) => (focusedIds && !focusedIds.has(node.id) ? { ...node, hidden: true } : node));
     return [...groups, ...logic, ...detailExpansion.nodes];
-  }, [detailExpansion.nodes, focusedIds, graph, locale, nodes, selectedVariant, visibleLogicNodes]);
+  }, [detailExpansion.nodes, focusedIds, graph, locale, nodes, openAggregate, overviewActive, overviewModel, overviewNodes, selectedId, selectedVariant, visibleLogicNodes]);
   const visibleEdges = useMemo(() => {
+    if (overviewActive && overviewModel) {
+      return overviewModel.edges.map((edge) => {
+        const control = blueprintControlAppearance(edge.control);
+        const appearance = blueprintEdgeAppearance("global", edge.dataFlow);
+        const color = control.color ?? appearance.color;
+        const merged = edge.edgeIds.length;
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: "playback",
+          className: `chain-edge chain-edge--bus${edge.control ? ` chain-edge--${edge.control}` : ""}`,
+          label: merged > 1 ? `×${merged}` : undefined,
+          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color },
+          style: {
+            stroke: color,
+            // A bus carrying more real edges is drawn heavier, so weight on the
+            // Overview means what it looks like it means.
+            strokeWidth: Math.min(4.2, 1.8 + Math.log2(merged + 1) * 0.8) * control.widthScale,
+            opacity: 0.9,
+            strokeDasharray: control.dash ?? appearance.dash,
+          },
+          data: { labelVisible: hoveredEdgeId === edge.id || selectedEdgeId === edge.id, loopback: control.loopback },
+        } satisfies Edge;
+      });
+    }
     const graphEdges = graph?.edges.map((edge) => {
       let state: EdgeVisualState = "global";
       if (selectedVariant) {
@@ -311,13 +488,19 @@ function LogicMapViewer() {
         if (frame.errorEdgeIds.has(edge.id) || (frame.errorNodeIds.has(edge.target) && frame.reachedEdgeIds.has(edge.id))) state = "error";
       }
       const branchClass = !transition ? undefined : transition.enteringEdgeIds.has(edge.id) ? "is-branch-entering" : transition.exitingEdgeIds.has(edge.id) ? "is-branch-exiting" : transition.sharedEdgeIds.has(edge.id) ? "is-branch-shared" : undefined;
-      return toFlowEdge(edge, state, graph!, locale, branchClass, !reduceMotion && state === "current", speed);
+      const labelVisible = shouldShowEdgeLabel({
+        hovered: hoveredEdgeId === edge.id,
+        selected: selectedEdgeId === edge.id,
+        playing: stepIndex >= 0,
+        state,
+      });
+      return toFlowEdge(edge, state, graph!, locale, branchClass, !reduceMotion && state === "current", speed, labelVisible);
     }) ?? [];
     const focused = focusedIds
       ? graphEdges.map((edge) => (focusedIds.has(edge.source) && focusedIds.has(edge.target) ? edge : { ...edge, hidden: true }))
       : graphEdges;
     return [...focused, ...detailExpansion.edges];
-  }, [detailExpansion.edges, focusedIds, frame, graph, locale, reduceMotion, selectedVariant, speed, transition]);
+  }, [detailExpansion.edges, focusedIds, frame, graph, hoveredEdgeId, locale, overviewActive, overviewModel, reduceMotion, selectedEdgeId, selectedVariant, speed, stepIndex, transition]);
 
   useEffect(() => {
     // The feature fit above bails without a variant, and focus deliberately has no
@@ -349,10 +532,15 @@ function LogicMapViewer() {
     if (baseLayout) setPinnedIds(new Set(positionedNodes.filter((node) => movedFromBase(node, baseLayout)).map((node) => node.id)));
   }, []);
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes((current) => applyNodeChanges(
-      changes.filter((change) => "id" in change && current.some((node) => node.id === change.id)),
-      current,
-    ) as Node<BlueprintLogicNodeData>[]);
+    const forSet = <T extends Node>(current: T[]) =>
+      changes.filter((change) => "id" in change && current.some((node) => node.id === change.id));
+    setNodes((current) => applyNodeChanges(forSet(current), current) as Node<BlueprintLogicNodeData>[]);
+    // Overview aggregates live in their own array. Without this they never receive
+    // their measurements, and React Flow refuses to draw an edge between two nodes
+    // whose bounds it does not know — the aggregates appeared with no buses at all.
+    setOverviewNodes((current) => (current.length
+      ? applyNodeChanges(forSet(current), current) as Node<BlueprintOverviewNodeData>[]
+      : current));
   }, []);
   const onNodeDragStart = useCallback((_event: MouseEvent | TouchEvent, node: Node) => {
     if (nodesRef.current.some((item) => item.id === node.id)) dragStartLayoutRef.current = captureLayout(nodesRef.current);
@@ -442,19 +630,23 @@ function LogicMapViewer() {
     <aside className="sidebar">
       <div className="sidebar__intro"><span className="eyebrow">{text.projectMap}</span><h1>{localizeGraphTitle(graph, locale)}</h1><p>{localizeGraphDescription(graph, locale)}</p></div>
       <div className="stats"><Stat value={features.length} label={text.features} /><Stat value={graph.nodes.length} label={text.logicNodes} /><Stat value={graph.project.filesScanned} label={text.files} /></div>
-      <section className="feature-circuits" aria-label={text.featureCircuits}><div className="section-heading"><span className="eyebrow">{text.featureCircuits}</span><ListTree size={14} /></div><p className="section-hint">{text.featureHint}</p><button className={`feature-card feature-card--global ${selectedFeatureId === null ? "is-active" : ""}`} onClick={() => selectFeature(null)}><span className="feature-card__icon"><Activity size={14} /></span><span><strong>{text.wholeSystem}</strong><small>{text.globalView}</small></span></button><div className="feature-list">{features.map((feature) => <button className={`feature-card feature-card--${feature.health} ${feature.id === selectedFeatureId ? "is-active" : ""}`} data-feature-id={feature.id} data-health={feature.health} key={feature.id} onClick={() => selectFeature(feature.id)}><span className="feature-card__icon"><HealthIcon health={feature.health} /></span><span><strong>{localizeFeatureLabel(feature, graph, locale)}</strong><small>{chainHealthLabel(feature.health, locale)} · {Math.round(feature.confidence * 100)}%</small></span><ChevronRight size={13} /></button>)}</div></section>
+      <section className="feature-circuits" aria-label={text.featureCircuits}><div className="section-heading"><span className="eyebrow">{text.featureCircuits}</span><ListTree size={14} /></div><p className="section-hint">{text.featureHint}</p><button className={`feature-card feature-card--global ${selectedFeatureId === null ? "is-active" : ""}`} onClick={() => selectFeature(null)}><span className="feature-card__icon"><Activity size={14} /></span><span><strong>{text.wholeSystem}</strong><small>{text.globalView}</small></span></button><div className="feature-list">{features.map((feature) => <button className={`feature-card feature-card--${feature.health} ${feature.id === selectedFeatureId ? "is-active" : ""}`} data-feature-id={feature.id} data-health={feature.health} key={feature.id} onClick={() => selectFeature(feature.id)}><span className="feature-card__icon"><HealthIcon health={feature.health} /></span><span><strong>{resolveFeatureText(feature, graph, locale).label}{resolveFeatureText(feature, graph, locale).pending && <em className="pending-flag pending-flag--inline">{text.pendingBadge}</em>}</strong><small>{chainHealthLabel(feature.health, locale)} · {Math.round(feature.confidence * 100)}%</small></span><ChevronRight size={13} /></button>)}</div></section>
       {selectedFeature && selectedVariant ? <FeatureInspector feature={selectedFeature} variant={selectedVariant} graph={graph} locale={locale} playing={playing} speed={speed} frame={frame} cameraFollow={cameraFollow} onVariant={selectVariant} onPlay={play} onPause={() => setPlaying(false)} onNext={next} onReset={reset} onSpeed={setSpeed} onSelectNode={setSelectedId} onResumeFollow={() => setCameraFollow(true)} /> : <div className="feature-empty"><CircleDotDashed size={16} /><span>{text.selectFeature}</span></div>}
-      <div className="search-wrap"><label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchResults[0]) selectSearchResult(searchResults[0].id); }} placeholder={text.search} />{query && <button onClick={() => setQuery("")} aria-label={text.clearSearch}><X size={14} /></button>}</label>{query && <div className="search-results"><span className="eyebrow">{text.searchResults} · {searchResults.length}</span>{searchResults.length ? searchResults.map((node) => <button key={node.id} onClick={() => selectSearchResult(node.id)}><strong>{localizeNode(node, locale).label}</strong><small>{node.sources[0]?.file ?? nodeTypeLabel(node.type, locale)}</small></button>) : <p>{text.noSearchResults}</p>}</div>}</div>
+      <div className="search-wrap"><label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchResults[0]) selectSearchResult(searchResults[0].id); }} placeholder={text.search} />{query && <button onClick={() => setQuery("")} aria-label={text.clearSearch}><X size={14} /></button>}</label>{query && <div className="search-results"><span className="eyebrow">{text.searchResults} · {searchResults.length}</span>{searchResults.length ? searchResults.map((node) => <button key={node.id} onClick={() => selectSearchResult(node.id)}><strong>{resolveNodeText(node, locale, nodesById).label}</strong><small>{node.sources[0]?.file ?? nodeTypeLabel(node.type, locale)}</small></button>) : <p>{text.noSearchResults}</p>}</div>}</div>
       <div className="sidebar__footer"><Braces size={14} /> {text.staticAnalysis}</div>
     </aside>
-    <section className="canvas" aria-label={text.logicGraph} data-detail-level={detailLevel} data-navigating={navigating ? "true" : "false"} ref={canvasRef}>
+    <section className="canvas" aria-label={text.logicGraph} data-lod={overviewActive ? "overview" : focusedId ? "detail" : selectedFeature ? "feature" : "overview"} data-detail-level={detailLevel} data-navigating={navigating ? "true" : "false"} ref={canvasRef}>
       {focusedId
-        ? <div className="canvas-caption canvas-caption--focus"><button onClick={exitFocus} title={text.exitFocus}><ChevronLeft size={12} />{text.wholeSystem}</button><strong>{localizeNode(graph.nodes.find((node) => node.id === focusedId)!, locale, nodesById).label}</strong><small>{text.focusHint}</small></div>
-        : <div className="canvas-caption"><span className="canvas-caption__mark" /><strong>{selectedFeature ? localizeFeatureLabel(selectedFeature, graph, locale) : text.wholeSystem}</strong><small>{selectedVariant ? localizeVariantLabel(selectedVariant, graph, locale) : text.globalView}</small></div>}
+        ? <div className="canvas-caption canvas-caption--focus"><button onClick={exitFocus} title={text.exitFocus}><ChevronLeft size={12} />{text.wholeSystem}</button><strong>{resolveNodeText(graph.nodes.find((node) => node.id === focusedId)!, locale, nodesById).label}</strong><small>{text.focusHint}</small></div>
+        : <div className="canvas-caption"><span className="canvas-caption__mark" /><strong>{selectedFeature ? resolveFeatureText(selectedFeature, graph, locale).label : text.wholeSystem}</strong><small>{selectedVariant ? localizeVariantLabel(selectedVariant, graph, locale) : overviewActive ? text.overviewHint : text.globalView}</small></div>}
       <div className="semantic-zoom" aria-live="polite"><span>{text.zoomLevel}</span><strong>{semanticZoomLabel(detailLevel, locale)}</strong><div className="semantic-zoom__levels" aria-hidden="true">{(["overview", "logic", "evidence"] as const).map((level) => <i className={level === detailLevel ? "is-active" : ""} key={level} />)}</div><small>{text.semanticZoomHint}</small></div>
       <div className="canvas-help"><Crosshair size={13} /><span>{text.detailHint}</span></div>
+      <div className="view-toolbar" aria-label={text.viewMode}>
+        <button className={viewMode === "business" ? "is-active" : ""} onClick={() => selectView("business")}>{text.businessView}</button>
+        <button className={viewMode === "technical" ? "is-active" : ""} onClick={() => selectView("technical")}>{text.technicalView}</button>
+      </div>
       <div className="layout-toolbar" aria-label={text.layout}><span><Pin size={12} /> {pinnedIds.size} {text.pinnedNodes}</span><button onClick={undoLayout} disabled={!layoutHistory.length} title={text.undoLayout}><Undo2 size={13} /></button><button onClick={resetLayout} title={text.resetLayout}><RotateCcw size={13} /></button></div>
-      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={selectNode} onNodeDoubleClick={toggleDetails} onPaneClick={() => { setSelectedId(undefined); setSelectedRaw(undefined); }} onMoveStart={(event) => { setNavigating(true); if (event) setCameraFollow(false); }} onMove={(_event, viewport) => updateSemanticZoom(viewport.zoom)} onMoveEnd={() => setNavigating(false)} nodesDraggable nodesConnectable={false} elementsSelectable minZoom={0.2} maxZoom={2.2} fitView proOptions={{ hideAttribution: true }}><Controls showInteractive={false} position="bottom-left" /><MiniMap position="bottom-right" pannable zoomable nodeStrokeWidth={2} maskColor="rgba(240, 244, 248, 0.7)" /></ReactFlow>
+      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={selectNode} onNodeDoubleClick={toggleDetails} onEdgeMouseEnter={(_event, edge) => setHoveredEdgeId(edge.id)} onEdgeMouseLeave={() => setHoveredEdgeId(undefined)} onEdgeClick={(_event, edge) => setSelectedEdgeId(edge.id)} onPaneClick={() => { setSelectedId(undefined); setSelectedRaw(undefined); setSelectedEdgeId(undefined); }} onMoveStart={(event) => { setNavigating(true); if (event) setCameraFollow(false); }} onMove={(_event, viewport) => updateSemanticZoom(viewport.zoom)} onMoveEnd={() => setNavigating(false)} nodesDraggable nodesConnectable={false} elementsSelectable minZoom={0.2} maxZoom={2.2} fitView proOptions={{ hideAttribution: true }}><Controls showInteractive={false} position="bottom-left" /><MiniMap position="bottom-right" pannable zoomable nodeStrokeWidth={2} maskColor="rgba(240, 244, 248, 0.7)" /></ReactFlow>
     </section>
     {selectedRawNode
       ? <RawEvidencePanel rawNode={selectedRawNode} parent={selected} locale={locale} onParent={() => setSelectedRaw(undefined)} onClose={() => { setSelectedRaw(undefined); setSelectedId(undefined); }} />
@@ -463,7 +655,7 @@ function LogicMapViewer() {
 }
 
 function FeatureInspector({ feature, variant, graph, locale, playing, speed, frame, cameraFollow, onVariant, onPlay, onPause, onNext, onReset, onSpeed, onSelectNode, onResumeFollow }: { feature: FeatureScenario; variant: FeaturePathVariant; graph: LogicGraph; locale: UiLocale; playing: boolean; speed: number; frame: SimulationFrame; cameraFollow: boolean; onVariant: (id: string) => void; onPlay: () => void; onPause: () => void; onNext: () => void; onReset: () => void; onSpeed: (speed: number) => void; onSelectNode: (id: string) => void; onResumeFollow: () => void; }) {
-  const text = messages(locale); const currentNames = [...frame.currentNodeIds].flatMap((id) => { const node = graph.nodes.find((candidate) => candidate.id === id); return node ? [localizeNode(node, locale).label] : []; }); const status = frame.outcome === "idle" ? text.ready : frame.outcome === "error" ? text.stopped : frame.outcome === "complete" ? text.completed : text.running;
+  const text = messages(locale); const currentNames = [...frame.currentNodeIds].flatMap((id) => { const node = graph.nodes.find((candidate) => candidate.id === id); return node ? [resolveNodeText(node, locale).label] : []; }); const status = frame.outcome === "idle" ? text.ready : frame.outcome === "error" ? text.stopped : frame.outcome === "complete" ? text.completed : text.running;
   return <section className="chain-inspector" data-outcome={frame.outcome}><div className="section-heading"><span className="eyebrow">{text.choosePath}</span><span>{feature.variants.length}</span></div><select value={variant.id} onChange={(event) => onVariant(event.target.value)} aria-label={text.choosePath}>{feature.variants.map((item) => <option value={item.id} key={item.id}>{localizeVariantLabel(item, graph, locale)}</option>)}</select><div className={`player-status player-status--${frame.outcome}`}><span className="player-status__pulse" /><span><strong>{status}</strong><small>{currentNames.join(" · ") || `${text.step} 0 / ${variant.steps.length}`}</small></span><b>{Math.max(0, frame.stepIndex + 1)}/{variant.steps.length}</b></div><div className="player-controls" aria-label={text.chainCheck}><button onClick={playing ? onPause : onPlay} title={playing ? text.pause : text.play} aria-label={playing ? text.pause : text.play}>{playing ? <Pause size={14} /> : <Play size={14} />}</button><button onClick={onNext} title={text.nextStep} aria-label={text.nextStep}><SkipForward size={14} /></button><button onClick={onReset} title={text.replay} aria-label={text.replay}><RotateCcw size={14} /></button><div className="speed-control"><span>{text.speed}</span>{[0.5, 1, 2].map((value) => <button className={speed === value ? "is-active" : ""} onClick={() => onSpeed(value)} key={value}>{value}×</button>)}</div></div><button className={`camera-follow ${cameraFollow ? "is-active" : ""}`} onClick={onResumeFollow}><Crosshair size={12} /><span>{cameraFollow ? text.cameraFollowing : text.resumeFollow}</span></button><div className="diagnostics"><div className="section-heading"><span className="eyebrow">{text.diagnostics}</span><span>{feature.diagnostics.length}</span></div>{!feature.diagnostics.length && <div className="diagnostics__clear"><CheckCircle2 size={13} />{text.noDiagnostics}</div>}{feature.diagnostics.map((diagnostic) => { const localized = localizeDiagnostic(diagnostic, graph, locale); return <button className={`diagnostic diagnostic--${diagnostic.severity}`} data-diagnostic-code={diagnostic.code} key={diagnostic.id} onClick={() => diagnostic.nodeId && graph.nodes.some((node) => node.id === diagnostic.nodeId) && onSelectNode(diagnostic.nodeId)}><AlertTriangle size={13} /><span><strong>{localized.message}</strong><small>{text.recommendation}：{localized.suggestion}</small></span></button>; })}</div></section>;
 }
 
@@ -492,10 +684,70 @@ function ProductContext({ product, locale }: { product?: ProductEvidence; locale
   </div>;
 }
 
-function toFlowNode(node: LogicGraphNode, locale: UiLocale, nodesById?: ReadonlyMap<string, LogicGraphNode>): Node<BlueprintLogicNodeData> { const localized = localizeNode(node, locale, nodesById); const primarySource = node.sources[0]; return { id: node.id, type: "logic", position: { x: 0, y: 0 }, data: { label: localized.label, description: localized.description, nodeType: node.type, typeLabel: nodeTypeLabel(node.type, locale), confidence: node.confidence, sourceText: sourceCountText(node.sources.length, locale), sourceDetail: primarySource ? `${primarySource.file}:${primarySource.startLine}${primarySource.symbol ? ` · ${primarySource.symbol}` : ""}` : undefined, inferenceText: inferenceMethodLabel(node.inference.method, locale) } }; }
+/**
+ * A node's identity and place on the canvas. Deliberately free of language and of
+ * the chosen view: the two are `nodePresentation`'s business, and keeping them out
+ * of here is what makes "switching view never changes topology" structural rather
+ * than a rule someone has to remember.
+ */
+function toFlowNode(node: LogicGraphNode, locale: UiLocale, nodesById: ReadonlyMap<string, LogicGraphNode> | undefined, view: ViewMode = "business"): Node<BlueprintLogicNodeData> {
+  return { id: node.id, type: "logic", position: { x: 0, y: 0 }, data: nodePresentation(node, locale, nodesById, view) };
+}
+
+/** Everything a node *says*. It cannot reach an id, a position, or a parent. */
+function nodePresentation(node: LogicGraphNode, locale: UiLocale, nodesById: ReadonlyMap<string, LogicGraphNode> | undefined, view: ViewMode): BlueprintLogicNodeData {
+  const text = resolveNodeText(node, locale, nodesById);
+  const primarySource = node.sources[0];
+  const sourceDetail = primarySource
+    ? `${primarySource.file}:${primarySource.startLine}${primarySource.symbol ? ` · ${primarySource.symbol}` : ""}`
+    : undefined;
+  // The technical view answers "which code is this?", so it leads with the name as
+  // written and the file it lives in. The business view never shows either on the
+  // canvas — that mixture of Chinese prose and English identifiers is the thing
+  // this whole pass exists to end — and keeps them one click away in the drawer.
+  const technical = view === "technical";
+  return {
+    label: technical ? text.technicalName : text.label,
+    description: technical ? (sourceDetail ?? nodeTypeLabel(node.type, locale)) : text.description,
+    nodeType: node.type,
+    typeLabel: nodeTypeLabel(node.type, locale),
+    confidence: node.confidence,
+    pending: !technical && text.pending,
+    sourceText: sourceCountText(node.sources.length, locale),
+    // A file path and a symbol are the technical view's whole subject; on a
+    // business card they are the English-identifier leak this pass exists to end.
+    // The evidence is a click away in the drawer either way.
+    sourceDetail: technical ? sourceDetail : undefined,
+    inferenceText: technical ? inferenceMethodLabel(node.inference.method, locale) : undefined,
+  };
+}
 function semanticZoomLabel(level: BlueprintDetailLevel, locale: UiLocale): string { return locale === "zh-CN" ? { overview: "全局层", logic: "逻辑层", evidence: "证据层" }[level] : { overview: "Overview", logic: "Logic", evidence: "Evidence" }[level]; }
 type EdgeVisualState = BlueprintEdgeState;
-function toFlowEdge(edge: LogicGraph["edges"][number], state: EdgeVisualState, graph: LogicGraph, locale: UiLocale, branchClass?: string, showToken = false, speed = 1): Edge { const dataFlow = edge.type === "data_flow"; const appearance = blueprintEdgeAppearance(state, dataFlow); return { id: edge.id, source: edge.source, target: edge.target, type: "playback", animated: false, label: edge.label ?? edgeFlowLabel(edge, graph, locale), className: `chain-edge chain-edge--${state}${branchClass ? ` ${branchClass}` : ""}`, markerEnd: { type: MarkerType.ArrowClosed, width: 17, height: 17, color: appearance.color }, style: { stroke: appearance.color, strokeWidth: appearance.width, opacity: appearance.opacity, strokeDasharray: appearance.dash }, data: { showToken, tokenColor: appearance.color, tokenDuration: 0.9 / speed } }; }
+function toFlowEdge(edge: LogicGraph["edges"][number], state: EdgeVisualState, graph: LogicGraph, locale: UiLocale, branchClass?: string, showToken = false, speed = 1, labelVisible = false): Edge {
+  const dataFlow = edge.type === "data_flow";
+  const appearance = blueprintEdgeAppearance(state, dataFlow);
+  const control = blueprintControlAppearance(edge.control);
+  // State colour wins while a simulation is running — the reader is watching the
+  // route, not the control kinds — and the control colour speaks otherwise.
+  const stateColoured = state === "current" || state === "reached" || state === "error" || state === "warning";
+  const color = stateColoured ? appearance.color : control.color ?? appearance.color;
+  return {
+    id: edge.id, source: edge.source, target: edge.target, type: "playback", animated: false,
+    // The compiler says what kind of connection this is, in the reader's language.
+    // `edge.label` is the analyzer's English string and must NOT outrank it — doing
+    // so made the localized wording unreachable on every edge that had one.
+    label: resolveEdgeText(edge, locale) ?? edgeFlowLabel(edge, graph, locale),
+    className: `chain-edge chain-edge--${state}${edge.control ? ` chain-edge--${edge.control}` : ""}${branchClass ? ` ${branchClass}` : ""}`,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 17, height: 17, color },
+    style: {
+      stroke: color,
+      strokeWidth: appearance.width * control.widthScale,
+      opacity: appearance.opacity,
+      strokeDasharray: control.dash ?? appearance.dash,
+    },
+    data: { showToken, tokenColor: color, tokenDuration: 0.9 / speed, labelVisible, loopback: control.loopback },
+  };
+}
 function edgeFlowLabel(edge: LogicGraph["edges"][number], graph: LogicGraph, locale: UiLocale): string { const source = graph.nodes.find((node) => node.id === edge.source); const target = graph.nodes.find((node) => node.id === edge.target); if (source?.type === "user_action" && target?.type === "entrypoint") return "HTTPS"; if (edge.type === "data_flow" && target?.type === "data") return locale === "zh-CN" ? "读 / 写" : "read / write"; if (target?.type === "external_system") return "API"; if (target?.type === "model") return locale === "zh-CN" ? "模型" : "model"; if (target?.type === "tool") return locale === "zh-CN" ? "工具" : "tool"; if (target?.type === "human_gate") return locale === "zh-CN" ? "人工确认" : "approve"; if (target?.type === "workflow" || target?.type === "ai_process") return locale === "zh-CN" ? "调用" : "invoke"; if (target?.type === "result") return locale === "zh-CN" ? "返回" : "return"; return locale === "zh-CN" ? "执行" : "flow"; }
 function HealthIcon({ health }: { health: ChainHealth }) { return health === "healthy" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />; }
 
@@ -531,9 +783,14 @@ function SourceEvidence({ sources, locale, heading }: { sources: SourceLocation[
   </>;
 }
 
+/**
+ * The third view: business meaning and technical basis at the same time. The
+ * canvas shows one or the other so it stays readable; this panel exists so a
+ * reader who wants to check a name never has to switch modes to do it.
+ */
 function EvidencePanel({ node, locale, nodesById, onClose }: { node: LogicGraphNode; locale: UiLocale; nodesById: ReadonlyMap<string, LogicGraphNode>; onClose: () => void }) {
-  const text = messages(locale); const localized = localizeNode(node, locale, nodesById);
-  return <aside className="evidence-panel"><div className="evidence-panel__header"><div><span className="eyebrow">{text.selectedLogic}</span><h2>{localized.label}</h2></div><button onClick={onClose} aria-label={text.closeEvidence}><PanelRightClose size={19} /></button></div><p className="evidence-panel__description">{localized.description}</p><div className="confidence-card"><div><span>{text.confidence}</span><strong>{Math.round(node.confidence * 100)}%</strong></div><div className="confidence-track"><i style={{ width: `${node.confidence * 100}%` }} /></div><small>{inferenceMethodLabel(node.inference.method, locale)} · {node.inference.explanation}</small></div><ProductContext product={node.product} locale={locale} /><SourceEvidence sources={node.sources} locale={locale} heading={text.sourceEvidence} /><div className="raw-reference"><span>{text.rawReferences}</span><code>{node.rawNodeIds.join("\n")}</code></div></aside>;
+  const text = messages(locale); const localized = resolveNodeText(node, locale, nodesById);
+  return <aside className="evidence-panel"><div className="evidence-panel__header"><div><span className="eyebrow">{text.selectedLogic}</span><h2>{localized.label}{localized.pending && <em className="pending-flag">{text.pendingBadge}</em>}</h2></div><button onClick={onClose} aria-label={text.closeEvidence}><PanelRightClose size={19} /></button></div><p className="evidence-panel__description">{localized.description}</p><div className="name-source"><span>{text.nameSource}</span><strong>{labelSourceLabel(localized.source, locale)}</strong><code>{localized.technicalName}</code></div><div className="confidence-card"><div><span>{text.confidence}</span><strong>{Math.round(node.confidence * 100)}%</strong></div><div className="confidence-track"><i style={{ width: `${node.confidence * 100}%` }} /></div><small>{inferenceMethodLabel(node.inference.method, locale)} · {node.inference.explanation}</small></div><ProductContext product={node.product} locale={locale} /><SourceEvidence sources={node.sources} locale={locale} heading={text.sourceEvidence} /><div className="raw-reference"><span>{text.rawReferences}</span><code>{node.rawNodeIds.join("\n")}</code></div></aside>;
 }
 
 /**
