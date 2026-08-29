@@ -297,6 +297,11 @@ jobs:
           project-path: examples/simple-agent
           artifact-name: e2e-default-install
           cache-prefix: e2e-default-${{ github.run_id }}
+          # `latest`, not the version in this branch: on a release PR the new
+          # version is not on npm yet, and this job's subject is the npm install
+          # path itself, not whether an unreleased version can be fetched. That
+          # is unknowable before publishing, and is verified after it instead.
+          cli-version: latest
       - name: Assert the CLI came from npm and produced a map
         run: |
           node - <<'EOF'
@@ -336,6 +341,7 @@ jobs:
           project-path: examples/simple-agent
           artifact-name: e2e-pages-off
           cache-prefix: e2e-pages-off-${{ github.run_id }}
+          cli-version: latest
       - name: Assert no Pages artifact was produced by the default
         uses: actions/download-artifact@v8
         id: nopages
@@ -358,6 +364,7 @@ jobs:
           project-path: examples/simple-agent
           artifact-name: e2e-pages-on
           cache-prefix: e2e-pages-on-${{ github.run_id }}
+          cli-version: latest
           publish: pages
 
       - name: Assert the Pages artifact holds the real map
@@ -410,6 +417,7 @@ jobs:
           project-path: examples/simple-agent
           artifact-name: e2e-pages-failed
           cache-prefix: e2e-pages-on-${{ github.run_id }}
+          cli-version: latest
           publish: pages
 
       - name: Assert the last good map survived
