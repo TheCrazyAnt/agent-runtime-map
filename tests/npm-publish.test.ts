@@ -128,11 +128,42 @@ describe("the publish workflow", () => {
     expect(effective).toMatch(/npm install -g npm@\d+\.\d+\.\d+/);
 
     // The full release gate runs before any publish.
-    const job = (parsed.jobs as { publish: { steps: Array<{ run?: string }> } }).publish;
+    const job = (parsed.jobs as { publish: { steps: Array<{ run?: string; uses?: string; with?: Record<string, unknown> }> } }).publish;
     const runs = job.steps.map((step) => step.run ?? "");
+
+    // A publish job holds id-token: write. A restored dependency cache is an
+    // input another workflow can write, and it must not reach the job that
+    // publishes under this repository's OIDC identity.
+    const setupNode = job.steps.find((step) => step.uses?.startsWith("actions/setup-node"));
+    expect(setupNode?.with?.["package-manager-cache"]).toBe(false);
     const checkIndex = runs.findIndex((run) => run.includes("release:check"));
     const publishIndex = runs.findIndex((run) => run.includes("publish-npm.mjs"));
     expect(checkIndex).toBeGreaterThanOrEqual(0);
     expect(publishIndex).toBeGreaterThan(checkIndex);
+  });
+});
+
+describe("the workflows' own runtime", () => {
+  it("runs current actions, and keeps the project's Node support range separate", async () => {
+    const dir = path.join(REPO, ".github/workflows");
+    const { readdir } = await import("node:fs/promises");
+    const files = (await readdir(dir)).filter((name) => name.endsWith(".yml"));
+    expect(files.length).toBeGreaterThanOrEqual(3);
+
+    for (const file of files) {
+      const raw = await readFile(path.join(dir, file), "utf8");
+      // A deprecated action runtime is a warning on every run and, eventually,
+      // a failure. Pinning to a major keeps patches flowing without surprises.
+      const outdated = [...raw.matchAll(/uses:\s*(actions\/[\w/-]+)@(v\d+)/g)]
+        .filter(([, , major]) => major === "v4" || major === "v3");
+      expect(outdated.map(([, action, major]) => `${file}: ${action}@${major}`)).toEqual([]);
+    }
+
+    // The test matrix is what the project promises to support, and an action
+    // runtime bump must not be mistaken for narrowing it.
+    const ci = parseYaml(await readFile(path.join(dir, "ci.yml"), "utf8")) as {
+      jobs: { verify: { strategy: { matrix: { "node-version": number[] } } } };
+    };
+    expect(ci.jobs.verify.strategy.matrix["node-version"]).toEqual([20, 22]);
   });
 });
