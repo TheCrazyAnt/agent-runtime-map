@@ -46,7 +46,7 @@ runs:
     # run's analysis fails. No third-party actions are involved anywhere.
     - name: Restore last successful map
       id: restore
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: ${{ inputs.project-path }}/.agent-runtime-map/current
         key: ${{ inputs.cache-prefix }}-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -164,7 +164,7 @@ runs:
     # last successful map with status.json explaining the failure.
     - name: Upload the map artifact
       if: always() && steps.verify.outcome == 'success' && inputs.upload-artifact == 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ inputs.project-path }}/.agent-runtime-map/current
@@ -176,7 +176,7 @@ runs:
     # baseline at an older build whenever one workflow runs this action twice.
     - name: Save the map as the next baseline
       if: steps.build.outputs.ok == 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v6
       with:
         path: ${{ inputs.project-path }}/.agent-runtime-map/current
         key: ${{ inputs.cache-prefix }}-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.build.outputs.stamp }}
@@ -189,13 +189,13 @@ runs:
 
     - name: Upload Pages artifact
       if: inputs.publish == 'pages'
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v5
       with:
         path: ${{ inputs.project-path }}/.agent-runtime-map/current
 
     - name: Deploy to GitHub Pages
       if: inputs.publish == 'pages'
-      uses: actions/deploy-pages@v4
+      uses: actions/deploy-pages@v5
 
     - name: Fail the job if analysis failed
       if: always()

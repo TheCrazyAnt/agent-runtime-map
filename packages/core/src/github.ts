@@ -58,7 +58,7 @@ jobs:
   map:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history keeps the previous map's commit reachable, so the change
           # report can name the files that actually changed instead of the event.
