@@ -239,6 +239,98 @@ describe("the Viewer as a selector", () => {
   });
 });
 
+describe("uncertainty is reported per language", () => {
+  /**
+   * A reader is told their own view is unreliable only when it actually is.
+   * English reading `kbSearchTool` as "Kb search" is a complete answer, and
+   * marking it Unconfirmed because Chinese could not resolve `kb` would make the
+   * one honest signal on the map cry wolf.
+   */
+  function withSources(zh: string, en: string): LogicNode {
+    const item = node("n_pending", "tool", "kbSearchTool");
+    item.semantic = {
+      label: { "zh-CN": zh === "pending" ? "待确认 · 工具" : "知识库搜索", en: en === "pending" ? "Unconfirmed · tool" : "Kb search" },
+      description: { "zh-CN": "描述", en: "description" },
+      technicalName: "kbSearchTool",
+      labelSource: { "zh-CN": zh as never, en: en as never },
+      confidence: { "zh-CN": zh === "pending" ? 0.5 : 1, en: en === "pending" ? 0.5 : 1 },
+      // The flat flag stays true whenever EITHER language failed; the per-locale
+      // answer must not be taken from it.
+      pending: zh === "pending" || en === "pending",
+      evidence: [],
+    };
+    return item;
+  }
+
+  it("marks Chinese pending while English reads the name", () => {
+    const item = withSources("pending", "identifier");
+    expect(resolveNodeText(item, "zh-CN").pending).toBe(true);
+    expect(resolveNodeText(item, "zh-CN").label).toMatch(/^待确认 · /);
+    expect(resolveNodeText(item, "en").pending).toBe(false);
+    expect(resolveNodeText(item, "en").label).toBe("Kb search");
+  });
+
+  it("marks English pending while Chinese reads the name", () => {
+    const item = withSources("identifier", "pending");
+    expect(resolveNodeText(item, "en").pending).toBe(true);
+    expect(resolveNodeText(item, "zh-CN").pending).toBe(false);
+    expect(resolveNodeText(item, "zh-CN").label).toBe("知识库搜索");
+  });
+
+  it("marks neither when both languages read the name", () => {
+    const item = withSources("identifier", "identifier");
+    expect(resolveNodeText(item, "zh-CN").pending).toBe(false);
+    expect(resolveNodeText(item, "en").pending).toBe(false);
+  });
+
+  it("falls back to the flat flag for a graph compiled before labelSource existed", () => {
+    const item = node("n_old", "tool", "kbSearchTool");
+    // Exactly the shape an older artifact has: a summary flag, no per-locale source.
+    item.semantic = {
+      label: { "zh-CN": "待确认", en: "Unconfirmed" },
+      description: { "zh-CN": "描述", en: "description" },
+      technicalName: "kbSearchTool",
+      confidence: { "zh-CN": 0.4, en: 0.4 },
+      pending: true,
+      evidence: [],
+    } as unknown as NonNullable<LogicNode["semantic"]>;
+    expect(resolveNodeText(item, "zh-CN").pending).toBe(true);
+    expect(resolveNodeText(item, "en").pending).toBe(true);
+    expect(resolveNodeText(item, "zh-CN").label).toBe("待确认");
+  });
+
+  it("reports a feature's uncertainty per language too", () => {
+    const feature: FeatureScenario = {
+      id: "f_p", label: "raw", description: "", entryNodeIds: [], resultNodeIds: [],
+      nodeIds: [], edgeIds: [], variants: [], diagnostics: [], health: "healthy", confidence: 1,
+      semantic: {
+        label: { "zh-CN": "待确认 · 工具", en: "Kb search" },
+        description: { "zh-CN": "描述", en: "description" },
+        technicalName: "raw",
+        labelSource: { "zh-CN": "pending", en: "composed" },
+        confidence: { "zh-CN": 0.4, en: 1 },
+        pending: true,
+        evidence: [],
+      },
+    };
+    const graph = { nodes: [], edges: [], features: [feature] } as unknown as LogicGraph;
+    expect(resolveFeatureText(feature, graph, "zh-CN").pending).toBe(true);
+    expect(resolveFeatureText(feature, graph, "en").pending).toBe(false);
+  });
+
+  it("reports the real project the same way, per language", { timeout: 120_000 }, async () => {
+    const result = await generateLogicMap(path.join(REPO, "examples/simple-agent"), { outputFile: false, rawOutputFile: false });
+    for (const item of result.graph.nodes) {
+      for (const locale of ["zh-CN", "en"] as const) {
+        const text = resolveNodeText(item, locale);
+        // The badge and the label must agree: a step shown as 待确认 is pending,
+        // and one shown with a real name is not.
+        expect(text.pending).toBe(/^(待确认|Unconfirmed) · /.test(text.label));
+      }
+    }
+  });
+});
+
 describe("choosing a language", () => {
   it("prefers an explicit choice, then a remembered one, then the system", () => {
     expect(detectViewerLocale({ search: "?locale=en", stored: "zh-CN", languages: ["zh-CN"] })).toBe("en");

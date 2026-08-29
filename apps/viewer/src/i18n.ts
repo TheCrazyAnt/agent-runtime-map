@@ -654,6 +654,23 @@ function translateSemanticName(value: string): string | undefined {
  * compiled before that existed carries no `semantic`, and only then does the older
  * viewer-side reading run — which is what keeps an old `graph.json` rendering.
  */
+/**
+ * Whether THIS language failed to read the name.
+ *
+ * `SemanticLabel.pending` is true when either language failed, which is the right
+ * summary for a compiler deciding whether a node needs attention — but the wrong
+ * thing to show a reader. English read `kbSearchTool` as "Kb search" perfectly
+ * well; marking it Unconfirmed because Chinese could not resolve `kb` tells that
+ * reader their own view is unreliable when it is not.
+ *
+ * `labelSource` is per-locale and already carries the answer. The flat flag is
+ * consulted only for a graph compiled before `labelSource` existed.
+ */
+function pendingIn(semantic: NonNullable<LogicNode["semantic"]>, key: "zh-CN" | "en"): boolean {
+  const source = semantic.labelSource?.[key];
+  return source === undefined ? semantic.pending === true : source === "pending";
+}
+
 export function resolveNodeText(
   node: LogicNode,
   locale: UiLocale,
@@ -666,9 +683,9 @@ export function resolveNodeText(
       label: semantic.label[key],
       description: semantic.description[key],
       technicalName: semantic.technicalName,
-      pending: semantic.pending,
+      pending: pendingIn(semantic, key),
       confidence: semantic.confidence[key],
-      source: semantic.labelSource[key],
+      source: semantic.labelSource?.[key],
     };
   }
   const legacy = localizeNode(node, locale, nodesById);
@@ -690,7 +707,7 @@ export function resolveFeatureText(
   const semantic = feature.semantic;
   if (semantic) {
     const key: "zh-CN" | "en" = locale === "zh-CN" ? "zh-CN" : "en";
-    return { label: semantic.label[key], description: semantic.description[key], pending: semantic.pending };
+    return { label: semantic.label[key], description: semantic.description[key], pending: pendingIn(semantic, key) };
   }
   return { label: localizeFeatureLabel(feature, graph, locale), description: feature.description, pending: false };
 }
