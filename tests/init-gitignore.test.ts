@@ -194,15 +194,26 @@ describe("git agrees the map is ignored", () => {
   });
 });
 
-/** The published CLI must behave the same way; the library is not the product. */
+/**
+ * The command a person types, not just the function behind it: `init` has to
+ * write the rule and say so, and a caller reading only the library would not
+ * catch a CLI that forgot to wire it up.
+ *
+ * Run from source rather than from `dist/`. The suite runs before the build in
+ * CI, so a test reaching for a build artifact fails on a clean checkout — and
+ * building inside a test would make the suite depend on its own ordering. What
+ * the *packaged* CLI does is covered by the Action E2E, which installs it from
+ * npm and runs it for real.
+ */
 describe("the CLI command itself", () => {
   it("writes the rule through `init` and says so", { timeout: 180_000 }, async () => {
     const root = await tempProject();
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "cli-check", private: true }), "utf8");
-    const output = execFileSync("node", [path.join(REPO, "packages/cli/dist/cli.js"), "init", root], {
-      encoding: "utf8",
-      env: { ...process.env, AGENT_RUNTIME_MAP_LOCALE: "en" },
-    });
+    const output = execFileSync(
+      "node",
+      ["--import", "tsx", path.join(REPO, "packages/cli/src/cli.ts"), "init", root],
+      { encoding: "utf8", cwd: REPO, env: { ...process.env, AGENT_RUNTIME_MAP_LOCALE: "en" } },
+    );
     expect(output).toMatch(/\.agent-runtime-map\//);
     expect(await readFile(path.join(root, ".gitignore"), "utf8")).toContain(".agent-runtime-map/");
   });
