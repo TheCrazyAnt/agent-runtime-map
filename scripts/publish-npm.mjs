@@ -64,13 +64,34 @@ for (const step of plan.steps) {
     cwd: root,
     stdio: "inherit",
   });
-  // Trust nothing that was not read back: the registry must now report the version.
-  const seen = execFileSync("npm", ["view", `${step.name}@${plan.version}`, "version"], { encoding: "utf8" }).trim();
-  if (seen !== plan.version) {
-    console.error(`publish-npm: registry reports ${step.name}@${seen} after publishing ${plan.version}; stopping.`);
+  // Trust nothing that was not read back — but the registry is eventually
+  // consistent, so a lookup immediately after a successful publish returns 404
+  // while the write propagates. Treating that as a failure aborted a release
+  // whose first package had in fact published cleanly.
+  if (!await visibleOnRegistry(step.name, plan.version)) {
+    console.error(`publish-npm: ${step.name}@${plan.version} was published but is not yet visible on the registry.`);
+    console.error("publish-npm: re-run this workflow — published versions are skipped, so it will finish the rest.");
     process.exit(1);
   }
   published += 1;
 }
 
 console.log(`publish-npm: done — ${published} published, ${plan.steps.length - published} skipped.`);
+
+/** Waits for a freshly published version to appear, rather than assuming it has. */
+async function visibleOnRegistry(name, version, attempts = 6) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const seen = execFileSync("npm", ["view", `${name}@${version}`, "version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      if (seen === version) return true;
+    } catch {
+      // Not visible yet: npm reports a missing version as an error exit.
+    }
+    if (attempt < attempts) {
+      const waitMs = attempt * 2000;
+      console.log(`  …waiting ${waitMs / 1000}s for ${name}@${version} to appear (${attempt}/${attempts - 1})`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+  return false;
+}
