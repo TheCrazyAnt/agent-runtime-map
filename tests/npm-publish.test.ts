@@ -91,7 +91,9 @@ describe("the publish plan", () => {
     }
   });
 
-  it("dry-runs end to end against the real registry without publishing", () => {
+  // Three real registry lookups: inherently variable, and slower still when the
+  // whole suite is competing for the network.
+  it("dry-runs end to end against the real registry without publishing", { timeout: 120_000 }, () => {
     const output = execFileSync("node", [path.join(REPO, "scripts/publish-npm.mjs"), "--dry-run"], { encoding: "utf8" });
     // 0.8.0 is fully published, so a dry run of the current tree must plan zero publishes
     // — unless versions were bumped, in which case it must plan publishes, not errors.

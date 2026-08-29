@@ -90,8 +90,24 @@ export const DEFAULT_OVERVIEW_LABELS: OverviewLabels = {
   shared: "Shared",
 };
 
-export function buildOverviewModel(graph: LogicGraph, labels: Partial<OverviewLabels> = {}): OverviewModel {
+/**
+ * How a single node and a feature are named. Supplied by the host so an aggregate
+ * standing for one step carries that step's business name in the reader's own
+ * language — reading a raw identifier off `node.label` here is what put English
+ * function names on a Chinese canvas.
+ */
+export interface OverviewResolvers {
+  nodeLabel?: (node: LogicNode) => string;
+  featureLabel?: (featureId: string, fallback: string) => string;
+}
+
+export function buildOverviewModel(
+  graph: LogicGraph,
+  labels: Partial<OverviewLabels> = {},
+  resolvers: OverviewResolvers = {},
+): OverviewModel {
   const text = { ...DEFAULT_OVERVIEW_LABELS, ...labels };
+  const nameOf = (node: LogicNode) => resolvers.nodeLabel?.(node) ?? node.label;
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
 
   // Which features reach each node. A node reached by more than one is shared, and
@@ -122,7 +138,8 @@ export function buildOverviewModel(graph: LogicGraph, labels: Partial<OverviewLa
     buckets.set(key, bucket);
   }
 
-  const featureLabelById = new Map(graph.features.map((feature) => [feature.id, feature.label]));
+  const featureLabelById = new Map(graph.features.map((feature) =>
+    [feature.id, resolvers.featureLabel?.(feature.id, feature.label) ?? feature.label]));
   const nodes: OverviewNode[] = [...buckets.entries()].map(([key, bucket]) => {
     const memberIds = bucket.members.map((member) => member.id);
     const types = [...new Set(bucket.members.map((member) => member.type))];
@@ -135,7 +152,7 @@ export function buildOverviewModel(graph: LogicGraph, labels: Partial<OverviewLa
       featureId: bucket.featureId,
       featureLabel: bucket.featureId ? featureLabelById.get(bucket.featureId) : undefined,
       singleNodeId: single?.id,
-      label: single ? single.label : shared ? `${text.shared} ${roleLabel.toLowerCase()}` : roleLabel,
+      label: single ? nameOf(single) : shared ? `${text.shared} ${roleLabel.toLowerCase()}` : roleLabel,
       memberIds,
       types,
       routeCount: countRoutes(graph, memberIds),

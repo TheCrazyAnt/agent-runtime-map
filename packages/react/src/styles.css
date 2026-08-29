@@ -176,3 +176,12 @@
   transition: background 200ms ease;
 }
 .blueprint-overview__open:hover { background: rgba(20, 127, 193, .17); }
+
+/* A step the analyzer declined to name. Marked, never disguised: the reader can
+   see at a glance which parts of the map are read and which are still unknown. */
+.blueprint-node.is-pending .blueprint-node__tile {
+  border-style: dashed;
+  border-color: rgba(148, 132, 90, .55);
+  background: linear-gradient(180deg, rgba(255, 252, 243, .96), rgba(250, 246, 234, .94));
+}
+.blueprint-node.is-pending h3 { color: #7a6a45; }

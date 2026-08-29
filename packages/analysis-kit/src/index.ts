@@ -275,3 +275,4 @@ export async function discoverSourceFiles(
   await visit(root);
   return found;
 }
+export * from "./vocabulary.js";

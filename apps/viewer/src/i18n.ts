@@ -77,6 +77,12 @@ const EN = {
   recommendation: "Suggested fix",
   selectFeature: "Select a feature to inspect its execution route.",
   globalView: "All nodes and dependencies",
+  viewMode: "How to read the map",
+  businessView: "Business",
+  technicalView: "Technical",
+  pendingBadge: "Unconfirmed",
+  nameSource: "Name derived from",
+  technicalDetails: "Technical details",
   overviewHint: "Grouped view · open a group for its real steps",
   openAggregate: "Open",
   overviewStage: "Steps",
@@ -164,6 +170,12 @@ const ZH: Record<keyof typeof EN, string> = {
   recommendation: "修复建议",
   selectFeature: "请选择一个功能，检查它的执行路线。",
   globalView: "显示全部节点与依赖",
+  viewMode: "阅读方式",
+  businessView: "业务",
+  technicalView: "技术",
+  pendingBadge: "待确认",
+  nameSource: "名称来源",
+  technicalDetails: "技术详情",
   overviewHint: "聚合视图 · 展开分组查看真实步骤",
   openAggregate: "展开",
   overviewStage: "处理步骤",
@@ -288,20 +300,52 @@ const ZH_WORDS: Record<string, string> = {
   workflow: "工作流",
 };
 
-export function detectViewerLocale(): UiLocale {
-  if (typeof window !== "undefined") {
-    const requested = new URLSearchParams(window.location.search).get("locale");
-    const fromQuery = normalizeLocale(requested);
-    if (fromQuery) return fromQuery;
-    const saved = normalizeLocale(window.localStorage.getItem(STORAGE_KEY));
-    if (saved) return saved;
-  }
-  const languages = typeof navigator === "undefined" ? [] : navigator.languages;
-  return languages.some((language) => language.toLowerCase().startsWith("zh")) ? "zh-CN" : "en";
+/** What the reader asked for, in priority order. Injectable so it can be tested. */
+export interface LocaleSignals {
+  /** The `?locale=` query string, if any. */
+  search?: string;
+  /** What was stored the last time they chose. */
+  stored?: string | null;
+  /** The browser's or system's languages. */
+  languages?: readonly string[];
 }
 
-export function rememberViewerLocale(locale: UiLocale): void {
-  if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, locale);
+/**
+ * An explicit choice outranks a remembered one, which outranks the system's
+ * language. Reading the globals is the default; passing signals in is what makes
+ * the precedence testable without a browser.
+ */
+export function detectViewerLocale(signals?: LocaleSignals): UiLocale {
+  const input: LocaleSignals = signals ?? {
+    search: typeof window === "undefined" ? undefined : window.location.search,
+    stored: typeof window === "undefined" ? null : safeRead(STORAGE_KEY),
+    languages: typeof navigator === "undefined" ? [] : navigator.languages,
+  };
+  const fromQuery = normalizeLocale(new URLSearchParams(input.search ?? "").get("locale"));
+  if (fromQuery) return fromQuery;
+  const saved = normalizeLocale(input.stored ?? null);
+  if (saved) return saved;
+  return (input.languages ?? []).some((language) => language.toLowerCase().startsWith("zh")) ? "zh-CN" : "en";
+}
+
+/** Storage throws in private browsing; a language preference is not worth a crash. */
+function safeRead(key: string): string | null {
+  try { return window.localStorage.getItem(key); } catch { return null; }
+}
+
+export function rememberViewerLocale(locale: UiLocale, storage?: Pick<Storage, "setItem">): void {
+  const target = storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
+  try { target?.setItem(STORAGE_KEY, locale); } catch { /* private browsing */ }
+}
+
+/**
+ * Writes the choice into the URL so a shared link carries it — and so a stale
+ * `?locale=` from someone else's link cannot outrank what this reader just picked.
+ */
+export function localeUrl(href: string, locale: UiLocale): string {
+  const url = new URL(href);
+  url.searchParams.set("locale", locale);
+  return url.toString();
 }
 
 export function messages(locale: UiLocale): typeof EN {
@@ -578,4 +622,76 @@ function translateSemanticName(value: string): string | undefined {
     .filter((token) => token && !["agent", "controller", "handler", "service"].includes(token));
   if (!tokens.length || tokens.some((token) => !ZH_WORDS[token])) return undefined;
   return tokens.map((token) => ZH_WORDS[token]).join("");
+}
+
+/**
+ * Reads a node's business name and one-sentence behavior, in the reader's language.
+ *
+ * The compiler derives these from project evidence and writes them into the graph,
+ * so this is a selector, not a translator: there is nowhere here to guess. A graph
+ * compiled before that existed carries no `semantic`, and only then does the older
+ * viewer-side reading run — which is what keeps an old `graph.json` rendering.
+ */
+export function resolveNodeText(
+  node: LogicNode,
+  locale: UiLocale,
+  nodesById?: ReadonlyMap<string, LogicNode>,
+): { label: string; description: string; technicalName: string; pending: boolean; confidence: number; source?: string } {
+  const semantic = node.semantic;
+  if (semantic) {
+    const key: "zh-CN" | "en" = locale === "zh-CN" ? "zh-CN" : "en";
+    return {
+      label: semantic.label[key],
+      description: semantic.description[key],
+      technicalName: semantic.technicalName,
+      pending: semantic.pending,
+      confidence: semantic.confidence[key],
+      source: semantic.labelSource[key],
+    };
+  }
+  const legacy = localizeNode(node, locale, nodesById);
+  return {
+    label: legacy.label,
+    description: legacy.description,
+    technicalName: typeof node.metadata?.rawName === "string" ? node.metadata.rawName : node.label,
+    pending: false,
+    confidence: node.confidence,
+  };
+}
+
+/** A feature's composed business name, or the older localization for an old graph. */
+export function resolveFeatureText(
+  feature: FeatureScenario,
+  graph: LogicGraph,
+  locale: UiLocale,
+): { label: string; description: string } {
+  const semantic = feature.semantic;
+  if (semantic) {
+    const key: "zh-CN" | "en" = locale === "zh-CN" ? "zh-CN" : "en";
+    return { label: semantic.label[key], description: semantic.description[key] };
+  }
+  return { label: localizeFeatureLabel(feature, graph, locale), description: feature.description };
+}
+
+/** What kind of connection an edge is, said in the reader's language. */
+export function resolveEdgeText(edge: LogicGraph["edges"][number], locale: UiLocale): string | undefined {
+  const semantic = edge.semantic;
+  if (semantic) return semantic.label[locale === "zh-CN" ? "zh-CN" : "en"];
+  return undefined;
+}
+
+/** How a name was arrived at, for the detail panel. */
+export function labelSourceLabel(source: string | undefined, locale: UiLocale): string {
+  const zh: Record<string, string> = {
+    config: "项目配置指定", documented: "项目文档描述", docstring: "代码注释",
+    route: "路由地址", vendor: "外部服务名称", identifier: "代码标识符",
+    composed: "由链路组合", pending: "证据不足，待确认",
+  };
+  const en: Record<string, string> = {
+    config: "Stated in project config", documented: "Documented capability", docstring: "Code docstring",
+    route: "Route address", vendor: "Vendor name", identifier: "Read from the identifier",
+    composed: "Composed from the chain", pending: "Not enough evidence",
+  };
+  const table = locale === "zh-CN" ? zh : en;
+  return table[source ?? ""] ?? (locale === "zh-CN" ? "未知来源" : "Unknown");
 }

@@ -6,3 +6,8 @@ coverage/
 *.tgz
 artifacts/
 .DS_Store
+
+# Stale build output: every package emits into dist/, which is ignored above.
+packages/*/src/*.js
+packages/*/src/*.d.ts
+packages/*/src/*.js.map

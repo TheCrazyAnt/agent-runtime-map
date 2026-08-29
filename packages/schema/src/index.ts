@@ -153,6 +153,15 @@ export interface ProjectContext {
   prompts: ProjectPrompt[];
   configurationFiles: string[];
   capabilityHints: ProjectCapabilityHint[];
+  /**
+   * Names and terms the project states for itself in `agent-runtime-map.config.json`.
+   * A person's word about their own domain outranks every derivation, so these are
+   * carried through the pipeline rather than re-read downstream.
+   */
+  localization?: {
+    terms?: Record<string, { "zh-CN"?: string; en?: string }>;
+    nodes?: Record<string, { label?: Partial<LocalizedText>; description?: Partial<LocalizedText> }>;
+  };
   diagnostics: Diagnostic[];
 }
 
@@ -202,6 +211,67 @@ export type LogicNodeType =
   | "external_system"
   | "result";
 
+
+/** The two locales the product ships in. */
+export type LocaleTag = "zh-CN" | "en";
+
+/** One value per locale. Both slots are always filled, so no reader needs a fallback. */
+export interface LocalizedValue<T> {
+  "zh-CN": T;
+  en: T;
+}
+
+export type LocalizedText = LocalizedValue<string>;
+
+/**
+ * Where a displayed name came from, per locale.
+ *
+ * The two locales can legitimately differ: a Chinese README names a capability in
+ * Chinese while the English name is still read off the identifier. Reporting one
+ * source for the pair would make one of them a claim the evidence cannot back.
+ */
+export type LabelSource =
+  | "config"
+  | "documented"
+  | "docstring"
+  | "route"
+  | "vendor"
+  | "identifier"
+  | "composed"
+  | "pending";
+
+/** One identifier token and how it was rendered. */
+export interface SemanticToken {
+  token: string;
+  en: string;
+  "zh-CN"?: string;
+  via: "vocabulary" | "glossary" | "config" | "acronym" | "literal" | "unresolved";
+}
+
+/**
+ * A displayed name in both languages, with the evidence behind it.
+ *
+ * `confidence` here is confidence in the **name**, never in the code. A node whose
+ * call graph is certain can still be impossible to name, and a confidently named
+ * node can sit on weak code evidence. Merging the two would let a good name make
+ * questionable code look settled — the same separation `ProductEvidence.match`
+ * already keeps between a document and the code it describes.
+ */
+export interface SemanticLabel {
+  label: LocalizedText;
+  description: LocalizedText;
+  /** The identifier, route, or vendor name exactly as written. Never translated. */
+  technicalName: string;
+  labelSource: LocalizedValue<LabelSource>;
+  confidence: LocalizedValue<number>;
+  /** True when either locale could not be named from evidence: the Viewer shows 待确认. */
+  pending: boolean;
+  /** Where the NAME came from — a doc line or a config line. Distinct from the node's own sources. */
+  evidence: SourceLocation[];
+  /** How each token of the identifier was rendered. Capped so a node stays small. */
+  glossary?: SemanticToken[];
+}
+
 export interface LogicNode {
   id: string;
   type: LogicNodeType;
@@ -216,6 +286,12 @@ export interface LogicNode {
   rawNodeIds: string[];
   product?: ProductEvidence;
   behavior?: LogicBehavior;
+  /**
+   * The business reading of this step, in both languages, derived at compile time
+   * from project evidence. Optional: a graph compiled before this existed still
+   * renders, through the Viewer's own fallback.
+   */
+  semantic?: SemanticLabel;
   metadata?: Record<string, unknown>;
 }
 
@@ -255,6 +331,8 @@ export interface LogicEdge {
   metadata?: Record<string, unknown>;
   confidence: number;
   rawEdgeIds: string[];
+  /** The flow kind said in each language: 条件分支 / Conditional branch. */
+  semantic?: { label: LocalizedText };
 }
 
 export type ChainHealth = "healthy" | "warning" | "error";
@@ -276,6 +354,8 @@ export interface ChainDiagnostic {
   severity: ChainDiagnosticSeverity;
   message: string;
   suggestion: string;
+  /** The same finding said in each language. */
+  semantic?: { message: LocalizedText; suggestion: LocalizedText };
   nodeId?: string;
   edgeId?: string;
   sources: SourceLocation[];
@@ -297,6 +377,7 @@ export interface FeaturePathVariant {
   steps: FeatureSimulationStep[];
   resultNodeId?: string;
   confidence: number;
+  semantic?: SemanticLabel;
 }
 
 export interface FeatureScenario {
@@ -312,6 +393,14 @@ export interface FeatureScenario {
   health: ChainHealth;
   confidence: number;
   product?: ProductEvidence;
+  /**
+   * The feature's business name and one-sentence summary, composed at compile time
+   * from its entry, main step, and result — and deduplicated against the other
+   * features, so two routes never present the same name. `label` above is left
+   * alone: it is hashed into `id`, and renaming it would break every saved layout
+   * and trace overlay that refers to this feature.
+   */
+  semantic?: SemanticLabel;
 }
 
 export interface ProjectUnderstanding {

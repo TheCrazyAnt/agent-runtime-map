@@ -341,3 +341,27 @@ button { color: inherit; }
 .chain-edge--retry path { stroke-linecap: round; }
 .chain-edge--loop path { stroke-linecap: round; }
 .chain-edge--bus path { stroke-linejoin: round; }
+
+/* ---- Business / technical view -------------------------------------------- */
+.view-toolbar {
+  position: absolute; top: 14px; right: 300px; z-index: 6;
+  display: inline-flex; gap: 2px; padding: 3px;
+  border: 1px solid #d8dee5; border-radius: 999px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 6px 18px rgba(46, 56, 68, .08);
+}
+.view-toolbar button {
+  padding: 4px 13px; border: 0; border-radius: 999px;
+  background: transparent; color: #5b6773;
+  font-size: 12px; cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
+}
+.view-toolbar button.is-active { background: #147fc1; color: #fff; }
+.view-toolbar button:not(.is-active):hover { background: #eef4f9; color: #14202e; }
+.name-source { display: flex; gap: 6px; align-items: baseline; margin: 6px 0 0; font-size: 12px; color: #5b6773; }
+.name-source code { font-size: 11.5px; color: #14202e; }
+.pending-flag {
+  margin-left: 8px; padding: 2px 8px; border-radius: 999px;
+  background: rgba(148, 132, 90, .14); color: #7a6a45;
+  font-size: 11.5px; font-style: normal; font-weight: 600;
+}

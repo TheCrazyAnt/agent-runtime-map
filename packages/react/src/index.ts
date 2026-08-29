@@ -68,6 +68,7 @@ export {
   type OverviewLabels,
   type OverviewModel,
   type OverviewNode,
+  type OverviewResolvers,
   type OverviewRole,
 } from "./overview.js";
 export {

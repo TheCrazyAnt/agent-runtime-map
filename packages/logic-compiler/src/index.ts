@@ -16,6 +16,8 @@ import {
   type RawCodeGraph,
   type RawCodeNode,
 } from "@agent-runtime-map/schema";
+import { composeFeatureNames } from "./featureNames.js";
+import { localizeEdge, localizeNodeSemantics, type LocalizationOverrides } from "./localization.js";
 import { compileFeatureScenarios } from "./features.js";
 
 export { compileFeatureScenarios } from "./features.js";
@@ -24,6 +26,10 @@ export interface CompileOptions {
   graphType?: GraphType;
   maxNodes?: number;
   productDescription?: string;
+  /** Set false to emit a graph with no bilingual semantics, as before this existed. */
+  localize?: boolean;
+  /** Terms and names the project itself states, which outrank every derivation. */
+  localizationOverrides?: LocalizationOverrides;
 }
 
 const FLOW_EDGE_KINDS = new Set(["calls", "data_flow", "handles", "reads", "writes", "requests"]);
@@ -52,6 +58,27 @@ export function compileLogicGraph(raw: RawCodeGraph, options: CompileOptions = {
   markResultNodes(logicNodes, logicEdges);
   describeBehavior(logicNodes, logicEdges);
   const features = compileFeatureScenarios(logicNodes, logicEdges, raw.context?.capabilityHints ?? []);
+
+  // Reading the graph as business language is the last compile step: it needs the
+  // finished nodes, edges, and features, and it needs the project's own documents
+  // and configuration — evidence that exists here and nowhere downstream. Doing it
+  // here makes every displayed name a fact in the artifact, diffable and testable,
+  // rather than a guess the Viewer would have to make on every render.
+  if (options.localize !== false) {
+    const localizationInput = {
+      capabilities: raw.context?.capabilityHints ?? [],
+      // A caller may state overrides directly; otherwise the project's own
+      // configuration file is the authority on its domain terms.
+      overrides: options.localizationOverrides ?? raw.context?.localization,
+    };
+    const nodesById = new Map(logicNodes.map((node) => [node.id, node]));
+    for (const node of logicNodes) node.semantic = localizeNodeSemantics(node, localizationInput, nodesById);
+    // A second pass so a behavior sentence names other steps by their settled
+    // business names rather than by whichever ones happened to be ready first.
+    for (const node of logicNodes) node.semantic = localizeNodeSemantics(node, localizationInput, nodesById);
+    for (const edge of logicEdges) edge.semantic = { label: localizeEdge(edge, nodesById) };
+    composeFeatureNames(features, nodesById);
+  }
 
   const graphType = options.graphType ?? "runtime_logic";
   if (graphType === "product_logic") {
@@ -527,3 +554,7 @@ function dedupeEdges(edges: LogicEdge[]): LogicEdge[] {
 function hash(value: string): string {
   return createHash("sha1").update(value).digest("hex").slice(0, 12);
 }
+
+export { localizeNodeSemantics, localizeEdge, readIdentifier, controlFlowName, LOCALES, PENDING_THRESHOLD } from "./localization.js";
+export type { LocalizationOverrides, LocalizationInput, NodeOverride } from "./localization.js";
+export { composeFeatureNames } from "./featureNames.js";
