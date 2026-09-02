@@ -383,7 +383,7 @@ async function runExtractor(
   diagnostics.push({
     level: "warning",
     code: "PYTHON_UNAVAILABLE",
-    message: `Python source was found but no interpreter could analyze it (${lastError}). Install Python 3 or pass a path to analyze these files.`,
+    message: `Python source was found but no interpreter could analyze it (${lastError}). Install Python 3.10 or newer, or pass a path to one, to analyze these files.`,
   });
   return undefined;
 }

@@ -250,7 +250,7 @@ switch. Source symbols and file evidence always retain their original spelling.
 ## Current support
 
 - TypeScript, TSX, JavaScript, and JSX
-- Python, through a separate adapter that produces the same graph
+- Python, through a separate adapter that produces the same graph; needs a Python 3.10 or newer interpreter on `PATH`
 - `tsconfig.json` and `jsconfig.json` path aliases
 - Next.js App Router route handlers
 - Express/Hono-style route registration
@@ -272,7 +272,7 @@ Known limits:
 - Dynamic dispatch and runtime-only dependency injection may be omitted.
 - Product logic mode combines deterministic code analysis with available project documents, prompts, and explicit configuration, but dynamic runtime-only behavior may still be omitted.
 - Optional LLM enrichment is label/description-only: it cannot create nodes, edges, files, or evidence. It requires explicit CLI opt-in, an explicit model, and `OPENAI_API_KEY`.
-- Python and actual runtime tracing are not part of 0.1. The current playback is an explicit simulation of the statically inferred chain.
+- Actual runtime tracing is not part of the static map. The current playback is an explicit simulation of the statically inferred chain; embedders can overlay recorded `TraceEvent`s through `@agent-runtime-map/react`.
 
 ## Privacy and network behavior
 
