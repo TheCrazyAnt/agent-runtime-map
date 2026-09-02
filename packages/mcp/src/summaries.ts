@@ -27,6 +27,8 @@ export const LOCALES: readonly LocaleTag[] = ["zh-CN", "en"];
  * the reader's language so an agent does not repeat a placeholder as a finding.
  */
 const UNCONFIRMED: Record<LocaleTag, string> = { en: "[name unconfirmed]", "zh-CN": "[名称待确认]" };
+/** What the compiler puts in front of a name it could not read; see localizeNodeSemantics. */
+const PLACEHOLDER: Record<LocaleTag, string> = { en: "Unconfirmed · ", "zh-CN": "待确认 · " };
 
 /** The slice of a semantic label the summaries read; `evidence` and the rest are not needed here. */
 type Named = { label: string; semantic?: Pick<SemanticLabel, "label" | "technicalName" | "pending"> };
@@ -48,7 +50,11 @@ function displayName(item: Named, locale: LocaleTag = "en"): string {
   if (!semantic) return item.label;
   const name = semantic.label[locale];
   const shown = name === semantic.technicalName ? name : `${name} (${semantic.technicalName})`;
-  return semantic.pending ? `${shown} ${UNCONFIRMED[locale]}` : shown;
+  // A node the compiler could not name already says so in the name itself; a
+  // feature composed from such a node does not, so the marker is added only where
+  // the placeholder is absent, rather than saying "unconfirmed" twice.
+  const flagged = semantic.pending && !name.startsWith(PLACEHOLDER[locale]);
+  return flagged ? `${shown} ${UNCONFIRMED[locale]}` : shown;
 }
 
 /**

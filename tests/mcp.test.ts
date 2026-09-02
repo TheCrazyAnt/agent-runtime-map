@@ -171,15 +171,23 @@ describe("MCP locale", () => {
     expect(pending).toBeDefined();
     expect(confirmed.semantic!.pending).toBe(false);
 
-    expect(describeEvidence(pending!)).toContain("[name unconfirmed]");
-    expect(describeEvidence(pending!, "zh-CN")).toContain("[名称待确认]");
-    expect(describeEvidence(confirmed)).not.toContain("[name unconfirmed]");
-    expect(describeEvidence(confirmed, "zh-CN")).not.toContain("[名称待确认]");
+    // Said exactly once in the reader's language: a name the compiler could not
+    // read already carries its placeholder, and the marker must not repeat it;
+    // a name that reads fine in this language but is pending in the other
+    // carries the marker, because the Viewer flags that node too.
+    const saidOnce = (text: string, locale: "en" | "zh-CN") =>
+      (text.split("\n")[0]!.match(locale === "en" ? /unconfirmed/gi : /待确认/g) ?? []).length;
+    expect(saidOnce(describeEvidence(pending!), "en")).toBe(1);
+    expect(saidOnce(describeEvidence(pending!, "zh-CN"), "zh-CN")).toBe(1);
+    expect(saidOnce(describeEvidence(confirmed), "en")).toBe(0);
+    expect(saidOnce(describeEvidence(confirmed, "zh-CN"), "zh-CN")).toBe(0);
 
     // The marker travels into the route too, beside the step it belongs to.
     const feature = graph.features.find((item) => item.nodeIds.includes(pending!.id));
     expect(feature).toBeDefined();
-    expect(describeFeature(graph, feature!)).toContain(`${pending!.semantic!.label.en} (${pending!.semantic!.technicalName}) [name unconfirmed]`);
+    const stepLine = describeFeature(graph, feature!).split("\n").find((line) => line.includes(pending!.semantic!.technicalName));
+    expect(stepLine).toBeDefined();
+    expect(saidOnce(stepLine!, "en")).toBe(1);
   });
 
   it("offers the same locale choice on every tool", () => {
