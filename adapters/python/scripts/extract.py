@@ -211,6 +211,14 @@ def analyze(path):
 
 
 def main():
+    # `ast.Match` below only exists from 3.10. Failing here, by name, turns an
+    # AttributeError deep in a visitor into a message that says what to install.
+    if sys.version_info < (3, 10):
+        sys.stderr.write(
+            f"Python {sys.version_info.major}.{sys.version_info.minor} is too old: "
+            "Agent Runtime Map needs Python 3.10 or newer to analyze Python sources.\n"
+        )
+        sys.exit(1)
     paths = json.load(sys.stdin)
     json.dump({"pythonVersion": sys.version.split()[0], "files": [analyze(p) for p in paths]}, sys.stdout)
 

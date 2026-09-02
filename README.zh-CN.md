@@ -204,7 +204,7 @@ agent-runtime-map analyze [项目] [选项]  一次性：只生成 JSON
 ## 当前支持
 
 - TypeScript、TSX、JavaScript、JSX
-- Python（通过内置 `ast` 提取器；分类规则与 TypeScript 共享）
+- Python（通过内置 `ast` 提取器，需要 `PATH` 上有 Python 3.10 或更高版本；分类规则与 TypeScript 共享）
 - `tsconfig.json` / `jsconfig.json` 路径别名
 - Next.js App Router、Express / Hono 风格路由
 - 函数、方法、导入、静态调用与结果数据流

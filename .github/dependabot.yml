@@ -7,6 +7,13 @@ updates:
     groups:
       development-dependencies:
         dependency-type: development
+    ignore:
+      # TypeScript 6/7 is a migration, not a bump: `types` no longer defaults to
+      # every @types package, side-effect CSS imports are type-checked, and the
+      # Go-based 7.x compiler has to be proven against tsup's DTS build. Take it
+      # deliberately, on its own branch, rather than inside the weekly group.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
