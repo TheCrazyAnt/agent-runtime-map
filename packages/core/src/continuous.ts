@@ -693,30 +693,56 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * Rendered when report.html is opened as a local file: the Viewer's module script
+ * never runs over file://, so this inline ES5 draws a static list instead. It
+ * chooses the language the way the Viewer does and reads the same `semantic`
+ * slot, so the two ways of opening one report never disagree about a name.
+ */
 const FALLBACK_SCRIPT = `<script>
 (function () {
   function ready(fn) { document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn) : fn(); }
+  function isChinese(value) { value = String(value || "").toLowerCase(); return value === "zh" || value.indexOf("zh-") === 0; }
+  function resolveLocale() {
+    var match = /[?&]locale=([^&#]*)/.exec(window.location.search || "");
+    if (match && match[1]) return isChinese(decodeURIComponent(match[1])) ? "zh-CN" : "en";
+    var languages = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language];
+    for (var index = 0; index < languages.length; index += 1) { if (isChinese(languages[index])) return "zh-CN"; }
+    return "en";
+  }
   ready(function () {
     setTimeout(function () {
       var root = document.getElementById("root");
       if (!root || root.childElementCount > 0 || !window.__ARM_GRAPH__) return;
       var graph = window.__ARM_GRAPH__;
+      var locale = resolveLocale();
+      var zh = locale === "zh-CN";
+      var text = zh
+        ? { steps: " 个步骤 · ", flows: " 条逻辑流 · ", generated: "生成于 ", pending: "待确认", summary: "静态摘要。要查看交互式地图，请通过 HTTP 提供此文件夹（例如：<code>npx serve .</code>）后重新打开 report.html。" }
+        : { steps: " steps · ", flows: " flows · ", generated: "generated ", pending: "Unconfirmed", summary: "Static summary. For the interactive map, serve this folder over HTTP (for example: <code>npx serve .</code>) and open report.html again." };
       var health = { healthy: "#3fb27f", warning: "#d99a2b", error: "#d4574e" };
       var rows = (graph.features || []).map(function (feature) {
+        var semantic = feature.semantic;
+        var label = (semantic && semantic.label && semantic.label[locale]) || feature.label;
+        var description = semantic && semantic.description ? semantic.description[locale] : feature.description;
+        var technical = semantic ? (semantic.technicalName || feature.label) : "";
         var diagnostics = (feature.diagnostics || []).map(function (item) {
           return '<li><code>' + item.code + '</code> ' + item.message.replace(/</g, "&lt;") + "</li>";
         }).join("");
         return '<section style="border:1px solid #2a3242;border-radius:8px;padding:12px 16px;margin:10px 0">'
           + '<h2 style="margin:0;font-size:16px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:' + (health[feature.health] || "#888") + '"></span>'
-          + feature.label.replace(/</g, "&lt;") + " <small style=\\"color:#8a94a6;font-weight:400\\">" + Math.round((feature.confidence || 0) * 100) + "%</small></h2>"
-          + (feature.description ? '<p style="color:#aeb6c4;margin:6px 0 0">' + feature.description.replace(/</g, "&lt;") + "</p>" : "")
+          + (label || "").replace(/</g, "&lt;") + " <small style=\\"color:#8a94a6;font-weight:400\\">" + Math.round((feature.confidence || 0) * 100) + "%</small>"
+          + (semantic && semantic.pending ? " <small style=\\"color:#d99a2b;font-weight:400\\">" + text.pending + "</small>" : "")
+          + (technical && technical !== label ? " <small style=\\"color:#8a94a6;font-weight:400\\"><code>" + technical.replace(/</g, "&lt;") + "</code></small>" : "")
+          + "</h2>"
+          + (description ? '<p style="color:#aeb6c4;margin:6px 0 0">' + description.replace(/</g, "&lt;") + "</p>" : "")
           + (diagnostics ? '<ul style="color:#d99a2b;margin:8px 0 0;padding-left:18px">' + diagnostics + "</ul>" : "")
           + "</section>";
       }).join("");
       root.innerHTML = '<main style="max-width:760px;margin:32px auto;padding:0 16px;font:14px/1.5 -apple-system,Segoe UI,sans-serif;color:#e8ebf1">'
         + '<h1 style="font-size:20px">' + (graph.title || "Agent Runtime Map").replace(/</g, "&lt;") + "</h1>"
-        + '<p style="color:#8a94a6">' + (graph.nodes || []).length + " steps · " + (graph.edges || []).length + " flows · generated " + (graph.generatedAt || "") + "</p>"
-        + '<p style="color:#8a94a6">Static summary. For the interactive map, serve this folder over HTTP (for example: <code>npx serve .</code>) and open report.html again.</p>'
+        + '<p style="color:#8a94a6">' + (graph.nodes || []).length + text.steps + (graph.edges || []).length + text.flows + text.generated + (graph.generatedAt || "") + "</p>"
+        + '<p style="color:#8a94a6">' + text.summary + "</p>"
         + rows + "</main>";
       document.body.style.background = "#0b0d12";
     }, 1500);

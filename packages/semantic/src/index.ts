@@ -196,12 +196,35 @@ export function applySemanticPatch(graph: LogicGraph, patch: SemanticPatch, mode
   });
   const features = graph.features.map((feature) => {
     const semantic = featurePatches.get(feature.id);
-    return semantic ? {
+    if (!semantic) return feature;
+    // Same rule as for nodes: a name the deterministic pass composed from evidence
+    // is never overwritten; only a pending slot may be filled. `feature.label` is
+    // never touched either way — it is hashed into `feature.id`, so renaming it
+    // would orphan every saved layout and trace overlay that refers to the feature.
+    const canRename = feature.semantic?.pending !== false;
+    const patchedSemantic = feature.semantic && canRename
+      ? {
+        ...feature.semantic,
+        label: { "zh-CN": semantic.label.trim(), en: semantic.label.trim() },
+        description: { "zh-CN": semantic.description.trim(), en: semantic.description.trim() },
+        labelSource: { "zh-CN": "llm" as const, en: "llm" as const },
+        confidence: {
+          "zh-CN": boundedConfidence(semantic.confidence),
+          en: boundedConfidence(semantic.confidence),
+        },
+        pending: false,
+      }
+      // Without a semantic slot (compiled with `localize: false`) there is nowhere
+      // to put a name with provenance, and inventing the slot here would let the
+      // model add a field the compiler never produced; the legacy description is
+      // the only place the model's reading can go.
+      : feature.semantic;
+    return {
       ...feature,
-      label: semantic.label.trim(),
-      description: semantic.description.trim(),
+      description: canRename ? semantic.description.trim() : feature.description,
+      semantic: patchedSemantic,
       confidence: Math.min(feature.confidence, boundedConfidence(semantic.confidence)),
-    } : feature;
+    };
   });
   return {
     ...graph,

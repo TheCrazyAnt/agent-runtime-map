@@ -2,7 +2,9 @@ import { appendFile, cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "n
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
+import type { LogicGraph } from "@agent-runtime-map/schema";
 import {
   buildContinuousMap,
   initContinuousProject,
@@ -48,6 +50,25 @@ function waitFor(predicate: () => boolean, timeoutMs: number): Promise<boolean> 
   });
 }
 
+/**
+ * Runs report.html's inline file:// fallback against a fake browser. The fallback
+ * is the one inline script written as an IIFE; the embed script before it only
+ * assigns globals, so the graph is supplied through `window` here instead.
+ */
+function renderFallback(reportHtml: string, graph: unknown, search: string, languages: string[] = ["en-US"]): string {
+  const script = /<script>\n\(function \(\) \{[\s\S]*?<\/script>/.exec(reportHtml)?.[0];
+  expect(script).toBeDefined();
+  const root = { childElementCount: 0, innerHTML: "" };
+  const context = {
+    window: { __ARM_GRAPH__: graph, location: { search } },
+    document: { readyState: "complete", getElementById: () => root, body: { style: {} }, addEventListener: () => undefined },
+    navigator: { languages, language: languages[0] },
+    setTimeout: (fn: () => void) => fn(),
+  };
+  vm.runInNewContext(script!.replace(/^<script>|<\/script>$/g, ""), context);
+  return root.innerHTML;
+}
+
 describe("init", () => {
   it("creates the config with defaults and completes an existing one without clobbering it", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "arm-init-"));
@@ -90,6 +111,49 @@ describe("init", () => {
 });
 
 describe("build", () => {
+  it("renders business names in the file:// fallback in the reader's language", { timeout: 60_000 }, async () => {
+    const root = await fixtureCopy();
+    const built = await buildContinuousMap(root, resolveContinuousConfig(), { toolVersion: "test" });
+    expect(built.ok).toBe(true);
+    const report = await readFile(path.join(built.currentDir, "report.html"), "utf8");
+    const graph = await readArtifact<LogicGraph>(built.currentDir, "graph.json");
+    const named = graph.features.find((feature) => feature.semantic
+      && feature.semantic.label["zh-CN"] !== feature.semantic.label.en
+      && feature.semantic.label.en !== feature.label)!;
+    expect(named).toBeDefined();
+    const semantic = named.semantic!;
+
+    const zh = renderFallback(report, graph, "?locale=zh-CN");
+    const en = renderFallback(report, graph, "?locale=en");
+    expect(zh).toContain(semantic.label["zh-CN"]);
+    expect(zh).toContain(semantic.description["zh-CN"]);
+    expect(zh).not.toContain(semantic.label.en);
+    expect(zh).toContain("静态摘要");
+    expect(en).toContain(semantic.label.en);
+    expect(en).toContain(semantic.description.en);
+    expect(en).not.toContain(semantic.label["zh-CN"]);
+    expect(en).toContain("Static summary");
+    // The technical name stays visible beside the business name, never in its place.
+    expect(en).toContain(`<code>${named.label}</code>`);
+    for (const feature of graph.features.filter((item) => item.semantic)) {
+      expect(zh).not.toContain(`</span>${feature.label} <small`);
+      expect(en).not.toContain(`</span>${feature.label} <small`);
+    }
+
+    // The same aliases the Viewer accepts, then the browser's language.
+    expect(renderFallback(report, graph, "?locale=zh-hans")).toContain(semantic.label["zh-CN"]);
+    expect(renderFallback(report, graph, "?locale=fr")).toContain(semantic.label.en);
+    expect(renderFallback(report, graph, "", ["zh-CN", "en"])).toContain(semantic.label["zh-CN"]);
+    expect(renderFallback(report, graph, "", ["en-GB"])).toContain(semantic.label.en);
+
+    const withPending = {
+      ...graph,
+      features: graph.features.map((feature) => feature.id === named.id ? { ...feature, semantic: { ...semantic, pending: true } } : feature),
+    };
+    expect(renderFallback(report, withPending, "?locale=zh-CN")).toContain("待确认");
+    expect(renderFallback(report, withPending, "?locale=en")).toContain("Unconfirmed");
+  });
+
   it("writes the artifact set, then records what a code change did to the map", { timeout: 60_000 }, async () => {
     const root = await fixtureCopy();
     const config = resolveContinuousConfig();
