@@ -114,7 +114,10 @@ export function composeFeatureNames(
         en: partsConfidence(item, "en"),
       },
       pending: [item.entry, item.mains[0], item.result].some((node) => node?.semantic?.pending === true),
-      evidence: evidenceOf(item),
+      evidence: {
+        "zh-CN": evidenceOf(item, "zh-CN"),
+        en: evidenceOf(item, "en"),
+      },
     } satisfies SemanticLabel;
   }
 }
@@ -214,12 +217,17 @@ function partsConfidence(parts: Parts, locale: LocaleTag): number {
   return Math.round((scores.reduce((sum, value) => sum + value, 0) / scores.length) * 100) / 100;
 }
 
-function evidenceOf(parts: Parts): SourceLocation[] {
+/**
+ * A composed name is backed by whatever backed its parts in the same language —
+ * the steps this locale's name was actually built from, not the top-ranked
+ * candidate it may have skipped. A part named from a Chinese README contributes
+ * that README only to the Chinese list; its English name still points at the code.
+ */
+function evidenceOf(parts: Parts, locale: LocaleTag): SourceLocation[] {
   const sources: SourceLocation[] = [];
-  for (const node of [parts.entry, parts.mains[0], parts.result]) {
-    const first = node?.sources[0];
-    if (first && !sources.some((item) => item.file === first.file && item.startLine === first.startLine)) {
-      sources.push(first);
+  for (const node of [parts.entry, namedMain(parts, locale), parts.result]) {
+    for (const source of node?.semantic?.evidence[locale] ?? []) {
+      if (!sources.some((item) => item.file === source.file && item.startLine === source.startLine)) sources.push(source);
     }
   }
   return sources;

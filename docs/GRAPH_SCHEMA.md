@@ -38,6 +38,20 @@ Every detected capability is represented by a `FeatureScenario` containing:
 
 Current diagnostic codes cover broken references, cycles, low-confidence inference, missing downstream execution, missing terminal results, bounded path limits, unbounded retries, missing visible fallback paths, and missing Agent output contracts. Consumers must display uncertainty distinctly from deterministic errors.
 
+### SemanticLabel
+
+Nodes, edges, variants, and features may carry an optional `SemanticLabel`: the
+business reading in both `zh-CN` and `en`, derived at compile time. Every field
+is per locale — `label`, `description`, `labelSource`, `confidence`, and
+`evidence` — because the two names can come from different sources (a documented
+capability for one, the identifier's declaration for the other), and a single
+list would attach a document to a name that was never read from it.
+`evidence[locale]` holds the sources behind that locale's name and is an empty
+array when the name is shown verbatim (a route or a vendor id). `technicalName`
+is the identifier as written and is never translated. Graphs compiled before
+per-locale evidence existed carry one flat `evidence` array; consumers must not
+depend on its shape.
+
 ### ProjectUnderstanding
 
 The compiled graph may include a `ProjectUnderstanding` summary with documented

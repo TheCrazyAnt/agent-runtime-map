@@ -448,7 +448,13 @@ provenance. The Viewer became a selector with no way left to guess.
   first step it can actually name. `FeatureScenario.label` is NOT touched: it is
   hashed into `feature.id`.
 - Schema: `SemanticLabel` on node/edge/variant/feature, all OPTIONAL, so an old
-  `graph.json` still renders through the Viewer's legacy path.
+  `graph.json` still renders through the Viewer's legacy path. Every field of it
+  is per locale, `evidence` included: each language's name cites the sources
+  that produced THAT name (config line, documented capability, or the
+  identifier's declaration; an empty list for a route/vendor id shown verbatim),
+  and a feature's list per language is the union of its parts' lists for that
+  language. Graphs written before this carry one flat `evidence` array; nothing
+  reads the field yet, so they still load.
 - `agent-runtime-map.config.json` gains `terms` (one token → its reading) and
   `nodes` (whole-name overrides). Both outrank every derivation.
 - Viewer: `resolveNodeText`/`resolveFeatureText`/`resolveEdgeText`; a
