@@ -318,20 +318,25 @@ jobs:
           assert(/^\d+\.\d+\.\d+$/.test(manifest.toolVersion), `toolVersion looks wrong: ${manifest.toolVersion}`);
           EOF
 
-  # The Pages branch, which nothing exercised before. Everything up to and
-  # including upload-pages-artifact@v5 runs for real; the deploy itself is the
-  # one step deliberately not performed, because deploy-pages@v5 would publish
-  # THIS repository's own internal map to a public website — the exact outcome
-  # the action warns users about. Its precondition is asserted instead: the
-  # `github-pages` artifact it consumes exists and holds the real map.
+  # The Pages branch. Everything up to and including upload-pages-artifact@v5
+  # runs for real, and deploy-pages@v5 is reached but must be refused: the job
+  # below holds no Pages permissions, so the composite cannot publish THIS
+  # repository's fixture map to the public Pages site that hosts the demo. Its
+  # precondition is asserted instead: the `github-pages` artifact it consumes
+  # exists and holds the real map, and the deploy outcome is asserted to be a
+  # failure so a future permission grant cannot silently start publishing again.
   map-pages:
     runs-on: ubuntu-latest
+    # Deliberately NOT granted pages: write and id-token: write. The composite's
+    # deploy step has no switch other than `publish: pages`, so with those
+    # permissions this job really deployed the fixture map to this repository's
+    # public Pages site (twice in August 2026), overwriting the Public Demo and
+    # leaving its root URL at 404. Without them actions/deploy-pages fails
+    # deterministically, which is asserted below: the artifact path is exercised
+    # end to end and the live site is never touched. What a consumer must grant
+    # stays documented in action.yml and asserted by tests/action-runtime.test.ts.
     permissions:
       contents: read
-      # What a consumer must grant for publish: pages. Declared here so the
-      # documented requirement is exercised rather than only written down.
-      pages: write
-      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -394,6 +399,15 @@ jobs:
             if (status.state !== 'updated') { console.error('FAIL: status', status.state); process.exit(1); }
             console.log('Pages artifact OK — status', status.state);
           "
+
+      - name: Assert nothing was deployed to this repository's Pages site
+        run: |
+          # The composite reached actions/deploy-pages, which must have failed for
+          # lack of pages: write and id-token: write. A success here would mean the
+          # fixture map is now live at this repository's Pages URL.
+          test "${{ steps.pages.outcome }}" = "failure" \
+            || { echo "FAIL: publish=pages succeeded end to end; the fixture map was deployed to this repository's live Pages site"; exit 1; }
+          echo "deploy-pages was reached and refused without Pages permissions; nothing was published"
 
       - name: Assert the privacy warning was emitted
         run: |
