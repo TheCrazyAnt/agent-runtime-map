@@ -1,6 +1,6 @@
 {
   "name": "agent-runtime-map-workspace",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "private": true,
   "description": "Turn your codebase into an evidence-backed Agent Runtime Map.",
   "homepage": "https://github.com/TheCrazyAnt/agent-runtime-map#readme",
