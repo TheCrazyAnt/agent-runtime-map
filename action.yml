@@ -33,7 +33,7 @@ inputs:
     default: "artifact"
   cli-version:
     description: "agent-runtime-map version to install from npm. Updated with every compatible action release."
-    default: "0.9.1"
+    default: "0.9.2"
   cli-tarball:
     description: "Advanced: path or URL of an agent-runtime-map npm tarball to run instead of installing from npm."
     default: ""

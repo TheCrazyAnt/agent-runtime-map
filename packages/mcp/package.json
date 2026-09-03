@@ -1,6 +1,6 @@
 {
   "name": "@agent-runtime-map/mcp",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Model Context Protocol server exposing the Agent Runtime Map to any agent.",
   "homepage": "https://github.com/TheCrazyAnt/agent-runtime-map/tree/main/packages/mcp#readme",
   "repository": {
