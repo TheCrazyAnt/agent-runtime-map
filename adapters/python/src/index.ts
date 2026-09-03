@@ -24,7 +24,7 @@ import {
   stableId,
   templateVariables,
 } from "@agent-runtime-map/analysis-kit";
-import type { PythonCall, PythonFacts, PythonFile } from "./facts.js";
+import type { PythonCall, PythonFacts, PythonFile, PythonFunction } from "./facts.js";
 
 const SOURCE_EXTENSIONS = new Set([".py"]);
 const EXCLUDED_FILE_PATTERN = /(^test_.*\.py$|_test\.py$|^conftest\.py$|\.pyi$)/i;
@@ -157,7 +157,7 @@ function collectFile(
   }
 
   for (const declaration of file.functions) {
-    const route = routeFromDecorators(declaration.decorators, file);
+    const route = routeFromDecorators(declaration, file);
     const classification = classifyDeclaration({
       relativeFile,
       name: declaration.name,
@@ -441,17 +441,39 @@ interface RouteConvention {
   decorator: string;
 }
 
-function routeFromDecorators(decorators: string[], file: PythonFile): RouteConvention | undefined {
-  for (const decorator of decorators) {
+function routeFromDecorators(declaration: PythonFunction, file: PythonFile): RouteConvention | undefined {
+  for (const decorator of declaration.decorators) {
     const match = ROUTE_DECORATOR.exec(decorator);
     if (!match) continue;
     const owner = match[1]!;
     const method = match[2]!.toUpperCase();
-    const call = file.calls.find((item) => item.callee === decorator && item.stringArguments.length);
+    const call = decoratorCall(decorator, declaration, file);
     const routePath = call?.stringArguments[0] ?? "/";
     return { method, path: routePath, framework: frameworkForOwner(owner, file), decorator };
   }
   return undefined;
+}
+
+/**
+ * The path a decorator registers belongs to the declaration it sits above. Searching
+ * the file's calls by dotted name alone returns the first `app.post(...)` in the
+ * module, which labels every same-method route in a file with the first one's path.
+ * The extractor records a decorator call inside the scope of the function it
+ * decorates, on a line above the `def`, so the nearest such call above the
+ * declaration is this route's own registration. `enclosingClass` is deliberately not
+ * compared: a route defined inside a method carries the class on the call but not on
+ * the declaration, and the nearest-above rule already separates same-named methods.
+ */
+function decoratorCall(decorator: string, declaration: PythonFunction, file: PythonFile): PythonCall | undefined {
+  let nearest: PythonCall | undefined;
+  for (const item of file.calls) {
+    if (item.callee !== decorator) continue;
+    if (item.stringArguments.length === 0) continue;
+    if (item.enclosingFunction !== declaration.name) continue;
+    if (item.line > declaration.line) continue;
+    if (!nearest || item.line > nearest.line) nearest = item;
+  }
+  return nearest;
 }
 
 function frameworkForOwner(owner: string, file: PythonFile): string {

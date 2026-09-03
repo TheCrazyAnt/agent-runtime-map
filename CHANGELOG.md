@@ -2,6 +2,16 @@
 
 All notable changes are documented here.
 
+## Unreleased
+
+### Fixed
+
+- The Python adapter labeled every same-method route in a module with the
+  first decorator's path, because it looked the path up by the decorator's
+  dotted name across the whole file. Each route now reads the decorator call
+  that sits above its own declaration, so a module with 57 routes stops
+  collapsing onto four names and capability matching runs on the real paths.
+
 ## 0.9.0 - 2026-09-03
 
 ### Added
