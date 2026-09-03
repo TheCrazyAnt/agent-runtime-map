@@ -1,6 +1,6 @@
 {
   "name": "@agent-runtime-map/react",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "description": "Reusable blueprint-style React Flow components for Agent Runtime Map.",
   "homepage": "https://github.com/TheCrazyAnt/agent-runtime-map/tree/main/packages/react#readme",
   "repository": {

@@ -20,7 +20,7 @@ Turn your Agent codebase into an evidence-backed circuit map you can inspect ste
 
 Agent Runtime Map reads a TypeScript, JavaScript, or Python repository together with its README, selected docs/PRD files, prompts, package metadata, and safe configuration. It extracts routes, calls, workflows, agents, tools, models, database operations, external services, and control flow, then compiles them into one global execution graph. A feature list on the left lets you play, pause, step through, replay, and switch between the inferred routes for each Agent capability.
 
-> Status: **Public alpha · v0.8.3**. It is ready to use within the documented scope, which remains intentionally narrow. Agent Runtime Map does not claim to understand every codebase.
+> Status: **Public alpha · v0.9.0**. It is ready to use within the documented scope, which remains intentionally narrow. Agent Runtime Map does not claim to understand every codebase.
 
 ## See it before you read it
 
