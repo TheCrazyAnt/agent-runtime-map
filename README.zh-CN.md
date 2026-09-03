@@ -12,7 +12,8 @@
 
 <p align="center">
   <a href="https://thecrazyant.github.io/agent-runtime-map/?locale=zh-CN"><strong>打开在线 Demo</strong></a>
-  · <a href="#一次设置github-持续更新主路径">接入仓库</a>
+  · <a href="#从这里开始一条命令看到自己的图">一条命令看到自己的图</a>
+  · <a href="#一次设置github-持续更新">接入仓库</a>
   · <a href="https://www.npmjs.com/package/agent-runtime-map">npm</a>
 </p>
 
@@ -80,10 +81,21 @@ Viewer 采用开源的工程蓝图视觉系统：细密网格画布、图标型�
 后台可以复用节点、分区边框、链路状态 token 和自动边界计算工具。组件接口和
 嵌入示例见 [Visual Components](docs/VISUAL_COMPONENTS.md)。
 
-## 一次设置，GitHub 持续更新（主路径）
+## 从这里开始：一条命令看到自己的图
 
-主用法：安装、执行一次 init、提交它生成的 workflow——之后每次 push 和 Pull
-Request 都会在 GitHub 上自动重建地图。
+指向任意项目，交互式地图就在浏览器里打开。无需配置、无需提交、不用等 CI：
+
+```bash
+npx agent-runtime-map@latest .
+```
+
+第一次就这一步。想让地图随代码改动一直刷新，把命令换成 `watch`；不想自动开
+浏览器，加 `--no-open`。看过自己的图之后，再按下一节配置持续更新。
+
+## 一次设置，GitHub 持续更新
+
+需要持续更新时：安装、执行一次 init、提交它生成的 workflow——之后每次 push 和
+Pull Request 都会在 GitHub 上自动重建地图。
 
 ```bash
 npm install --save-dev agent-runtime-map

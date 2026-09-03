@@ -26,6 +26,7 @@ export interface CliText {
   initUnchanged(file: string): string;
   initScripts(scripts: string): string;
   initIgnored(rule: string, file: string): string;
+  initViewHint: string;
   configWarning(warning: string): string;
   buildUpdated(dir: string, buildId: string, ms: number): string;
   buildUnchanged(buildId: string): string;
@@ -84,6 +85,11 @@ const TEXT: Record<CliLocale, CliText> = {
     githubWorkflowUnchanged: (file) => `${file} is already current; nothing changed.`,
     githubWorkflowModified: (file) => `${file} exists and has local modifications, so it was NOT touched. Re-run with --force to overwrite it.`,
     githubNextSteps: `Next: commit agent-runtime-map.config.json and .github/workflows/agent-runtime-map.yml.\nEvery push, pull request, and a weekly schedule will then rebuild the map on GitHub:\nthe run's Summary shows what changed, and the full map (report.html) is attached as an artifact.`,
+    // Init is the moment someone has just installed and is still at the terminal.
+    // Without this line every documented path from here ends in CI: commit, push,
+    // wait, download an artifact, serve it — so a new user can finish setup having
+    // never once seen the map. The viewer is a single command away; say so here.
+    initViewHint: `To see the map right now, without committing or waiting for CI:\n  npx agent-runtime-map watch .\nThat analyzes this project, opens the interactive viewer in your browser, and keeps\nboth current as you edit. Use \`build .\` for the files alone, without a viewer.`,
     forceRequiresGithub: "--force is only meaningful together with init --github",
   },
   "zh-CN": {
@@ -126,6 +132,7 @@ const TEXT: Record<CliLocale, CliText> = {
     githubWorkflowUnchanged: (file) => `${file} 已是最新，未做修改。`,
     githubWorkflowModified: (file) => `${file} 已存在且包含你的手动修改，因此没有改动它。如需覆盖，请使用 --force 重新执行。`,
     githubNextSteps: `下一步：提交 agent-runtime-map.config.json 和 .github/workflows/agent-runtime-map.yml。\n之后每次 push、Pull Request 以及每周一次的定时任务都会在 GitHub 上自动重建地图：\n运行的 Summary 会显示变更摘要，完整地图（report.html）会作为 artifact 附在运行结果里。`,
+    initViewHint: `想立刻看到地图，无需提交、也不用等 CI：\n  npx agent-runtime-map watch .\n该命令会分析当前项目，在浏览器中打开交互式界面，并随你改代码自动刷新。\n只要产物文件、不需要界面时，用 \`build .\`。`,
     forceRequiresGithub: "--force 只能与 init --github 一起使用",
   },
 };

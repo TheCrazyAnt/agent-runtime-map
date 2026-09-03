@@ -39,7 +39,12 @@ export async function runInit(
     .map(([name, command]) => `  "${name}": "${command}"`)
     .join("\n");
   process.stdout.write(`${text.initScripts(scripts)}\n`);
-  if (!options.github) return 0;
+  // The view hint goes last on both paths: it is the one instruction that ends with
+  // the map on screen, and `init --github` otherwise closes on a CI round trip.
+  if (!options.github) {
+    process.stdout.write(`${text.initViewHint}\n`);
+    return 0;
+  }
 
   try {
     const workflow = await initGithubWorkflow(projectPath, { force: options.force });
@@ -50,7 +55,7 @@ export async function runInit(
         : workflow.outcome === "overwritten"
           ? text.githubWorkflowOverwritten(workflow.workflowFile)
           : text.githubWorkflowUpdated(workflow.workflowFile);
-    process.stdout.write(`${line}\n${text.githubNextSteps}\n`);
+    process.stdout.write(`${line}\n${text.githubNextSteps}\n${text.initViewHint}\n`);
     return 0;
   } catch (error) {
     if (error instanceof WorkflowModifiedError) {
