@@ -2,6 +2,19 @@
 
 All notable changes are documented here.
 
+## Unreleased
+
+### Changed
+
+- `init` now ends by naming the one command that puts the map on screen
+  (`npx agent-runtime-map watch .`), in both languages and on both the plain and
+  `--github` paths. Every route out of `init` previously ended in a CI round trip
+  — commit, push, wait, download the artifact, serve it — so someone could finish
+  setup without ever seeing the map the tool exists to draw.
+- The README (both languages) opens the usage section with that same one-command
+  run instead of the GitHub Action, and the header links to it. The Action stays
+  documented right below it as the way to keep the map current.
+
 ## 0.9.1 - 2026-09-03
 
 ### Fixed

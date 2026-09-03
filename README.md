@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="https://thecrazyant.github.io/agent-runtime-map/"><strong>Open the live demo</strong></a>
+  · <a href="#start-here-your-own-map-one-command">Map your own project</a>
   · <a href="#set-it-up-once-github-keeps-the-map-current">Install in a repository</a>
   · <a href="https://www.npmjs.com/package/agent-runtime-map">npm</a>
 </p>
@@ -113,11 +114,24 @@ frames, edge-state tokens, and boundary measurement helpers for embedding the
 same map in another product. See [Visual Components](docs/VISUAL_COMPONENTS.md)
 for the component contract and integration example.
 
+## Start here: your own map, one command
+
+Point it at a project and the interactive map opens in your browser. Nothing to
+configure, no commit, no CI:
+
+```bash
+npx agent-runtime-map@latest .
+```
+
+That is the whole first run. Add `watch` instead to keep the map live while you
+edit, or `--no-open` to skip the browser. Once you have seen your own map, set up
+the section below so it stays current without you asking.
+
 ## Set it up once, GitHub keeps the map current
 
-The primary way to use Agent Runtime Map: install it, run one init, commit the
-workflow it generates — and from then on every push and pull request rebuilds the
-map on GitHub automatically.
+For continuous updates: install it, run one init, commit the workflow it
+generates — and from then on every push and pull request rebuilds the map on
+GitHub automatically.
 
 ```bash
 npm install --save-dev agent-runtime-map

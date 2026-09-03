@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { analyzeTypeScriptProject } from "@agent-runtime-map/typescript";
 import { compileLogicGraph } from "@agent-runtime-map/logic-compiler";
-import { helpText, localizedViewerUrl, resolveCliLocale } from "../packages/cli/src/i18n.js";
+import { cliText, helpText, localizedViewerUrl, resolveCliLocale } from "../packages/cli/src/i18n.js";
 import {
   localizeDiagnostic,
   localizeFeatureLabel,
@@ -23,6 +23,19 @@ describe("localization", () => {
     expect(resolveCliLocale("zh-CN", { LANG: "en_US.UTF-8" })).toBe("zh-CN");
     expect(helpText("zh-CN", "0.1.0")).toContain("Agent 功能电路图");
     expect(localizedViewerUrl("http://127.0.0.1:4173", "zh-CN")).toBe("http://127.0.0.1:4173/?locale=zh-CN");
+  });
+
+  it("tells a freshly initialized project how to open the viewer, in both languages", () => {
+    // Every other path out of init ends in CI — commit, push, wait, download an
+    // artifact, serve it — so without this line a user can finish setup having
+    // never seen the map. The command has to be runnable as printed.
+    for (const locale of ["en", "zh-CN"] as const) {
+      const hint = cliText(locale).initViewHint;
+      expect(hint).toContain("npx agent-runtime-map watch .");
+      // A hint that does not promise a viewer does not fix the problem it exists for.
+      expect(hint).toMatch(locale === "en" ? /viewer/i : /界面/);
+    }
+    expect(cliText("zh-CN").initViewHint).not.toBe(cliText("en").initViewHint);
   });
 
   it("localizes generated graph semantics while preserving code-backed metadata", async () => {
