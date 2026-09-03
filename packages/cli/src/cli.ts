@@ -12,7 +12,7 @@ import {
   type CliText,
 } from "./i18n.js";
 
-const VERSION = "0.9.0";
+const VERSION = "0.9.1";
 
 export async function run(argv = process.argv.slice(2)): Promise<number> {
   const requestedLocale = localeArgument(argv);
