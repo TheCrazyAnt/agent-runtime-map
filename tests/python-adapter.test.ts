@@ -71,6 +71,97 @@ describe("Python adapter", () => {
     expect(python.method).toBe(typescript.method);
   });
 
+  it("labels every route in a module with its own decorator path", async () => {
+    // One route per file hides this: the file-wide lookup and the per-declaration
+    // lookup return the same call. It takes two same-method routes to show up.
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-py-routes-"));
+    temporaryDirectories.push(root);
+    await writeFile(path.join(root, "app.py"), [
+      "from flask import Flask",
+      "",
+      "app = Flask(__name__)",
+      "",
+      "@app.get(\"/health\")",
+      "def health():",
+      "    return {\"ok\": True}",
+      "",
+      "@app.post(\"/api/first\")",
+      "def first_handler():",
+      "    return {\"n\": 1}",
+      "",
+      "@app.post(\"/api/second\")",
+      "def second_handler():",
+      "    return {\"n\": 2}",
+      "",
+      "@app.post(\"/api/third\")",
+      "def third_handler():",
+      "    return {\"n\": 3}",
+      "",
+    ].join("\n"));
+
+    const raw = await analyzePythonProject(root);
+    const routes = new Map(raw.nodes
+      .filter((node) => node.kind === "route")
+      .map((node) => [node.qualifiedName, node]));
+
+    expect(routes.get("app.py#health")?.metadata?.path).toBe("/health");
+    expect(routes.get("app.py#first_handler")?.metadata?.path).toBe("/api/first");
+    expect(routes.get("app.py#second_handler")?.metadata?.path).toBe("/api/second");
+    expect(routes.get("app.py#third_handler")?.metadata?.path).toBe("/api/third");
+    // The node name is what the Viewer and the capability matcher read, so it has to
+    // carry the same path, and four endpoints have to read as four endpoints.
+    expect(new Set([...routes.values()].map((node) => node.name)).size).toBe(4);
+    expect(routes.get("app.py#third_handler")?.name).toBe("POST /api/third");
+  });
+
+  it("picks the decorator above the declaration, not the first one that matches", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-py-route-scopes-"));
+    temporaryDirectories.push(root);
+    await writeFile(path.join(root, "app.py"), [
+      "from flask import Flask",
+      "",
+      "app = Flask(__name__)",
+      "",
+      "class Orders:",
+      "    @app.get(\"/api/orders\")",
+      "    def handle(self):",
+      "        return []",
+      "",
+      "class Invoices:",
+      "    @app.get(\"/api/invoices\")",
+      "    def handle(self):",
+      "        return []",
+      "",
+      "def register():",
+      "    @app.get(\"/api/late\")",
+      "    def late_handler():",
+      "        return []",
+      "",
+      "    return late_handler",
+      "",
+      "class Wiring:",
+      "    def wire(self):",
+      "        @app.get(\"/api/wired\")",
+      "        def wired_handler():",
+      "            return []",
+      "",
+      "        return wired_handler",
+      "",
+    ].join("\n"));
+
+    const raw = await analyzePythonProject(root);
+    const paths = raw.nodes
+      .filter((node) => node.kind === "route")
+      .map((node) => node.metadata?.path);
+
+    // Two methods share a name, so the enclosing scope cannot be the only tie-break.
+    // The last two are routes declared inside another declaration: the extractor puts
+    // the class on the decorator call but not on the nested declaration, so comparing
+    // the two would lose the path rather than sharpen it.
+    expect(paths).toEqual(expect.arrayContaining(["/api/orders", "/api/invoices", "/api/late", "/api/wired"]));
+    expect(paths).not.toContain("/");
+  });
+
   it("reports a file the interpreter cannot parse instead of guessing at it", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "logic-map-py-broken-"));
     temporaryDirectories.push(root);
