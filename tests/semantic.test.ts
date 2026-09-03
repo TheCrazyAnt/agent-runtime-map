@@ -1,7 +1,13 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { LogicGraph, RawCodeGraph } from "@agent-runtime-map/schema";
 import { SCHEMA_VERSION } from "@agent-runtime-map/schema";
-import { enrichLogicGraphWithOpenAI, semanticSnapshot } from "@agent-runtime-map/semantic";
+import { analyzeTypeScriptProject } from "@agent-runtime-map/typescript";
+import { compileLogicGraph } from "@agent-runtime-map/logic-compiler";
+import { applySemanticPatch, enrichLogicGraphWithOpenAI, semanticSnapshot, type SemanticPatch } from "@agent-runtime-map/semantic";
+
+const fixture = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../examples/simple-agent");
 
 const raw: RawCodeGraph = {
   schemaVersion: SCHEMA_VERSION,
@@ -100,7 +106,67 @@ describe("optional semantic compiler", () => {
     expect(enriched.nodes).toHaveLength(1);
     expect(enriched.nodes[0]).toMatchObject({ label: "Research sources", sources: graph.nodes[0].sources, inference: { method: "mixed" } });
     expect(enriched.edges).toEqual(graph.edges);
-    expect(enriched.features[0]?.label).toBe("Generate sourced report");
+    // This fixture was compiled without a semantic slot, so the model's reading can
+    // only land in the description; the label is hashed into the id and stays.
+    expect(enriched.features[0]).toMatchObject({ label: "POST /api/report", description: "Research and produce a cited report.", confidence: 0.85 });
+    expect(enriched.features[0]?.semantic).toBeUndefined();
     expect(enriched.diagnostics).toContainEqual(expect.objectContaining({ code: "SEMANTIC_ENRICHMENT_APPLIED" }));
+  });
+});
+
+describe("feature semantics", () => {
+  const patchFor = (id: string): SemanticPatch => ({
+    summary: "Turns a brief into a story.",
+    confidence: 0.9,
+    nodes: [],
+    features: [{ id, label: " Write a story ", description: " Turns a brief into a finished story. ", confidence: 0.7, reason: "README describes the flow." }],
+  });
+
+  async function compiledFixture(): Promise<LogicGraph> {
+    return compileLogicGraph(await analyzeTypeScriptProject(fixture), { maxNodes: 40 });
+  }
+
+  it("fills a pending feature slot in both locales and leaves the hashed label alone", async () => {
+    const compiled = await compiledFixture();
+    const target = compiled.features.find((feature) => feature.semantic)!;
+    // The fixture names every feature from evidence; marking one pending is the
+    // only edit needed to reach the fill path, and it copies `evidence` untouched.
+    const withPending: LogicGraph = {
+      ...compiled,
+      features: compiled.features.map((feature) => feature.id === target.id
+        ? { ...feature, semantic: { ...feature.semantic!, pending: true } }
+        : feature),
+    };
+
+    const enriched = applySemanticPatch(withPending, patchFor(target.id), "test-model");
+    const feature = enriched.features.find((item) => item.id === target.id)!;
+
+    expect(feature.label).toBe(target.label);
+    expect(feature.description).toBe("Turns a brief into a finished story.");
+    expect(feature.confidence).toBe(Math.min(target.confidence, 0.7));
+    expect(feature.semantic).toEqual({
+      ...target.semantic,
+      label: { "zh-CN": "Write a story", en: "Write a story" },
+      description: { "zh-CN": "Turns a brief into a finished story.", en: "Turns a brief into a finished story." },
+      labelSource: { "zh-CN": "llm", en: "llm" },
+      confidence: { "zh-CN": 0.7, en: 0.7 },
+      pending: false,
+    });
+    const untouched = enriched.features.filter((item) => item.id !== target.id);
+    expect(untouched).toEqual(compiled.features.filter((item) => item.id !== target.id));
+  });
+
+  it("never overwrites a feature name the compiler composed from evidence", async () => {
+    const compiled = await compiledFixture();
+    const target = compiled.features.find((feature) => feature.semantic?.pending === false)!;
+
+    const enriched = applySemanticPatch(compiled, patchFor(target.id), "test-model");
+    const feature = enriched.features.find((item) => item.id === target.id)!;
+
+    expect(feature.semantic).toEqual(target.semantic);
+    expect(feature.label).toBe(target.label);
+    expect(feature.description).toBe(target.description);
+    // The model's doubt still counts even when its name does not.
+    expect(feature.confidence).toBe(Math.min(target.confidence, 0.7));
   });
 });

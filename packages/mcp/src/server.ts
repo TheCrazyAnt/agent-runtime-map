@@ -4,8 +4,9 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { generateLogicMap } from "@agent-runtime-map/core";
-import type { LogicGraph } from "@agent-runtime-map/schema";
+import type { LocaleTag, LogicGraph } from "@agent-runtime-map/schema";
 import {
+  LOCALES,
   describeEvidence,
   describeFeature,
   findFeature,
@@ -33,17 +34,47 @@ interface Analyzed {
 
 const analyzed = new Map<string, Analyzed>();
 
-function toolText(text: string) {
-  return { content: [{ type: "text" as const, text }] };
+/**
+ * What every tool returns: one text block, flagged when the agent should treat it
+ * as a failure. A type alias rather than an interface, because the SDK's result
+ * type carries an index signature that only object type literals satisfy.
+ */
+type ToolResult = {
+  content: { type: "text"; text: string }[];
+  isError?: boolean;
+};
+
+function toolText(text: string): ToolResult {
+  return { content: [{ type: "text", text }] };
 }
 
-function toolError(text: string) {
-  return { content: [{ type: "text" as const, text }], isError: true };
+function toolError(text: string): ToolResult {
+  return { content: [{ type: "text", text }], isError: true };
 }
 
 function resolveRoot(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) throw new Error("A project path is required.");
   return path.resolve(value.trim());
+}
+
+/**
+ * The spellings the CLI's `--locale` accepts, minus `auto`: the CLI reads `auto`
+ * from the terminal's environment, but over MCP that environment belongs to the
+ * server process, not to the person the agent is talking to, so there is nothing
+ * honest to detect from and the protocol default (English) stands instead.
+ */
+const LOCALE_ALIASES: Record<string, LocaleTag> = { zh: "zh-CN", "zh-cn": "zh-CN", en: "en", "en-us": "en" };
+
+/**
+ * Anything other than a known locale is refused, not defaulted: an agent that
+ * asked for Chinese and silently got English would relay the wrong names to its
+ * reader without either of them noticing.
+ */
+function resolveLocale(value: unknown): LocaleTag {
+  if (value === undefined) return "en";
+  const resolved = typeof value === "string" ? LOCALE_ALIASES[value.trim().toLowerCase()] : undefined;
+  if (!resolved) throw new Error(`locale must be one of: ${LOCALES.join(", ")} (got ${JSON.stringify(value)}).`);
+  return resolved;
 }
 
 function requireAnalyzed(value: unknown): Analyzed {
@@ -58,7 +89,18 @@ function requireAnalyzed(value: unknown): Analyzed {
   throw new Error(`Several projects are analyzed; pass one of: ${[...analyzed.keys()].join(", ")}`);
 }
 
-const TOOLS = [
+/**
+ * Shared by every tool that shows a name. The same property on all four means an
+ * agent that picked a language once can pass it everywhere without checking which
+ * tools understand it.
+ */
+const LOCALE_PROPERTY = {
+  type: "string",
+  enum: [...LOCALES],
+  description: "Which language for names and descriptions. Default en; zh-CN shows the same names the Viewer shows a Chinese reader.",
+};
+
+export const TOOLS = [
   {
     name: "analyze_project",
     description:
@@ -70,6 +112,7 @@ const TOOLS = [
         maxNodes: { type: "number", description: "How many logic steps to keep after compression. Default 40." },
         description: { type: "string", description: "What the product does, in your words. Recorded as your claim, kept apart from what the code shows." },
         write: { type: "boolean", description: "Write .logic-map/graph.json into the project. Default false." },
+        locale: LOCALE_PROPERTY,
       },
       required: ["path"],
     },
@@ -79,7 +122,10 @@ const TOOLS = [
     description: "List the feature circuits found in an already analyzed project, with health and step counts.",
     inputSchema: {
       type: "object",
-      properties: { path: { type: "string", description: "Analyzed project path. Optional when only one is analyzed." } },
+      properties: {
+        path: { type: "string", description: "Analyzed project path. Optional when only one is analyzed." },
+        locale: LOCALE_PROPERTY,
+      },
     },
   },
   {
@@ -91,6 +137,7 @@ const TOOLS = [
         feature: { type: "string", description: "Feature id or label, as shown by analyze_project." },
         variant: { type: "string", description: "Variant id, when the feature has more than one inferred branch." },
         path: { type: "string", description: "Analyzed project path. Optional when only one is analyzed." },
+        locale: LOCALE_PROPERTY,
       },
       required: ["feature"],
     },
@@ -104,6 +151,7 @@ const TOOLS = [
         node: { type: "string", description: "Node id or label, as shown by describe_feature." },
         includeSource: { type: "boolean", description: "Include the source lines behind the step. Default false." },
         path: { type: "string", description: "Analyzed project path. Optional when only one is analyzed." },
+        locale: LOCALE_PROPERTY,
       },
       required: ["node"],
     },
@@ -135,7 +183,11 @@ async function readSource(entry: Analyzed, file: string, startLine: number, endL
   }
 }
 
-async function callTool(name: string, args: Record<string, unknown>) {
+async function runTool(name: string, args: Record<string, unknown>) {
+  // Checked before anything expensive, so a misspelt locale is not paid for with a
+  // full analysis. Every tool validates it, even the ones that then look nothing up.
+  const locale = resolveLocale(args.locale);
+
   if (name === "analyze_project") {
     const root = resolveRoot(args.path);
     const result = await generateLogicMap(root, {
@@ -152,11 +204,11 @@ async function callTool(name: string, args: Record<string, unknown>) {
     };
     analyzed.set(root, entry);
     const written = result.outputFile ? `\n\nWritten to ${result.outputFile}` : "";
-    return toolText(summarizeProject(entry.graph, entry.rawNodeCount) + written);
+    return toolText(summarizeProject(entry.graph, entry.rawNodeCount, locale) + written);
   }
 
   if (name === "list_features") {
-    return toolText(summarizeFeatures(requireAnalyzed(args.path).graph));
+    return toolText(summarizeFeatures(requireAnalyzed(args.path).graph, locale));
   }
 
   if (name === "describe_feature") {
@@ -164,9 +216,9 @@ async function callTool(name: string, args: Record<string, unknown>) {
     const key = typeof args.feature === "string" ? args.feature : "";
     const feature = findFeature(entry.graph, key);
     if (!feature) {
-      return toolError(`No feature matches "${key}".\n\n${summarizeFeatures(entry.graph)}`);
+      return toolError(`No feature matches "${key}".\n\n${summarizeFeatures(entry.graph, locale)}`);
     }
-    return toolText(describeFeature(entry.graph, feature, typeof args.variant === "string" ? args.variant : undefined));
+    return toolText(describeFeature(entry.graph, feature, typeof args.variant === "string" ? args.variant : undefined, locale));
   }
 
   if (name === "get_evidence") {
@@ -174,7 +226,7 @@ async function callTool(name: string, args: Record<string, unknown>) {
     const key = typeof args.node === "string" ? args.node : "";
     const node = findNode(entry.graph, key);
     if (!node) return toolError(`No step matches "${key}". Use describe_feature to see the steps of a feature.`);
-    let text = describeEvidence(node);
+    let text = describeEvidence(node, locale);
     if (args.includeSource === true && node.sources[0]) {
       const source = node.sources[0];
       text += `\n\nSource lines:\n${await readSource(entry, source.file, source.startLine, source.endLine)}`;
@@ -185,18 +237,26 @@ async function callTool(name: string, args: Record<string, unknown>) {
   throw new Error(`Unknown tool: ${name}`);
 }
 
+/**
+ * One tool call, as the agent sees it: a text result, or an error result it can act
+ * on. A failure an agent can act on beats a stack trace it cannot, so nothing thrown
+ * inside a tool escapes as a protocol error.
+ */
+export async function callTool(name: string, args: Record<string, unknown>) {
+  try {
+    return await runTool(name, args);
+  } catch (error) {
+    return toolError(error instanceof Error ? error.message : String(error));
+  }
+}
+
 export async function startMcpServer(): Promise<void> {
   const server = new Server({ name: NAME, version: VERSION }, { capabilities: { tools: {} } });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    try {
-      return await callTool(request.params.name, (request.params.arguments ?? {}) as Record<string, unknown>);
-    } catch (error) {
-      // A failure an agent can act on beats a stack trace it cannot.
-      return toolError(error instanceof Error ? error.message : String(error));
-    }
-  });
+  server.setRequestHandler(CallToolRequestSchema, async (request) =>
+    callTool(request.params.name, (request.params.arguments ?? {}) as Record<string, unknown>),
+  );
 
   await server.connect(new StdioServerTransport());
 }

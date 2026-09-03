@@ -103,7 +103,10 @@ export function localizeNodeSemantics(
 ): SemanticLabel {
   const technicalName = typeof node.metadata?.rawName === "string" ? node.metadata.rawName : node.label;
   const rawKind = node.metadata?.rawKind;
-  const evidence: SourceLocation[] = [];
+  // One list per language, filled by the branch that named THAT language. A single
+  // shared list let the first locale's document stand behind the second locale's
+  // identifier reading, which is a claim the document cannot back.
+  const evidence: Record<LocaleTag, SourceLocation[]> = { "zh-CN": [], en: [] };
 
   const label: Record<LocaleTag, string> = { "zh-CN": "", en: "" };
   const labelSource: Record<LocaleTag, LabelSource> = { "zh-CN": "pending", en: "pending" };
@@ -120,7 +123,7 @@ export function localizeNodeSemantics(
       label[locale] = stated;
       labelSource[locale] = "config";
       confidence[locale] = 1;
-      if (!evidence.some((item) => item.file === CONFIG_SOURCE.file)) evidence.push(CONFIG_SOURCE);
+      addEvidence(evidence[locale], CONFIG_SOURCE);
       continue;
     }
     // 2. A capability the project documented, when it is written in this language.
@@ -128,9 +131,7 @@ export function localizeNodeSemantics(
       label[locale] = capability.label;
       labelSource[locale] = "documented";
       confidence[locale] = capability.confidence;
-      for (const source of capability.sources.slice(0, 2)) {
-        if (!evidence.some((item) => item.file === source.file && item.startLine === source.startLine)) evidence.push(source);
-      }
+      for (const source of capability.sources.slice(0, 2)) addEvidence(evidence[locale], source);
       continue;
     }
     // 3. A route and a vendor name are already the clearest thing they can be:
@@ -140,6 +141,9 @@ export function localizeNodeSemantics(
     // paste into a terminal. Judged by the label's own shape rather than by the
     // node's type, so a CLI entrypoint named `runMigrations` is still read as a
     // name while a route stays an address.
+    // Neither an address nor a vendor id records naming evidence: the name is the
+    // string itself, copied rather than read, so there is no claim to check beyond
+    // the node's own sources.
     if (rawKind === "route" || isAddress(node.label)) {
       label[locale] = node.label;
       labelSource[locale] = "route";
@@ -167,7 +171,7 @@ export function localizeNodeSemantics(
     confidence[locale] = read.confidence;
     // The declaration IS the evidence for a name read off its identifier. Naming
     // it makes the claim checkable instead of merely confident.
-    if (read.source === "identifier" && node.sources[0] && !evidence.length) evidence.push(node.sources[0]);
+    if (read.source === "identifier" && node.sources[0]) addEvidence(evidence[locale], node.sources[0]);
     if (read.tokens.length && !glossary) glossary = read.tokens.slice(0, MAX_GLOSSARY);
   }
 
@@ -183,7 +187,9 @@ export function localizeNodeSemantics(
     }
   }
 
-  const description = describeNode(node, label, labelSource, nodesById, override, capability, evidence);
+  // The description does not touch `evidence`: that list backs the NAME, and a
+  // sentence assembled from the node's behavior cites nothing a name can borrow.
+  const description = describeNode(node, label, labelSource, nodesById, override, capability);
 
   return {
     label: { "zh-CN": label["zh-CN"], en: label.en },
@@ -192,9 +198,14 @@ export function localizeNodeSemantics(
     labelSource: { "zh-CN": labelSource["zh-CN"], en: labelSource.en },
     confidence: { "zh-CN": round(confidence["zh-CN"]), en: round(confidence.en) },
     pending,
-    evidence,
+    evidence: { "zh-CN": evidence["zh-CN"], en: evidence.en },
     glossary,
   };
+}
+
+/** Adds a source once per list: the same doc line cited twice is not stronger evidence. */
+function addEvidence(list: SourceLocation[], source: SourceLocation): void {
+  if (!list.some((item) => item.file === source.file && item.startLine === source.startLine)) list.push(source);
 }
 
 /**
@@ -401,7 +412,6 @@ function describeNode(
   nodesById: ReadonlyMap<string, LogicNode>,
   override: NodeOverride | undefined,
   capability: ProjectCapabilityHint | undefined,
-  evidence: SourceLocation[],
 ): LocalizedText {
   const out: Record<LocaleTag, string> = { "zh-CN": "", en: "" };
   const generated = node.metadata?.generatedDescription === true;
@@ -427,7 +437,6 @@ function describeNode(
         : `This step's business meaning could not be read from evidence; its technical name is ${node.metadata?.rawName ?? node.label}.`)
       : typeSentence(locale, node.type, label[locale]);
   }
-  if (capability && !evidence.length) evidence.push(...capability.sources.slice(0, 1));
   return { "zh-CN": out["zh-CN"], en: out.en };
 }
 

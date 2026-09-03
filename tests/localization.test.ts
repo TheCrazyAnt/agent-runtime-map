@@ -154,9 +154,116 @@ describe("terms a project states for itself", () => {
     expect(semantic.label.en).toBe("Take in a customer ticket");
     expect(semantic.labelSource["zh-CN"]).toBe("config");
     expect(semantic.confidence["zh-CN"]).toBe(1);
-    expect(semantic.evidence.some((item) => item.file === "agent-runtime-map.config.json")).toBe(true);
+    // Both names were stated in the config, so both cite it.
+    for (const locale of ["zh-CN", "en"] as const) {
+      expect(semantic.evidence[locale].some((item) => item.file === "agent-runtime-map.config.json")).toBe(true);
+    }
     // The name in code is never lost.
     expect(semantic.technicalName).toBe("handleTicket");
+  });
+});
+
+describe("naming evidence is recorded per language", () => {
+  /**
+   * The two names can come from different places, and each must cite its own.
+   * A Chinese README line behind an English name read off the identifier — or
+   * the reverse — would be a claim the cited document cannot back.
+   */
+  const README = { file: "README.md", startLine: 12 };
+  const DECLARATION = { file: "src/x.ts", startLine: 1 };
+  const cite = (list: { file: string; startLine?: number }[], source: { file: string; startLine?: number }) =>
+    list.some((item) => item.file === source.file && item.startLine === source.startLine);
+
+  /** A node the product matcher tied to a documented capability by its stated name. */
+  function documented(id: string, rawName: string, capabilityId: string): LogicNode {
+    return node(id, "process", rawName, {
+      metadata: { rawName, generatedDescription: true, documentedCapabilityId: capabilityId },
+      product: { capabilityId, label: rawName, origin: "readme", sources: [README], match: 1, matchedOn: "documented_name", matchedTerms: [] },
+    });
+  }
+
+  it("cites the document for the language it names, and the declaration for the other", () => {
+    // An English README names `approveRefund`; Chinese still reads the identifier.
+    const capabilities = [{ id: "c_refund", label: "Approve Refund", description: "", keywords: [], origin: "readme" as const, sources: [README], confidence: 0.9 }];
+    const semantic = semanticsOf(documented("n_doc", "approveRefund", "c_refund"), { capabilities });
+    expect(semantic.labelSource.en).toBe("documented");
+    expect(semantic.labelSource["zh-CN"]).toBe("identifier");
+    expect(cite(semantic.evidence.en, README)).toBe(true);
+    expect(cite(semantic.evidence.en, DECLARATION)).toBe(false);
+    expect(cite(semantic.evidence["zh-CN"], DECLARATION)).toBe(true);
+    expect(cite(semantic.evidence["zh-CN"], README)).toBe(false);
+  });
+
+  it("cites a Chinese document for the Chinese name only, never for the English reading", () => {
+    // A documented name may only rename a step when it covers the whole identifier,
+    // so a Chinese line can currently only name an identifier written in Chinese;
+    // the English reading of that identifier then comes from a configured term.
+    const capabilities = [{ id: "c_zh", label: "退款", description: "", keywords: [], origin: "readme" as const, sources: [README], confidence: 0.9 }];
+    const overrides = { terms: { "退款": { en: "refund" } } };
+    const semantic = semanticsOf(documented("n_zh", "退款", "c_zh"), { capabilities, overrides });
+    expect(semantic.labelSource["zh-CN"]).toBe("documented");
+    expect(semantic.labelSource.en).toBe("identifier");
+    expect(cite(semantic.evidence["zh-CN"], README)).toBe(true);
+    expect(cite(semantic.evidence["zh-CN"], DECLARATION)).toBe(false);
+    expect(cite(semantic.evidence.en, DECLARATION)).toBe(true);
+    expect(cite(semantic.evidence.en, README)).toBe(false);
+  });
+
+  it("cites the config only for the language a person stated", () => {
+    const overrides = { nodes: { handleTicket: { label: { "zh-CN": "受理工单" } } } };
+    const semantic = semanticsOf(node("n_cfg", "process", "handleTicket"), { capabilities: [], overrides });
+    expect(semantic.labelSource["zh-CN"]).toBe("config");
+    expect(semantic.labelSource.en).toBe("identifier");
+    expect(semantic.evidence["zh-CN"].map((item) => item.file)).toEqual(["agent-runtime-map.config.json"]);
+    expect(cite(semantic.evidence.en, DECLARATION)).toBe(true);
+    expect(semantic.evidence.en.some((item) => item.file === "agent-runtime-map.config.json")).toBe(false);
+  });
+
+  it("cites the declaration in both languages when both read the identifier", () => {
+    const semantic = semanticsOf(node("n_id", "ai_process", "createStoryAgent"));
+    expect(semantic.labelSource["zh-CN"]).toBe("identifier");
+    expect(semantic.labelSource.en).toBe("identifier");
+    expect(semantic.evidence["zh-CN"]).toEqual([DECLARATION]);
+    expect(semantic.evidence.en).toEqual([DECLARATION]);
+  });
+
+  it("cites nothing for a name shown verbatim", () => {
+    // A route or a vendor id is copied, not read; the node's own sources already
+    // say where it is declared.
+    const route = semanticsOf(node("n_route", "entrypoint", "POST /api/tickets"));
+    const model = semanticsOf(node("n_model", "model", "gpt-5", { metadata: { rawName: "gpt-5", rawKind: "model" } }));
+    for (const semantic of [route, model]) {
+      expect(semantic.evidence["zh-CN"]).toEqual([]);
+      expect(semantic.evidence.en).toEqual([]);
+    }
+  });
+
+  it("gives a feature the evidence of its parts, per language", () => {
+    const capabilities = [{ id: "c_refund", label: "Approve Refund", description: "", keywords: [], origin: "readme" as const, sources: [README], confidence: 0.9 }];
+    const work = node("work", "ai_process", "generateStory", { sources: [{ file: "src/work.ts", startLine: 4 }] });
+    const nodes = [
+      node("entry", "entrypoint", "POST /api/x"),
+      work,
+      documented("out", "approveRefund", "c_refund"),
+    ];
+    const byId = new Map(nodes.map((item) => [item.id, item]));
+    for (const item of nodes) item.semantic = localizeNodeSemantics(item, { capabilities }, byId);
+    const feature: FeatureScenario = {
+      id: "f", label: "entry", description: "", entryNodeIds: ["entry"], resultNodeIds: ["out"], nodeIds: ["entry", "work", "out"], edgeIds: [],
+      variants: [{ id: "f_v", label: "main", description: "", nodeIds: ["entry", "work", "out"], edgeIds: [], steps: [], resultNodeId: "out", confidence: 1 }],
+      diagnostics: [], health: "healthy", confidence: 1,
+    };
+    composeFeatureNames([feature], byId);
+    const evidence = feature.semantic!.evidence;
+    // The English name borrowed the README through its result; the Chinese one did not.
+    expect(cite(evidence.en, README)).toBe(true);
+    expect(cite(evidence["zh-CN"], README)).toBe(false);
+    expect(cite(evidence["zh-CN"], DECLARATION)).toBe(true);
+    // The identifier-read step is cited in both, and the verbatim route in neither.
+    for (const locale of ["zh-CN", "en"] as const) {
+      expect(cite(evidence[locale], { file: "src/work.ts", startLine: 4 })).toBe(true);
+      expect(evidence[locale].length).toBe(new Set(evidence[locale].map((item) => `${item.file}:${item.startLine}`)).size);
+    }
   });
 });
 
@@ -257,7 +364,7 @@ describe("uncertainty is reported per language", () => {
       // The flat flag stays true whenever EITHER language failed; the per-locale
       // answer must not be taken from it.
       pending: zh === "pending" || en === "pending",
-      evidence: [],
+      evidence: { "zh-CN": [], en: [] },
     };
     return item;
   }
@@ -285,7 +392,8 @@ describe("uncertainty is reported per language", () => {
 
   it("falls back to the flat flag for a graph compiled before labelSource existed", () => {
     const item = node("n_old", "tool", "kbSearchTool");
-    // Exactly the shape an older artifact has: a summary flag, no per-locale source.
+    // Exactly the shape an older artifact has: a summary flag, no per-locale
+    // source, and one flat evidence list.
     item.semantic = {
       label: { "zh-CN": "待确认", en: "Unconfirmed" },
       description: { "zh-CN": "描述", en: "description" },
@@ -310,7 +418,7 @@ describe("uncertainty is reported per language", () => {
         labelSource: { "zh-CN": "pending", en: "composed" },
         confidence: { "zh-CN": 0.4, en: 1 },
         pending: true,
-        evidence: [],
+        evidence: { "zh-CN": [], en: [] },
       },
     };
     const graph = { nodes: [], edges: [], features: [feature] } as unknown as LogicGraph;

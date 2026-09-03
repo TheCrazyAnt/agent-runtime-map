@@ -268,8 +268,16 @@ export interface SemanticLabel {
   confidence: LocalizedValue<number>;
   /** True when either locale could not be named from evidence: the Viewer shows 待确认. */
   pending: boolean;
-  /** Where the NAME came from — a doc line or a config line. Distinct from the node's own sources. */
-  evidence: SourceLocation[];
+  /**
+   * The sources behind the NAME in each language, distinct from the node's own
+   * `sources`. Per locale because the two names can legitimately come from
+   * different places — a Chinese README line for one, the identifier's own
+   * declaration for the other — and one flat list would attach the document to a
+   * name that was never read from it. Both slots are always present; a slot is an
+   * empty array when the name needed no reading at all (a route or a vendor id is
+   * shown verbatim, so there is no claim beyond the node's own sources).
+   */
+  evidence: LocalizedValue<SourceLocation[]>;
   /** How each token of the identifier was rendered. Capped so a node stays small. */
   glossary?: SemanticToken[];
 }
