@@ -2,6 +2,39 @@
 
 All notable changes are documented here.
 
+## Unreleased
+
+### Added
+
+- The MCP tools accept an optional `locale` (`zh-CN` or `en`, default `en`).
+  Names and descriptions follow it together, so a Chinese reader gets the same
+  names the Viewer shows; a name the compiler could not confirm is marked once.
+
+### Fixed
+
+- The optional LLM layer's feature names were written into a slot the Viewer
+  never reads while the lowered confidence was shown; they now land in
+  `feature.semantic` under the same rule as nodes, and `feature.label` is
+  never renamed because it is hashed into the feature id.
+- `report.html` opened as a local file showed technical names where the
+  served Viewer showed business names; the inline fallback now resolves the
+  locale the way the Viewer does and reads the same semantic slot.
+- `SemanticLabel.evidence` is recorded per language, so a Chinese name read
+  from a document and an English name read off the identifier each cite
+  their own source. Older `graph.json` files still load unchanged.
+- The Action E2E's `map-pages` job really published the fixture map to this
+  repository's Pages site; it no longer holds Pages permissions and asserts
+  that the deploy is refused.
+- The Python adapter states its 3.10 minimum (`ast.Match`) instead of failing
+  with an `AttributeError`, and both READMEs document it.
+
+### Changed
+
+- `tsconfig.json` uses `./`-relative `paths` without `baseUrl`, the form
+  TypeScript 7 requires; Dependabot no longer groups TypeScript major bumps
+  with other development dependencies.
+- `docs/ROADMAP.md` is aligned with `docs/CC_HANDOFF.md` §9 and the code.
+
 ## 0.8.3 - 2026-08-29
 
 ### Fixed
