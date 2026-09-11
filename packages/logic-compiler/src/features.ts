@@ -144,7 +144,14 @@ function matchDocumentedCapability(
   let best: FeatureCapabilityMatch | undefined;
   for (const capability of capabilities) {
     const capabilityTokens = semanticTokens(`${capability.label} ${capability.keywords.join(" ")}`);
-    const entryHits = [...capabilityTokens].filter((token) => entryTokens.has(token)).length;
+    // An entry hit weighs 8, so a single one decides the match. Only the capability's
+    // own name may carry that weight: words from its description ("自动" inside
+    // "自动拍成…可导进剪映的成片") say nothing about whether an entry implements the
+    // capability, and splitting Han runs into 2-grams puts many such words within
+    // reach of an unrelated entry name. The description still counts as step
+    // evidence below, where it is weighed at 1 and has to clear the weak-match floor.
+    const nameTokens = semanticTokens(capability.label);
+    const entryHits = [...nameTokens].filter((token) => entryTokens.has(token)).length;
     const graphHits = [...capabilityTokens].filter((token) => tokens.has(token)).length;
     const score = entryHits * 8 + graphHits + (documentedCounts.get(capability.id) ?? 0) * 0.5;
     if (score > 0 && (!best || score > best.score || (score === best.score && capability.confidence > best.capability.confidence))) {

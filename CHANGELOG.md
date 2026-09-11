@@ -16,6 +16,12 @@ All notable changes are documented here.
   README's capabilities almost never matched, and features fell back to naming
   themselves after code. Both sides now split Han runs the same way — whole term
   plus 2-grams — and the length floor applies only where it was meant to.
+- A feature could borrow a documented capability's name on the strength of a word
+  from that capability's *description* rather than its name. An entry-term hit
+  weighs 8 and decides the match, so a retry loop could be presented as `成片`
+  because the capability's description happened to contain `自动` — wrong, and
+  wrong in a way that looks right. Only a capability's own name can carry an entry
+  match now; its description still counts as ordinary step evidence.
 
 ## 0.9.2 - 2026-09-03
 
