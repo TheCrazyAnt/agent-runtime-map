@@ -59,6 +59,33 @@ describe("feature chain compiler", () => {
     expect(features[0].variants.slice(1).every((variant) => variant.resultNodeId)).toBe(true);
   });
 
+  it("names a feature after the Chinese capability its documentation declares", () => {
+    // The reader keeps Han terms whole and in 2-grams; the matcher used to drop every
+    // token shorter than three characters, which is every second Chinese term. The two
+    // sides then tokenized the same words differently and a documented Chinese
+    // capability could never win, so features fell back to their code names — the
+    // reason a Chinese project's list read as "(底层)创作库事务" instead of "成片".
+    const nodes = [
+      node("生成成片", "entrypoint"),
+      node("渲染", "ai_process"),
+      node("成片文件", "result"),
+    ];
+    const edges = [edge("生成成片", "渲染"), edge("渲染", "成片文件")];
+
+    const features = compileFeatureScenarios(nodes, edges, [{
+      id: "capability_render",
+      label: "成片",
+      description: "自动拍成可导进剪映的成片。",
+      keywords: ["成片", "剪映"],
+      origin: "readme",
+      sources: [{ file: "README.md", startLine: 3 }],
+      confidence: 0.8,
+    }]);
+
+    expect(features).toHaveLength(1);
+    expect(features[0].label).toBe("成片");
+  });
+
   it("marks an entry with no downstream chain as a deterministic error", () => {
     const features = compileFeatureScenarios([node("POST /api/publish", "entrypoint")], []);
 

@@ -11,6 +11,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@agent-runtime-map/analysis-kit": "*",
     "@agent-runtime-map/schema": "*"
   }
 }

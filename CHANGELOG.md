@@ -2,6 +2,21 @@
 
 All notable changes are documented here.
 
+## Unreleased
+
+### Fixed
+
+- A Chinese project's documented capabilities could not reach the map. Three
+  separate places measured Chinese by rules written for Latin: a two-character
+  heading (`选题`, `成片`, `导出`) fell under the three-character floor meant to
+  reject `AI` and `v2`; a run of Han characters was matched greedily, so a whole
+  clause became one token and an eight-character cap cut terms in half; and the
+  reader kept two-character terms while the matcher filtered them out, leaving the
+  two sides unable to agree on the same word. Together these meant a Chinese
+  README's capabilities almost never matched, and features fell back to naming
+  themselves after code. Both sides now split Han runs the same way — whole term
+  plus 2-grams — and the length floor applies only where it was meant to.
+
 ## 0.9.2 - 2026-09-03
 
 ### Changed
