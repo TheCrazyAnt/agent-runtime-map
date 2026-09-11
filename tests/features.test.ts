@@ -86,6 +86,30 @@ describe("feature chain compiler", () => {
     expect(features[0].label).toBe("成片");
   });
 
+  it("matches a capability named inside a step when the project has no route for it", () => {
+    // Not every capability arrives through an HTTP route. A project whose business
+    // logic is exported functions has no entrypoint node to carry the high-weight
+    // entry match, so the capability 选题 fell to step evidence and was rejected by
+    // the weak-match floor even though a step is literally called 热点选题. A
+    // capability's own name appearing in a step is strong evidence; a word from its
+    // description appearing there is not.
+    const nodes = [node("热点选题", "process"), node("大模型", "ai_process"), node("选题结果", "result")];
+    const edges = [edge("热点选题", "大模型"), edge("大模型", "选题结果")];
+
+    const features = compileFeatureScenarios(nodes, edges, [{
+      id: "capability_topic",
+      label: "选题",
+      description: "从热点里找选题。",
+      keywords: ["选题", "热点"],
+      origin: "readme",
+      sources: [{ file: "README.md", startLine: 3 }],
+      confidence: 0.8,
+    }]);
+
+    expect(features[0].label).toBe("选题");
+    expect(features[0].product?.label).toBe("选题");
+  });
+
   it("refuses to borrow a capability name on a word from its description", () => {
     // Entry hits weigh 8, so one is decisive. A common word that appears in a
     // capability's *description* — 自动, 生成, 处理 — is not evidence that an entry

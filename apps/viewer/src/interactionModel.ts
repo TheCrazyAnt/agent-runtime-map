@@ -1,7 +1,33 @@
 import type { Edge, Node, XYPosition } from "@xyflow/react";
 import { BLUEPRINT_CODE_NODE_HEIGHT, BLUEPRINT_CODE_NODE_WIDTH } from "@agent-runtime-map/react";
 import type { BlueprintCodeNodeData, BlueprintLogicNodeData } from "@agent-runtime-map/react";
-import type { FeaturePathVariant, LogicEdge, LogicNode, RawCodeGraph, RawCodeNode } from "@agent-runtime-map/schema";
+import type { FeaturePathVariant, FeatureScenario, LogicEdge, LogicNode, RawCodeGraph, RawCodeNode } from "@agent-runtime-map/schema";
+
+export interface FeatureGroups {
+  primary: FeatureScenario[];
+  other: FeatureScenario[];
+}
+
+/**
+ * Every entrypoint the user's own actions cannot reach becomes a feature, so a large
+ * codebase contributes one per internal transaction, auth check and helper. They are
+ * real entries and stay available, but listing them beside the product's capabilities
+ * buries the capabilities: the list is sorted by health, not importance, so in
+ * practice the internal ones surface first and the reader scrolls past the answer.
+ *
+ * `product` is the split: it is set only when a documented capability matched
+ * strongly enough to lend its name, so it already means "the project says this
+ * exists". Nothing is dropped — the rest moves behind a disclosure.
+ *
+ * A project with no documentation at all would otherwise get an empty list and a
+ * drawer holding everything, which is strictly worse than the flat list it had. When
+ * nothing is documented there is no signal to separate, so the flat list is kept.
+ */
+export function groupFeatures(features: FeatureScenario[]): FeatureGroups {
+  const documented = features.filter((feature) => feature.product);
+  if (!documented.length) return { primary: features, other: [] };
+  return { primary: documented, other: features.filter((feature) => !feature.product) };
+}
 
 export interface CodeDetailExpansion {
   nodes: Node<BlueprintCodeNodeData>[];

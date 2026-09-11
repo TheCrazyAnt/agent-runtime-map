@@ -152,8 +152,15 @@ function matchDocumentedCapability(
     // evidence below, where it is weighed at 1 and has to clear the weak-match floor.
     const nameTokens = semanticTokens(capability.label);
     const entryHits = [...nameTokens].filter((token) => entryTokens.has(token)).length;
+    // Evidence is weighed by what it is, not only by where it lands. A capability's
+    // own name inside a step ("选题" within a step called "热点选题") is strong: not
+    // every project routes its capabilities through HTTP, and one whose logic is
+    // exported functions has no entrypoint node to carry the entry weight at all.
+    // A word from the capability's *description* landing in the same place is weak,
+    // and stays at 1 so it still cannot clear the floor on its own.
+    const nameHits = [...nameTokens].filter((token) => tokens.has(token)).length;
     const graphHits = [...capabilityTokens].filter((token) => tokens.has(token)).length;
-    const score = entryHits * 8 + graphHits + (documentedCounts.get(capability.id) ?? 0) * 0.5;
+    const score = entryHits * 8 + nameHits * 3 + graphHits + (documentedCounts.get(capability.id) ?? 0) * 0.5;
     if (score > 0 && (!best || score > best.score || (score === best.score && capability.confidence > best.capability.confidence))) {
       best = {
         capability,

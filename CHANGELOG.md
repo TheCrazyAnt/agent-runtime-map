@@ -22,6 +22,22 @@ All notable changes are documented here.
   because the capability's description happened to contain `自动` — wrong, and
   wrong in a way that looks right. Only a capability's own name can carry an entry
   match now; its description still counts as ordinary step evidence.
+- A capability named inside a step could not be matched unless the project routed
+  it through an entrypoint, so a codebase whose logic is exported functions saw
+  its documented capabilities rejected by the weak-match floor. A capability's own
+  name appearing in a step now counts as strong evidence, while a word from its
+  description still counts as weak.
+
+### Changed
+
+- The feature list separates the capabilities a project documents from the bare
+  entry points only the code knows about. Every entrypoint the user cannot reach
+  becomes a feature, so a large codebase contributes one per internal transaction,
+  auth check and helper — and since the list sorts by health rather than
+  importance, those surfaced first and buried the product's own capabilities.
+  Documented capabilities now lead the list and the rest move behind an "Other
+  entry points" disclosure that states what it holds. Nothing is removed, and a
+  project that documents nothing keeps the flat list it had.
 
 ## 0.9.2 - 2026-09-03
 

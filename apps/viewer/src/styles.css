@@ -60,6 +60,17 @@ button { color: inherit; }
 .section-heading > span:last-child { font: 8px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .section-hint { margin: 8px 0 10px; color: #848d98; font-size: 9px; line-height: 1.45; }
 .feature-circuits { flex: 0 0 auto; }
+/* Entries the documentation does not name stay reachable but stop competing with
+   the capabilities for the reader's first glance. Muted, not hidden. */
+.other-entries { margin-top: 8px; border-top: 1px dashed #dfe4ea; padding-top: 8px; }
+.other-entries > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 2px; color: #848d98; font-size: 9px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; list-style: none; }
+.other-entries > summary::-webkit-details-marker { display: none; }
+.other-entries > summary::before { content: "▸"; margin-right: 2px; color: #a8b2bc; font-size: 8px; transition: transform .16s ease; }
+.other-entries[open] > summary::before { transform: rotate(90deg); }
+.other-entries > summary:hover { color: #5a6672; }
+.other-entries > summary b { flex: 0 0 auto; min-width: 17px; padding: 1px 5px; border-radius: 7px; color: #7d8793; font-size: 8px; font-weight: 650; background: #eef2f5; }
+.other-entries > summary > span { flex: 1 1 auto; }
+.other-entries .feature-list { max-height: 158px; }
 .feature-list { display: grid; gap: 6px; max-height: 214px; margin-top: 6px; padding-right: 2px; overflow: auto; }
 .feature-card { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; min-height: 45px; padding: 7px 9px; border: 1px solid #dfe4ea; border-radius: 9px; color: #7d8793; background: rgba(255,255,255,.82); text-align: left; cursor: pointer; box-shadow: 0 2px 8px rgba(39,48,58,.025); transition: .16s ease; }
 .feature-card:hover { border-color: #b7c5d1; background: #fff; transform: translateX(1px); }
