@@ -16,7 +16,7 @@ import {
 } from "./summaries.js";
 
 const NAME = "agent-runtime-map";
-const VERSION = "0.9.2";
+const VERSION = "0.9.3";
 
 /**
  * One analyzed project, kept so the follow-up questions are free.
