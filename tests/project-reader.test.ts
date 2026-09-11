@@ -62,6 +62,55 @@ describe("project reader", () => {
     expect(context.capabilityHints.map((capability) => capability.label)).toEqual(["Safe Feature"]);
   });
 
+  it("reads a two-character Chinese capability heading the way it reads an English one", async () => {
+    // A Chinese term is complete at two characters — 选题, 成片, 导出, 登录 are all
+    // whole business capabilities. The three-character floor exists to reject Latin
+    // fragments ("AI", "v2"), and applying it to Han characters silently dropped the
+    // majority of a Chinese README's headings: the capability never reached the
+    // matcher, so every feature fell back to naming itself after code.
+    const root = await mkdtemp(path.join(os.tmpdir(), "agent-map-cjk-headings-"));
+    temporaryDirectories.push(root);
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "cjk-headings" }));
+    await writeFile(path.join(root, "README.md"), [
+      "# 编导工作台",
+      "",
+      "## 选题",
+      "从热点里找选题。",
+      "",
+      "## 成片",
+      "自动拍成可导进剪映的成片。",
+      "",
+      "## 出点子",
+      "给选题出点子。",
+      "",
+      "## AI",
+      "两个字母的拉丁缩写仍然不算一个能力。",
+      "",
+    ].join("\n"));
+
+    const context = await readProjectContext(root);
+    const labels = context.capabilityHints.map((capability) => capability.label);
+
+    expect(labels).toEqual(expect.arrayContaining(["选题", "成片", "出点子"]));
+    expect(labels).not.toContain("AI");
+  });
+
+  it("keeps a Chinese term findable instead of gluing it to its neighbours", async () => {
+    // Han runs have no spaces to split on. Matching a run greedily produced tokens
+    // like "给选题出点子" (a whole sentence) and cut "工作台" in half at an 8-character
+    // cap, so a capability's keywords could not meet the code's own terms halfway.
+    const root = await mkdtemp(path.join(os.tmpdir(), "agent-map-cjk-tokens-"));
+    temporaryDirectories.push(root);
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "cjk-tokens" }));
+    await writeFile(path.join(root, "README.md"), "# 工作台\n\n## 出点子\n\n给选题出点子。\n");
+
+    const context = await readProjectContext(root);
+    const hint = context.capabilityHints.find((capability) => capability.label === "出点子");
+
+    // "选题" is the term a reader would search for; before, only the full sentence survived.
+    expect(hint?.keywords).toEqual(expect.arrayContaining(["选题"]));
+  });
+
   it("feeds project understanding and documented feature names into the generated graph", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agent-map-understanding-"));
     temporaryDirectories.push(root);

@@ -13,6 +13,7 @@ import {
   type ProductMatchKind,
   type ProjectCapabilityHint,
 } from "@agent-runtime-map/schema";
+import { cjkTokens } from "@agent-runtime-map/analysis-kit";
 
 /**
  * Types a step depends on rather than continues into. The model it requests, the
@@ -143,9 +144,23 @@ function matchDocumentedCapability(
   let best: FeatureCapabilityMatch | undefined;
   for (const capability of capabilities) {
     const capabilityTokens = semanticTokens(`${capability.label} ${capability.keywords.join(" ")}`);
-    const entryHits = [...capabilityTokens].filter((token) => entryTokens.has(token)).length;
+    // An entry hit weighs 8, so a single one decides the match. Only the capability's
+    // own name may carry that weight: words from its description ("自动" inside
+    // "自动拍成…可导进剪映的成片") say nothing about whether an entry implements the
+    // capability, and splitting Han runs into 2-grams puts many such words within
+    // reach of an unrelated entry name. The description still counts as step
+    // evidence below, where it is weighed at 1 and has to clear the weak-match floor.
+    const nameTokens = semanticTokens(capability.label);
+    const entryHits = [...nameTokens].filter((token) => entryTokens.has(token)).length;
+    // Evidence is weighed by what it is, not only by where it lands. A capability's
+    // own name inside a step ("选题" within a step called "热点选题") is strong: not
+    // every project routes its capabilities through HTTP, and one whose logic is
+    // exported functions has no entrypoint node to carry the entry weight at all.
+    // A word from the capability's *description* landing in the same place is weak,
+    // and stays at 1 so it still cannot clear the floor on its own.
+    const nameHits = [...nameTokens].filter((token) => tokens.has(token)).length;
     const graphHits = [...capabilityTokens].filter((token) => tokens.has(token)).length;
-    const score = entryHits * 8 + graphHits + (documentedCounts.get(capability.id) ?? 0) * 0.5;
+    const score = entryHits * 8 + nameHits * 3 + graphHits + (documentedCounts.get(capability.id) ?? 0) * 0.5;
     if (score > 0 && (!best || score > best.score || (score === best.score && capability.confidence > best.capability.confidence))) {
       best = {
         capability,
@@ -163,10 +178,17 @@ function matchDocumentedCapability(
 }
 
 function semanticTokens(value: string): Set<string> {
-  const matches = value.toLowerCase().match(/[a-z][a-z0-9-]{2,}|[\u3400-\u9fff]{2,8}/g) ?? [];
-  return new Set(matches.map((token) => semanticStem(token)
-    .replace(/^(post|get|put|patch|delete)$/, ""))
-    .filter((token) => token.length >= 3));
+  // Latin and Han need different treatment and used to share one pattern. The
+  // three-character filter is right for Latin \u2014 stemming can shorten a token into
+  // noise \u2014 but it deleted every two-character Chinese term (\u9009\u9898, \u6210\u7247, \u5bfc\u51fa) that
+  // the pattern had just matched, so half the vocabulary of a Chinese project was
+  // discarded here while the reader kept it. Han runs now go through the same
+  // splitter both sides use, and are not measured by the Latin floor.
+  const latin = value.toLowerCase().match(/[a-z][a-z0-9-]{2,}/g) ?? [];
+  const stemmed = latin
+    .map((token) => semanticStem(token).replace(/^(post|get|put|patch|delete)$/, ""))
+    .filter((token) => token.length >= 3);
+  return new Set([...stemmed, ...cjkTokens(value)]);
 }
 
 function semanticStem(value: string): string {

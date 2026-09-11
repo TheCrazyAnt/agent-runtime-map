@@ -239,6 +239,42 @@ export function templateVariables(value: string): string[] {
   return [...new Set([...value.matchAll(/\{\{?\s*([a-zA-Z0-9_.]+)\s*\}?\}/g)].map((match) => match[1]!))];
 }
 
+const HAN_RUN = /[㐀-鿿]+/g;
+
+/**
+ * Latin text arrives pre-split by spaces and case changes; a run of Han characters
+ * does not, and matching one greedily yields tokens no one would search for — a
+ * whole clause ("给选题出点子"), a function word welded to its term ("从热点选题"),
+ * or a term cut in half by a length cap ("保险短视频编导工" + "作台"). None of those
+ * meet the code's own vocabulary, so a Chinese document's capabilities never
+ * matched anything and every feature fell back to naming itself after code.
+ *
+ * Emitting every 2-gram alongside a short run recovers the units a reader names —
+ * 选题, 故事, 成片. The extra grams that mean nothing ("点选") are the deliberate
+ * cost: a spurious token can only fail to match, while a missing one loses the
+ * capability outright. Two characters is the floor because that is where a Chinese
+ * term starts, unlike Latin, where two characters is still an abbreviation.
+ */
+export function cjkTokens(value: string): string[] {
+  const tokens: string[] = [];
+  for (const run of value.match(HAN_RUN) ?? []) {
+    const characters = [...run];
+    if (characters.length < 2) continue;
+    // A short run is plausibly one term, so keep it whole as well; a long one is a
+    // sentence, and keeping it whole only re-creates the token nothing matches.
+    if (characters.length <= 8) tokens.push(run);
+    for (let index = 0; index + 1 < characters.length; index += 1) {
+      tokens.push(characters[index]! + characters[index + 1]!);
+    }
+  }
+  return [...new Set(tokens)];
+}
+
+/** True when a value carries Han characters, which set a different length floor. */
+export function hasHan(value: string): boolean {
+  return /[㐀-鿿]/.test(value);
+}
+
 export function dedupeById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
   return items.filter((item) => {

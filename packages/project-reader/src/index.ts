@@ -12,6 +12,7 @@ import type {
   ProductEvidenceOrigin,
   SourceLocation,
 } from "@agent-runtime-map/schema";
+import { cjkTokens, hasHan } from "@agent-runtime-map/analysis-kit";
 
 const EXCLUDED_DIRECTORIES = new Set([
   ".git",
@@ -319,7 +320,12 @@ function mergeCapabilities(items: ProjectCapabilityHint[]): ProjectCapabilityHin
 }
 
 function isCapabilityLabel(value: string): boolean {
-  if (!value || value.length < 3 || value.length > 80 || GENERIC_HEADING_PATTERN.test(value)) return false;
+  // The floor rejects Latin fragments — "AI", "v2", "UI" — that head a section
+  // without naming a capability. A Chinese term reaches that status two characters
+  // in (选题, 成片, 导出, 登录), so measuring it by the Latin floor discarded most of
+  // a Chinese README's headings before anything could match them.
+  const minimumLength = hasHan(value) ? 2 : 3;
+  if (!value || value.length < minimumLength || value.length > 80 || GENERIC_HEADING_PATTERN.test(value)) return false;
   return !/^(v?\d+(\.\d+)+|https?:|npm |pnpm |yarn )/i.test(value);
 }
 
@@ -453,7 +459,9 @@ function cleanMarkdown(value: string): string {
 
 function keywords(value: string): string[] {
   const latin = value.toLowerCase().match(/[a-z][a-z0-9-]{2,}/g) ?? [];
-  const cjk = value.match(/[\u3400-\u9fff]{2,8}/g) ?? [];
+  // Shared with the compiler's matcher: both sides have to cut Han runs the same
+  // way, or a capability's keywords and the code's terms can never meet.
+  const cjk = cjkTokens(value);
   const stop = new Set([
     "agent", "agents", "and", "before", "can", "feature", "features", "for", "from", "into", "its", "later",
     "project", "returning", "runtime", "system", "that", "the", "this", "through", "using", "with",

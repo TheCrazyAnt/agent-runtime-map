@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Node } from "@xyflow/react";
 import type { BlueprintLogicNodeData } from "@agent-runtime-map/react";
-import type { FeaturePathVariant, LogicNode, RawCodeGraph } from "@agent-runtime-map/schema";
+import type { FeaturePathVariant, FeatureScenario, LogicNode, RawCodeGraph } from "@agent-runtime-map/schema";
 import {
   MAX_DETAIL_DEPTH,
   applyLayoutPositions,
@@ -11,6 +11,7 @@ import {
   matchingNodeIds,
   captureLayout,
   compareVariants,
+  groupFeatures,
   parseDetailNodeId,
   parseLayoutPositions,
 } from "../apps/viewer/src/interactionModel.js";
@@ -149,5 +150,52 @@ describe("viewer interaction model", () => {
     expect(applyLayoutPositions(nodes, snapshot)[0]?.position).toEqual({ x: 12, y: 34 });
     expect(parseLayoutPositions(JSON.stringify(snapshot))).toEqual(snapshot);
     expect(parseLayoutPositions("not-json")).toBeUndefined();
+  });
+});
+
+describe("feature grouping", () => {
+  const feature = (id: string, documented: boolean): FeatureScenario => ({
+    id,
+    label: id,
+    description: `${id} feature`,
+    entryNodeIds: [id],
+    resultNodeIds: [],
+    nodeIds: [id],
+    edgeIds: [],
+    variants: [],
+    diagnostics: [],
+    health: "healthy",
+    confidence: 0.9,
+    ...(documented
+      ? {
+        product: {
+          capabilityId: `cap_${id}`,
+          label: id,
+          origin: "readme" as const,
+          sources: [{ file: "README.md", startLine: 1 }],
+          match: 0.8,
+          matchedOn: "entry_terms" as const,
+          matchedTerms: [id],
+        },
+      }
+      : {}),
+  });
+
+  it("keeps documented capabilities in the list and moves bare entries behind a disclosure", () => {
+    const groups = groupFeatures([feature("成片", true), feature("创作库事务", false), feature("选题", true)]);
+
+    expect(groups.primary.map((item) => item.label)).toEqual(["成片", "选题"]);
+    expect(groups.other.map((item) => item.label)).toEqual(["创作库事务"]);
+  });
+
+  it("keeps the flat list when a project documents nothing", () => {
+    // Splitting on a signal that is absent everywhere empties the list and hides the
+    // whole map behind a disclosure — strictly worse than the flat list it replaced.
+    const features = [feature("a", false), feature("b", false)];
+
+    const groups = groupFeatures(features);
+
+    expect(groups.primary).toEqual(features);
+    expect(groups.other).toEqual([]);
   });
 });

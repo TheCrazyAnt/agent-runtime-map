@@ -59,6 +59,81 @@ describe("feature chain compiler", () => {
     expect(features[0].variants.slice(1).every((variant) => variant.resultNodeId)).toBe(true);
   });
 
+  it("names a feature after the Chinese capability its documentation declares", () => {
+    // The reader keeps Han terms whole and in 2-grams; the matcher used to drop every
+    // token shorter than three characters, which is every second Chinese term. The two
+    // sides then tokenized the same words differently and a documented Chinese
+    // capability could never win, so features fell back to their code names — the
+    // reason a Chinese project's list read as "(底层)创作库事务" instead of "成片".
+    const nodes = [
+      node("生成成片", "entrypoint"),
+      node("渲染", "ai_process"),
+      node("成片文件", "result"),
+    ];
+    const edges = [edge("生成成片", "渲染"), edge("渲染", "成片文件")];
+
+    const features = compileFeatureScenarios(nodes, edges, [{
+      id: "capability_render",
+      label: "成片",
+      description: "自动拍成可导进剪映的成片。",
+      keywords: ["成片", "剪映"],
+      origin: "readme",
+      sources: [{ file: "README.md", startLine: 3 }],
+      confidence: 0.8,
+    }]);
+
+    expect(features).toHaveLength(1);
+    expect(features[0].label).toBe("成片");
+  });
+
+  it("matches a capability named inside a step when the project has no route for it", () => {
+    // Not every capability arrives through an HTTP route. A project whose business
+    // logic is exported functions has no entrypoint node to carry the high-weight
+    // entry match, so the capability 选题 fell to step evidence and was rejected by
+    // the weak-match floor even though a step is literally called 热点选题. A
+    // capability's own name appearing in a step is strong evidence; a word from its
+    // description appearing there is not.
+    const nodes = [node("热点选题", "process"), node("大模型", "ai_process"), node("选题结果", "result")];
+    const edges = [edge("热点选题", "大模型"), edge("大模型", "选题结果")];
+
+    const features = compileFeatureScenarios(nodes, edges, [{
+      id: "capability_topic",
+      label: "选题",
+      description: "从热点里找选题。",
+      keywords: ["选题", "热点"],
+      origin: "readme",
+      sources: [{ file: "README.md", startLine: 3 }],
+      confidence: 0.8,
+    }]);
+
+    expect(features[0].label).toBe("选题");
+    expect(features[0].product?.label).toBe("选题");
+  });
+
+  it("refuses to borrow a capability name on a word from its description", () => {
+    // Entry hits weigh 8, so one is decisive. A common word that appears in a
+    // capability's *description* — 自动, 生成, 处理 — is not evidence that an entry
+    // implements it, and splitting Han runs into 2-grams puts many such words in
+    // reach. Naming a retry loop "成片" is worse than leaving it named after code:
+    // it is wrong and it looks right. Only the capability's own name can carry an
+    // entry match; its description still contributes ordinary step evidence.
+    const nodes = [node("自动重试", "entrypoint"), node("等待", "process"), node("重试结果", "result")];
+    const edges = [edge("自动重试", "等待"), edge("等待", "重试结果")];
+
+    const features = compileFeatureScenarios(nodes, edges, [{
+      id: "capability_render",
+      label: "成片",
+      description: "自动拍成可导进剪映的成片。",
+      keywords: ["成片", "自动拍成可导进剪映的成片"],
+      origin: "readme",
+      sources: [{ file: "README.md", startLine: 3 }],
+      confidence: 0.8,
+    }]);
+
+    expect(features[0].label).toBe("自动重试");
+    expect(features[0].product).toBeUndefined();
+  });
+
   it("marks an entry with no downstream chain as a deterministic error", () => {
     const features = compileFeatureScenarios([node("POST /api/publish", "entrypoint")], []);
 

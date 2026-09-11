@@ -2,6 +2,43 @@
 
 All notable changes are documented here.
 
+## Unreleased
+
+### Fixed
+
+- A Chinese project's documented capabilities could not reach the map. Three
+  separate places measured Chinese by rules written for Latin: a two-character
+  heading (`选题`, `成片`, `导出`) fell under the three-character floor meant to
+  reject `AI` and `v2`; a run of Han characters was matched greedily, so a whole
+  clause became one token and an eight-character cap cut terms in half; and the
+  reader kept two-character terms while the matcher filtered them out, leaving the
+  two sides unable to agree on the same word. Together these meant a Chinese
+  README's capabilities almost never matched, and features fell back to naming
+  themselves after code. Both sides now split Han runs the same way — whole term
+  plus 2-grams — and the length floor applies only where it was meant to.
+- A feature could borrow a documented capability's name on the strength of a word
+  from that capability's *description* rather than its name. An entry-term hit
+  weighs 8 and decides the match, so a retry loop could be presented as `成片`
+  because the capability's description happened to contain `自动` — wrong, and
+  wrong in a way that looks right. Only a capability's own name can carry an entry
+  match now; its description still counts as ordinary step evidence.
+- A capability named inside a step could not be matched unless the project routed
+  it through an entrypoint, so a codebase whose logic is exported functions saw
+  its documented capabilities rejected by the weak-match floor. A capability's own
+  name appearing in a step now counts as strong evidence, while a word from its
+  description still counts as weak.
+
+### Changed
+
+- The feature list separates the capabilities a project documents from the bare
+  entry points only the code knows about. Every entrypoint the user cannot reach
+  becomes a feature, so a large codebase contributes one per internal transaction,
+  auth check and helper — and since the list sorts by health rather than
+  importance, those surfaced first and buried the product's own capabilities.
+  Documented capabilities now lead the list and the rest move behind an "Other
+  entry points" disclosure that states what it holds. Nothing is removed, and a
+  project that documents nothing keeps the flat list it had.
+
 ## 0.9.2 - 2026-09-03
 
 ### Changed
